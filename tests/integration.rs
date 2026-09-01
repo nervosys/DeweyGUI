@@ -1449,7 +1449,7 @@ fn mouse_click_routes_through_hit_map() {
     );
     d.init();
     // Build the frame so the hit map and messages exist.
-    let _ = d.process_request(&AgentRequest::GetTree);
+    let _ = d.process_request(&AgentRequest::GetTree { since: None });
 
     d.process_request(&AgentRequest::InjectEvent {
         event: InjectedEvent::MouseClick {
@@ -1633,4 +1633,116 @@ fn validate_is_available_to_agents() {
     good.init();
     let r = good.process_request(&AgentRequest::Validate);
     assert_eq!(r.data.unwrap()["ok"], serde_json::json!(true));
+}
+
+// ── Conditional tree reads and golden snapshots ────────────────────
+
+/// An agent polling a screen that has not moved must not be sent the tree
+/// again — rebuilding and serialising it is the most expensive thing it can
+/// ask for.
+#[test]
+fn get_tree_since_reports_unchanged() {
+    use dewey::agent::driver::HeadlessDriver;
+    use dewey::agent::protocol::AgentRequest;
+
+    let mut d = HeadlessDriver::new(
+        ActionApp {
+            count: 0,
+            on: false,
+        },
+        200.0,
+        200.0,
+    );
+    d.init();
+
+    let first = d.process_request(&AgentRequest::GetTree { since: None });
+    let v = first.data.as_ref().unwrap()["version"].as_u64().unwrap();
+
+    // Nothing has happened: the same version comes back as `unchanged`.
+    let again = d.process_request(&AgentRequest::GetTree { since: Some(v) });
+    let data = again.data.unwrap();
+    assert_eq!(data["unchanged"], serde_json::json!(true));
+    assert!(data.get("root").is_none(), "no tree should be sent");
+
+    // After acting, the version moves and the tree comes back in full.
+    d.process_request(&AgentRequest::ExecuteAction {
+        agent_id: "inc".into(),
+        action: "click".into(),
+        params: serde_json::Value::Null,
+    });
+    let after = d.process_request(&AgentRequest::GetTree { since: Some(v) });
+    let data = after.data.unwrap();
+    assert!(
+        data.get("unchanged").is_none(),
+        "the screen changed: {data}"
+    );
+    assert_ne!(
+        data["version"].as_u64().unwrap(),
+        v,
+        "version must advance after a mutation"
+    );
+}
+
+/// The snapshot must be byte-stable across renders, or it is useless as a
+/// golden file.
+#[test]
+fn snapshot_is_stable_and_reflects_change() {
+    use dewey::agent::driver::HeadlessDriver;
+
+    let mut d = HeadlessDriver::new(
+        ActionApp {
+            count: 0,
+            on: false,
+        },
+        200.0,
+        200.0,
+    );
+    d.init();
+
+    let a = d.snapshot();
+    let b = d.snapshot();
+    assert_eq!(a, b, "two renders of one interface must match exactly");
+    assert!(a.contains("Button #inc"), "snapshot names widgets: {a}");
+    assert!(
+        a.contains("Checkbox #toggle"),
+        "snapshot names widgets: {a}"
+    );
+
+    // A real change must show up in the diff.
+    d.process_request(&dewey::agent::protocol::AgentRequest::ExecuteAction {
+        agent_id: "toggle".into(),
+        action: "click".into(),
+        params: serde_json::Value::Null,
+    });
+    let c = d.snapshot();
+    assert_ne!(a, c, "toggling the checkbox must change the snapshot");
+}
+
+/// And an agent must be able to fetch it over the protocol.
+#[test]
+fn snapshot_is_available_to_agents() {
+    use dewey::agent::driver::HeadlessDriver;
+    use dewey::agent::protocol::AgentRequest;
+
+    let mut d = HeadlessDriver::new(
+        ActionApp {
+            count: 0,
+            on: false,
+        },
+        200.0,
+        200.0,
+    );
+    d.init();
+    let r = d.process_request(&AgentRequest::Screenshot {
+        format: "text".into(),
+    });
+    let data = r.data.unwrap();
+    assert_eq!(data["kind"], serde_json::json!("snapshot"));
+    assert!(data["snapshot"].as_str().unwrap().contains("Button #inc"));
+
+    // The default JSON form still works.
+    let r = d.process_request(&AgentRequest::Screenshot {
+        format: "json".into(),
+    });
+    assert_eq!(r.data.unwrap()["kind"], serde_json::json!("ui_tree"));
 }

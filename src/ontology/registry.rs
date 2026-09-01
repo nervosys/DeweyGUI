@@ -292,6 +292,65 @@ impl<'de> Deserialize<'de> for Properties {
     }
 }
 
+impl UiTree {
+    /// A stable, human-readable rendering of the interface.
+    ///
+    /// Two renders of the same interface produce byte-identical output —
+    /// properties are emitted in sorted order rather than insertion order — so
+    /// an agent can store one and diff against it later to prove a change did
+    /// what it intended and nothing else. It is the assertion a screenshot
+    /// cannot give: a pixel diff cannot say *what* moved, and re-reading the
+    /// JSON tree compares fields an agent does not care about.
+    ///
+    /// ```
+    /// # use dewey::ontology::{SemanticRole, UiNode, UiTree};
+    /// let mut root = UiNode::new("root", SemanticRole::Container);
+    /// root.children.push(
+    ///     UiNode::new("Button", SemanticRole::Action)
+    ///         .with_id("ok")
+    ///         .with_property("label", serde_json::json!("OK")),
+    /// );
+    /// let snap = UiTree::new(root).snapshot();
+    /// assert_eq!(snap, "root\n  Button #ok label=\"OK\"\n");
+    /// ```
+    #[must_use]
+    pub fn snapshot(&self) -> String {
+        let mut out = String::new();
+        write_node(&mut out, &self.root, 0);
+        out
+    }
+}
+
+fn write_node(out: &mut String, node: &UiNode, depth: usize) {
+    use std::fmt::Write as _;
+
+    for _ in 0..depth {
+        out.push_str("  ");
+    }
+    out.push_str(&node.widget_type);
+    if let Some(id) = node.agent_id.as_deref() {
+        let _ = write!(out, " #{id}");
+    }
+    if let Some(b) = node.bounds {
+        // Rounded: sub-pixel layout jitter is not a semantic change, and a
+        // snapshot that fails on it is a snapshot nobody keeps.
+        let _ = write!(
+            out,
+            " [{:.0},{:.0} {:.0}x{:.0}]",
+            b.x, b.y, b.width, b.height
+        );
+    }
+    let mut props: Vec<_> = node.state.iter().collect();
+    props.sort_by_key(|(k, _)| *k);
+    for (k, v) in props {
+        let _ = write!(out, " {k}={v}");
+    }
+    out.push('\n');
+    for child in &node.children {
+        write_node(out, child, depth + 1);
+    }
+}
+
 /// Bounding rectangle of a UI node in logical pixel coordinates.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct NodeBounds {

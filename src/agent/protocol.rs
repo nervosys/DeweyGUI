@@ -48,8 +48,17 @@ pub enum AgentRequest {
     Validate,
 
     /// Get the current UI tree snapshot.
+    ///
+    /// Pass `since` with the `version` from a previous reply to be told
+    /// `unchanged` instead of receiving the tree again. Rebuilding and
+    /// serialising the tree is the most expensive thing an agent can ask for,
+    /// and an agent polling a screen that has not moved asks for it
+    /// repeatedly.
     #[serde(rename = "get_tree")]
-    GetTree,
+    GetTree {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        since: Option<u64>,
+    },
 
     /// Get the state of a specific widget by its agent ID.
     #[serde(rename = "get_state")]

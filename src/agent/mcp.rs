@@ -251,7 +251,7 @@ fn parse_tool_call(name: &str, args: &serde_json::Value) -> Result<AgentRequest,
     match name {
         "ping" => Ok(AgentRequest::Ping),
         "quit" => Ok(AgentRequest::Quit),
-        "get_tree" => Ok(AgentRequest::GetTree),
+        "get_tree" => Ok(AgentRequest::GetTree { since: None }),
         "query_ontology" => Ok(AgentRequest::QueryOntology {
             query: args.get("query").and_then(|v| v.as_str()).map(String::from),
             role: args.get("role").and_then(|v| v.as_str()).map(String::from),

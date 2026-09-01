@@ -118,7 +118,7 @@ impl AgentSession {
                 false,
             ),
 
-            AgentRequest::GetTree => {
+            AgentRequest::GetTree { .. } => {
                 let tree = registry.export_tree();
                 (AgentResponse::ok(tree), false)
             }

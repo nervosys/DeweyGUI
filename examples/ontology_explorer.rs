@@ -309,7 +309,7 @@ fn main() {
 
     // ── Step 8: Get UI tree ─────────────────────────────────────────
     println!("── Step 8: Get UI Tree ─────────────────────────────────");
-    let resp = driver.process_request(&AgentRequest::GetTree);
+    let resp = driver.process_request(&AgentRequest::GetTree { since: None });
     if let Some(data) = &resp.data {
         fn print_tree(node: &serde_json::Value, depth: usize) {
             let indent = "  ".repeat(depth + 1);

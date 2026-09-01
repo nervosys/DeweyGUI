@@ -23,6 +23,10 @@ pub struct HeadlessDriver<M: Model> {
     messages: std::collections::HashMap<String, Box<dyn std::any::Any + Send>>,
     /// Interactive widgets that rendered without an id in the last frame.
     unaddressable: Vec<&'static str>,
+    /// Bumped whenever a request could have changed the model. An agent that
+    /// passes the version it last saw is told `unchanged` rather than being
+    /// sent an identical tree.
+    version: u64,
 }
 
 impl<M: Model> HeadlessDriver<M> {
@@ -40,6 +44,7 @@ impl<M: Model> HeadlessDriver<M> {
             hit_map: crate::event::HitMap::new(),
             messages: std::collections::HashMap::new(),
             unaddressable: Vec::new(),
+            version: 0,
         }
     }
 
@@ -73,6 +78,17 @@ impl<M: Model> HeadlessDriver<M> {
         // Only the requests that actually read the tree pay for building it.
         // Answering `get_schema` or `ping` used to re-render the whole
         // application first.
+        // An agent polling a screen that has not moved gets told so, without
+        // the application being rendered or the tree serialised.
+        if let AgentRequest::GetTree { since: Some(seen) } = request {
+            if *seen == self.version {
+                return AgentResponse::ok(serde_json::json!({
+                    "unchanged": true,
+                    "version": self.version,
+                }));
+            }
+        }
+
         if Self::needs_tree(request) {
             self.render();
         }
@@ -96,6 +112,23 @@ impl<M: Model> HeadlessDriver<M> {
             };
             if !result.is_null() {
                 response.data = Some(result);
+            }
+        }
+
+        // `screenshot format=text` returns the golden-comparable snapshot
+        // rather than a JSON tree.
+        if let AgentRequest::Screenshot { format } = request {
+            if format == "text" {
+                let snap = self
+                    .ontology
+                    .tree()
+                    .map(crate::ontology::UiTree::snapshot)
+                    .unwrap_or_default();
+                response = AgentResponse::ok(serde_json::json!({
+                    "format": "text",
+                    "kind": "snapshot",
+                    "snapshot": snap,
+                }));
             }
         }
 
@@ -148,11 +181,38 @@ impl<M: Model> HeadlessDriver<M> {
             }
         }
 
+        // Stamp the version onto a tree reply so the agent can ask
+        // conditionally next time.
+        if matches!(request, AgentRequest::GetTree { .. }) {
+            if let Some(data) = response.data.as_mut() {
+                if let Some(obj) = data.as_object_mut() {
+                    obj.insert("version".into(), serde_json::json!(self.version));
+                }
+            }
+        }
+
+        // Anything that can mutate the model invalidates a cached tree.
+        // Over-counting only costs a needless refresh; under-counting would
+        // hand an agent a stale screen, so the set is deliberately broad.
+        if Self::may_mutate(request) {
+            self.version = self.version.wrapping_add(1);
+        }
+
         if should_quit {
             self.running = false;
         }
 
         response
+    }
+
+    /// Whether this request could change what the interface shows.
+    fn may_mutate(request: &AgentRequest) -> bool {
+        matches!(
+            request,
+            AgentRequest::ExecuteAction { .. }
+                | AgentRequest::BatchActions { .. }
+                | AgentRequest::InjectEvent { .. }
+        )
     }
 
     /// Process a framed request envelope.
@@ -227,6 +287,18 @@ impl<M: Model> HeadlessDriver<M> {
         crate::ontology::diagnostics::check(&tree, &self.unaddressable, self.window_size)
     }
 
+    /// A stable text rendering of the interface, for golden comparison.
+    ///
+    /// See [`UiTree::snapshot`](crate::ontology::UiTree::snapshot). Renders
+    /// first, so the result reflects current model state.
+    pub fn snapshot(&mut self) -> String {
+        self.render();
+        self.ontology
+            .tree()
+            .map(crate::ontology::UiTree::snapshot)
+            .unwrap_or_default()
+    }
+
     /// Whether answering this request requires a freshly rendered UI tree.
     ///
     /// Type catalogue queries (`query_ontology`, `get_schema`), liveness checks
@@ -234,7 +306,7 @@ impl<M: Model> HeadlessDriver<M> {
     fn needs_tree(request: &AgentRequest) -> bool {
         matches!(
             request,
-            AgentRequest::GetTree
+            AgentRequest::GetTree { .. }
                 | AgentRequest::GetState { .. }
                 | AgentRequest::ExecuteAction { .. }
                 | AgentRequest::BatchActions { .. }

@@ -292,6 +292,7 @@ switch filter, read the result back):
 | Task                                       | Time        | Rate      |
 | ------------------------------------------ | ----------- | --------- |
 | counter: discover → understand → act → verify | **8.2 µs**  | 122,000/s |
+| polling an unchanged screen (`get_tree since=`) | **100 ns**  | 110× less |
 | todomvc: 9-step add/complete/filter/verify | **44.7 µs** | 22,000/s  |
 
 An agent can also ask whether the interface it just built is *operable*, which
@@ -305,6 +306,18 @@ a screenshot cannot tell it:
                   hit-testable and no agent can act on them; give each one
                   `.action(id, msg)`"}]}
 ```
+
+It can also keep a golden snapshot and diff against it, rather than comparing
+pixels or re-reading fields it does not care about:
+
+```
+root
+  Label #count [0,0 400x40] text="Count: 1"
+  Button #inc [268,40 132x40] enabled=true label="+ Increment"
+```
+
+Two renders of one interface produce byte-identical text, so a diff shows
+exactly what moved.
 
 `validate` catches faults that render perfectly: id-less widgets that cannot be
 clicked, duplicate ids that make an action ambiguous, and zero-size or offscreen

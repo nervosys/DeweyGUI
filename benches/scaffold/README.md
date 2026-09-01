@@ -147,6 +147,17 @@ verify counter  (get_state remaining)         4.3 µs
 full 9-step task                             44.7 µs
 ```
 
+Polling costs almost nothing once the agent passes the version it last saw:
+
+```
+polling an unchanged screen, interleaved, min of 2000:
+  get_tree                   11.0 µs
+  get_tree since=version      100 ns   (110x less)
+```
+
+Waiting for a screen to change is the common agent pattern, and it used to be
+the most expensive request in the protocol.
+
 An agent can additionally ask `validate` whether the interface is operable at
 all — it reports id-less widgets that cannot be clicked, duplicate ids, and
 zero-size or offscreen bounds, which is the class of fault that renders

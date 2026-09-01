@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Performance
 
+- `get_tree` accepts `since`, the `version` from a previous reply, and answers
+  `unchanged` without rendering or serialising anything when the interface has
+  not moved: **11.0 µs → 100 ns, 110× less**. Polling until something changes
+  is the common agent pattern, and it was previously the most expensive thing
+  an agent could do. The version advances on any request that could mutate the
+  model; it is deliberately over-eager, since a needless refresh costs time
+  while a missed one would hand an agent a stale screen.
+
 - The headless driver no longer re-renders the application for requests that do
   not read the UI tree. `query_ontology` and `get_schema` are answered from the
   registry alone and dropped from ~1.1 µs to below timer resolution; the
@@ -52,6 +60,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   3210 → 598 bytes (−81%). Hit-testing and painting are unaffected.
 
 ### Added
+
+- `UiTree::snapshot` and `HeadlessDriver::snapshot` render the interface as
+  stable text, with properties in sorted order and bounds rounded to whole
+  pixels, so two renders of one interface are byte-identical. An agent can keep
+  one as a golden file and diff against it to prove a change did what it
+  intended and nothing else — the assertion a pixel diff cannot make, since it
+  cannot say *what* moved. Also available over the protocol as
+  `screenshot` with `format: "text"`.
 
 - `AgentRequest::Validate` and `HeadlessDriver::validate` check a rendered
   interface for structural faults an agent cannot see from a screenshot:
