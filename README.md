@@ -270,19 +270,30 @@ case (input, filters, dynamic list, per-item toggle and delete, live count):
 
 | Framework     | counter ~tokens | todomvc ~tokens | todomvc vs egui |
 | ------------- | --------------- | --------------- | --------------- |
-| Dewey (plain) | 393             | 1196            | 1.86×           |
-| Dewey (agent) | 400             | 1357            | 2.11× (was 2.51×) |
+| Dewey (plain) | 328             | 1047            | 1.63×           |
+| Dewey (agent) | 335             | 1208            | 1.88×           |
 | **egui 0.31** | **264**         | **643**         | 1.00×           |
 | iced 0.13     | 268             | 788             | 1.23×           |
 
-**Dewey costs more to scaffold, but agent-driveability is now nearly free.**
-`Button::action(id, msg)` wires a widget for a person and an agent in one call —
-the runtime routes a mouse click through the hit map to that message, and an
-agent's `execute_action(id, "click")` dispatches the same one — so the premium
-an app pays to be agent-driveable fell from **+36% to +2%** on the counter and
-from +37% to +13% on TodoMVC. `Rect::rows(h)` removed the manual `y` cursor
-from list rendering. The remaining ~1.5–1.9× over egui is architectural: the
-Elm `Msg` enum and constraint layout that names its rectangles.
+On the counter Dewey is now the same 33 lines as egui, and on TodoMVC it is
+shorter than iced (97 lines against 110).
+
+**Dewey still costs more to scaffold, but much less than it did, and
+agent-driveability is nearly free.** Three changes did it:
+
+- `Button::action(id, msg)` wires a widget for a person *and* an agent in one
+  call, so the premium for being agent-driveable fell from **+36% to +2%** on
+  the counter and +37% to +13% on TodoMVC.
+- `Button::on(id, |model| ...)` lets a widget carry the change it makes rather
+  than a message, so an application needs no `Msg` variants at all — the Elm
+  loop is the right shape for real state transitions and the wrong shape for a
+  button that adds one to a number. `action` remains for changes returning a
+  `Command`.
+- `Rect::rows_of` / `split_columns` replace a `Layout` and a named `Constraint`
+  per band.
+
+Together those took the counter from 1.49× to **1.24×** egui's tokens and
+TodoMVC from 1.86× to **1.63×**.
 
 Verifying it afterwards is where that inverts. Dewey closes the full
 discover → act → verify loop over the agent protocol headlessly — no window,

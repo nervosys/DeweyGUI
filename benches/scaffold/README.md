@@ -39,21 +39,25 @@ higher than the one it was derived from.
 
 **counter**
 
-| Framework     | Code lines | ~Tokens | vs egui | Was    |
-| ------------- | ---------- | ------- | ------- | ------ |
-| Dewey (plain) | 39         | 393     | 1.49×   | —      |
-| Dewey (agent) | 41         | 400     | 1.52×   | 1.84×  |
-| **egui 0.31** | **33**     | **264** | 1.00×   |        |
-| iced 0.13     | 37         | 268     | 1.02×   |        |
+| Framework     | Code lines | ~Tokens | vs egui | Was   |
+| ------------- | ---------- | ------- | ------- | ----- |
+| Dewey (plain) | **33**     | 328     | 1.24×   | 1.49× |
+| Dewey (agent) | 35         | 335     | 1.27×   | 1.84× |
+| **egui 0.31** | **33**     | **264** | 1.00×   |       |
+| iced 0.13     | 37         | 268     | 1.02×   |       |
 
 **todomvc**
 
-| Framework     | Code lines | ~Tokens  | vs egui | Was    |
-| ------------- | ---------- | -------- | ------- | ------ |
-| Dewey (plain) | 121        | 1196     | 1.86×   | —      |
-| Dewey (agent) | 133        | 1357     | 2.11×   | 2.51×  |
-| **egui 0.31** | **85**     | **643**  | 1.00×   |        |
-| iced 0.13     | 110        | 788      | 1.23×   |        |
+| Framework     | Code lines | ~Tokens  | vs egui | Was   |
+| ------------- | ---------- | -------- | ------- | ----- |
+| Dewey (plain) | 97         | 1047     | 1.63×   | 1.86× |
+| Dewey (agent) | 109        | 1208     | 1.88×   | 2.51× |
+| **egui 0.31** | **85**     | **643**  | 1.00×   |       |
+| iced 0.13     | 110        | 788      | 1.23×   |       |
+
+Dewey now matches egui line-for-line on the counter (33) and is shorter than
+iced on TodoMVC (97 against 110), though it still uses more tokens than either
+because its calls are more explicit.
 
 **Dewey still loses this half, but by less, and agent-driveability is now
 nearly free.** `Button::action` and `Checkbox::action` cut the agent-driveable

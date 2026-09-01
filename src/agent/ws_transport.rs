@@ -42,7 +42,7 @@ const MAX_REQUESTS_PER_SEC: u32 = 1000;
 /// let transport = WsTransport::new(MyApp, "127.0.0.1:9001");
 /// transport.run().unwrap();
 /// ```
-pub struct WsTransport<M: Model> {
+pub struct WsTransport<M: Model + 'static> {
     model: M,
     session: AgentSession,
     ontology: OntologyRegistry,
@@ -50,7 +50,7 @@ pub struct WsTransport<M: Model> {
     bind_addr: String,
 }
 
-impl<M: Model> WsTransport<M> {
+impl<M: Model + 'static> WsTransport<M> {
     /// Create a new WebSocket transport bound to the given address.
     pub fn new(model: M, bind_addr: impl Into<String>) -> Self {
         let mut ontology = OntologyRegistry::new();

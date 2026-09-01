@@ -98,7 +98,75 @@ impl Rect {
         )
     }
 
+    /// Split into rows of the given heights, top to bottom.
+    ///
+    /// The common case of a vertical `Layout` without naming a `Constraint` for
+    /// each band.
+    ///
+    /// ```
+    /// # use dewey::core::Rect;
+    /// let rows = Rect::new(0.0, 0.0, 100.0, 100.0).rows_of(&[40.0, 60.0]);
+    /// assert_eq!(rows[1].y, 40.0);
+    /// assert_eq!(rows[1].height, 60.0);
+    /// ```
     #[must_use]
+    pub fn rows_of(&self, heights: &[f32]) -> Vec<Rect> {
+        let mut y = self.y;
+        heights
+            .iter()
+            .map(|h| {
+                let r = Rect::new(self.x, y, self.width, *h);
+                y += h;
+                r
+            })
+            .collect()
+    }
+
+    /// Split into columns of the given widths, left to right.
+    #[must_use]
+    pub fn cols_of(&self, widths: &[f32]) -> Vec<Rect> {
+        let mut x = self.x;
+        widths
+            .iter()
+            .map(|w| {
+                let r = Rect::new(x, self.y, *w, self.height);
+                x += w;
+                r
+            })
+            .collect()
+    }
+
+    /// Split into `n` columns of equal width.
+    ///
+    /// ```
+    /// # use dewey::core::Rect;
+    /// let cols = Rect::new(0.0, 0.0, 90.0, 10.0).split_columns(3);
+    /// assert_eq!(cols.len(), 3);
+    /// assert_eq!(cols[2].x, 60.0);
+    /// ```
+    #[must_use]
+    pub fn split_columns(&self, n: usize) -> Vec<Rect> {
+        if n == 0 {
+            return Vec::new();
+        }
+        let w = self.width / n as f32;
+        (0..n)
+            .map(|i| Rect::new(self.x + i as f32 * w, self.y, w, self.height))
+            .collect()
+    }
+
+    /// Split into `n` rows of equal height.
+    #[must_use]
+    pub fn split_rows(&self, n: usize) -> Vec<Rect> {
+        if n == 0 {
+            return Vec::new();
+        }
+        let h = self.height / n as f32;
+        (0..n)
+            .map(|i| Rect::new(self.x, self.y + i as f32 * h, self.width, h))
+            .collect()
+    }
+
     /// Successive rows of `height` down this rectangle, stopping at its bottom.
     ///
     /// List rendering is where hand-written layout goes wrong: tracking a `y`

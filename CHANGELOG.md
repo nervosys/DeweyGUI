@@ -61,6 +61,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `Button::on(id, |model| ...)` and `Checkbox::on(id, ...)` let a widget carry
+  the change it makes instead of a message. The Elm loop asks for a message
+  type and an `update` arm per message, which is the right shape for real state
+  transitions and the wrong shape for a button that adds one to a number. An
+  application can now have no `Msg` variants at all, and such a widget is
+  driven by an agent exactly as a message-carrying one is. `action` remains for
+  changes that must return a `Command`.
+- `runtime::Mutation<M>`, the type a widget carries for the above.
+- `Rect::rows_of`, `cols_of`, `split_rows` and `split_columns` for the common
+  splits that previously needed a `Layout` and a named `Constraint` per band.
+
 - `UiTree::snapshot` and `HeadlessDriver::snapshot` render the interface as
   stable text, with properties in sorted order and bounds rounded to whole
   pixels, so two renders of one interface are byte-identical. An agent can keep

@@ -778,13 +778,19 @@ impl<M: Model + 'static> RunningApp<M> {
                 self.process_command(cmd);
                 true
             }
-            Err(_) => {
-                debug_assert!(
-                    false,
-                    "widget message for `{agent_id}` was not this model's Msg"
-                );
-                false
-            }
+            Err(other) => match other.downcast::<crate::runtime::Mutation<M>>() {
+                Ok(change) => {
+                    (*change)(&mut self.model);
+                    true
+                }
+                Err(_) => {
+                    debug_assert!(
+                        false,
+                        "widget for `{agent_id}` carried neither this model's Msg nor a Mutation"
+                    );
+                    false
+                }
+            },
         }
     }
 

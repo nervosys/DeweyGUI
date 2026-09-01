@@ -18,14 +18,14 @@ const MAX_LINE_BYTES: usize = 1_048_576;
 const MAX_REQUESTS_PER_SEC: u32 = 1000;
 
 /// Runs a Dewey application over stdin/stdout JSON Lines protocol.
-pub struct RpcTransport<M: Model> {
+pub struct RpcTransport<M: Model + 'static> {
     model: M,
     session: AgentSession,
     ontology: OntologyRegistry,
     running: bool,
 }
 
-impl<M: Model> RpcTransport<M> {
+impl<M: Model + 'static> RpcTransport<M> {
     /// Create a new RPC transport with the given model.
     pub fn new(model: M) -> Self {
         let mut ontology = OntologyRegistry::new();

@@ -302,6 +302,16 @@ impl<'a> Frame<'a> {
     }
 }
 
+/// A change to apply to the model when a widget is activated.
+///
+/// The Elm loop asks for a message type and an `update` arm per message, which
+/// is the right shape for an application with real state transitions and the
+/// wrong shape for a button that adds one to a number. A widget can carry one
+/// of these instead, and the runtime applies it directly — no `Msg` variant, no
+/// `update` arm, no `execute_action` handler, and it is driven by an agent
+/// exactly like a message is.
+pub type Mutation<M> = Box<dyn FnOnce(&mut M) + Send>;
+
 /// When the runtime builds the agent ontology tree.
 ///
 /// Building it allocates a [`UiNode`](crate::ontology::UiNode) per widget. A

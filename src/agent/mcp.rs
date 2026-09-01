@@ -369,11 +369,11 @@ fn parse_tool_call(name: &str, args: &serde_json::Value) -> Result<AgentRequest,
 ///
 /// Reads JSON-RPC 2.0 requests from stdin, dispatches them through the
 /// Dewey agent protocol, and writes JSON-RPC responses to stdout.
-pub struct McpServer<M: Model> {
+pub struct McpServer<M: Model + 'static> {
     driver: HeadlessDriver<M>,
 }
 
-impl<M: Model> McpServer<M> {
+impl<M: Model + 'static> McpServer<M> {
     /// Create a new MCP server with the given model and viewport size.
     pub fn new(model: M, width: f32, height: f32) -> Self {
         let mut driver = HeadlessDriver::new(model, width, height);

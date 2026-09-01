@@ -29,7 +29,7 @@ pub struct HeadlessDriver<M: Model> {
     version: u64,
 }
 
-impl<M: Model> HeadlessDriver<M> {
+impl<M: Model + 'static> HeadlessDriver<M> {
     /// Create a new headless driver with the given model and virtual window size.
     pub fn new(model: M, width: f32, height: f32) -> Self {
         let mut ontology = OntologyRegistry::new();
@@ -331,13 +331,19 @@ impl<M: Model> HeadlessDriver<M> {
                 self.process_command(cmd);
                 true
             }
-            Err(_) => {
-                debug_assert!(
-                    false,
-                    "widget message for `{agent_id}` was not this model's Msg"
-                );
-                false
-            }
+            Err(other) => match other.downcast::<crate::runtime::Mutation<M>>() {
+                Ok(change) => {
+                    (*change)(&mut self.model);
+                    true
+                }
+                Err(_) => {
+                    debug_assert!(
+                        false,
+                        "widget for `{agent_id}` carried neither this model's Msg nor a Mutation"
+                    );
+                    false
+                }
+            },
         }
     }
 

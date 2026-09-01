@@ -1746,3 +1746,112 @@ fn snapshot_is_available_to_agents() {
     });
     assert_eq!(r.data.unwrap()["kind"], serde_json::json!("ui_tree"));
 }
+
+// ── Message-free applications ──────────────────────────────────────
+
+/// An application with no message type and no `update` logic at all: widgets
+/// carry the change they make. `Msg` is still required by the trait, but
+/// nothing ever constructs one.
+struct MutApp {
+    count: i32,
+    on: bool,
+}
+
+#[derive(Debug)]
+enum Never {}
+
+impl Model for MutApp {
+    type Msg = Never;
+
+    fn update(&mut self, _m: Never) -> Command<Never> {
+        Command::None
+    }
+
+    fn view(&self, frame: &mut Frame<'_>) {
+        let rows = frame.area.rows_of(&[40.0, 40.0]);
+        Button::new("+")
+            .on("inc", |app: &mut MutApp| app.count += 1)
+            .render(rows[0], frame);
+        dewey::widget::Checkbox::new("on", self.on)
+            .on("toggle", |app: &mut MutApp| app.on = !app.on)
+            .render(rows[1], frame);
+    }
+}
+
+#[test]
+fn widget_mutation_needs_no_message_type() {
+    use dewey::agent::driver::HeadlessDriver;
+    use dewey::agent::protocol::AgentRequest;
+
+    let mut d = HeadlessDriver::new(
+        MutApp {
+            count: 0,
+            on: false,
+        },
+        200.0,
+        200.0,
+    );
+    d.init();
+
+    for _ in 0..3 {
+        let r = d.process_request(&AgentRequest::ExecuteAction {
+            agent_id: "inc".into(),
+            action: "click".into(),
+            params: serde_json::Value::Null,
+        });
+        assert!(r.success);
+    }
+    assert_eq!(d.model().count, 3, "agent clicks applied the mutation");
+
+    d.process_request(&AgentRequest::ExecuteAction {
+        agent_id: "toggle".into(),
+        action: "click".into(),
+        params: serde_json::Value::Null,
+    });
+    assert!(d.model().on, "checkbox mutation applied");
+}
+
+/// A mutation-carrying widget must also respond to a real mouse click.
+#[test]
+fn widget_mutation_responds_to_a_mouse_click() {
+    use dewey::agent::driver::HeadlessDriver;
+    use dewey::agent::protocol::{AgentRequest, InjectedEvent};
+
+    let mut d = HeadlessDriver::new(
+        MutApp {
+            count: 0,
+            on: false,
+        },
+        200.0,
+        200.0,
+    );
+    d.init();
+    let _ = d.process_request(&AgentRequest::GetTree { since: None });
+
+    d.process_request(&AgentRequest::InjectEvent {
+        event: InjectedEvent::MouseClick {
+            x: 20.0,
+            y: 10.0,
+            button: "left".into(),
+        },
+    });
+    assert_eq!(d.model().count, 1);
+}
+
+/// And such an app must still pass structural validation — carrying a mutation
+/// gives the widget an id exactly as carrying a message does.
+#[test]
+fn message_free_app_validates_clean() {
+    use dewey::agent::driver::HeadlessDriver;
+
+    let mut d = HeadlessDriver::new(
+        MutApp {
+            count: 0,
+            on: false,
+        },
+        200.0,
+        200.0,
+    );
+    d.init();
+    assert!(d.validate().is_empty());
+}

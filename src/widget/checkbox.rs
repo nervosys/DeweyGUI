@@ -51,6 +51,32 @@ impl Checkbox {
         self
     }
 
+    /// Name this checkbox and give it a change to apply when toggled.
+    ///
+    /// The shorter form of [`Checkbox::action`] for an application that does not
+    /// want a message type: no `Msg` variant and no `update` arm, driven by a
+    /// person and an agent the same way.
+    ///
+    /// ```no_run
+    /// # use dewey::prelude::*;
+    /// # struct App { count: i32 }
+    /// Checkbox::new("done", false).on("done", |app: &mut App| app.count += 1);
+    /// ```
+    ///
+    /// Use [`Checkbox::action`] instead when the change must return a
+    /// [`Command`](crate::runtime::Command).
+    #[must_use]
+    pub fn on<M: 'static>(
+        mut self,
+        id: impl Into<std::borrow::Cow<'static, str>>,
+        change: impl FnOnce(&mut M) + Send + 'static,
+    ) -> Self {
+        let boxed: crate::runtime::Mutation<M> = Box::new(change);
+        self.agent_id = id.into();
+        self.on_toggle = Some(Box::new(boxed));
+        self
+    }
+
     pub fn agent_id(mut self, id: impl Into<std::borrow::Cow<'static, str>>) -> Self {
         self.agent_id = id.into();
         self
