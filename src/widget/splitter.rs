@@ -42,7 +42,7 @@ pub struct Splitter {
     min_ratio: f32,
     max_ratio: f32,
     style: Style,
-    agent_id: String,
+    agent_id: std::borrow::Cow<'static, str>,
 }
 
 impl Splitter {
@@ -53,7 +53,7 @@ impl Splitter {
             min_ratio: 0.1,
             max_ratio: 0.9,
             style: Style::default(),
-            agent_id: String::new(),
+            agent_id: std::borrow::Cow::Borrowed(""),
         }
     }
 
@@ -90,7 +90,7 @@ impl Splitter {
         self
     }
 
-    pub fn agent_id(mut self, id: impl Into<String>) -> Self {
+    pub fn agent_id(mut self, id: impl Into<std::borrow::Cow<'static, str>>) -> Self {
         self.agent_id = id.into();
         self
     }
@@ -199,19 +199,21 @@ impl StatefulWidget for Splitter {
         state.ratio = state.ratio.clamp(self.min_ratio, self.max_ratio);
 
         if !self.agent_id.is_empty() {
-            let node = UiNode::new("Splitter", SemanticRole::Container)
-                .with_id(&self.agent_id)
-                .with_bounds(area.into())
-                .with_property("ratio", serde_json::json!(state.ratio))
-                .with_property(
-                    "direction",
-                    serde_json::json!(match self.direction {
-                        SplitDirection::Horizontal => "horizontal",
-                        SplitDirection::Vertical => "vertical",
-                    }),
-                );
-            frame.register_widget(node);
-            frame.register_hitbox(&self.agent_id, area, 1);
+            if frame.ontology_enabled() {
+                let node = UiNode::new("Splitter", SemanticRole::Container)
+                    .with_id(self.agent_id.clone())
+                    .with_bounds(area.into())
+                    .with_property("ratio", serde_json::json!(state.ratio))
+                    .with_property(
+                        "direction",
+                        serde_json::json!(match self.direction {
+                            SplitDirection::Horizontal => "horizontal",
+                            SplitDirection::Vertical => "vertical",
+                        }),
+                    );
+                frame.register_widget(node);
+            }
+            frame.register_hitbox(self.agent_id.clone(), area, 1);
         }
 
         let (first, second) = Self::compute_rects(area, self.direction, state.ratio);

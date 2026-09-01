@@ -149,7 +149,7 @@ impl Default for DatePickerState {
 /// A date picker widget showing a calendar grid.
 pub struct DatePicker {
     style: Style,
-    agent_id: String,
+    agent_id: std::borrow::Cow<'static, str>,
     label: String,
 }
 
@@ -157,7 +157,7 @@ impl DatePicker {
     pub fn new() -> Self {
         Self {
             style: Style::default(),
-            agent_id: String::new(),
+            agent_id: std::borrow::Cow::Borrowed(""),
             label: "Select date".to_string(),
         }
     }
@@ -182,7 +182,7 @@ impl DatePicker {
         self
     }
 
-    pub fn agent_id(mut self, id: impl Into<String>) -> Self {
+    pub fn agent_id(mut self, id: impl Into<std::borrow::Cow<'static, str>>) -> Self {
         self.agent_id = id.into();
         self
     }
@@ -353,21 +353,23 @@ impl StatefulWidget for DatePicker {
         let ts = self.style.resolved_text();
 
         if !self.agent_id.is_empty() {
-            let node = UiNode::new("DatePicker", SemanticRole::Input)
-                .with_id(&self.agent_id)
-                .with_bounds(area.into())
-                .with_property("selected", serde_json::json!(state.selected.to_iso()))
-                .with_property("open", serde_json::json!(state.open))
-                .with_property(
-                    "view_month",
-                    serde_json::json!(format!(
-                        "{} {}",
-                        DateValue::new(state.view_year, state.view_month, 1).month_name(),
-                        state.view_year
-                    )),
-                );
-            frame.register_widget(node);
-            frame.register_hitbox(&self.agent_id, area, 1);
+            if frame.ontology_enabled() {
+                let node = UiNode::new("DatePicker", SemanticRole::Input)
+                    .with_id(self.agent_id.clone())
+                    .with_bounds(area.into())
+                    .with_property("selected", serde_json::json!(state.selected.to_iso()))
+                    .with_property("open", serde_json::json!(state.open))
+                    .with_property(
+                        "view_month",
+                        serde_json::json!(format!(
+                            "{} {}",
+                            DateValue::new(state.view_year, state.view_month, 1).month_name(),
+                            state.view_year
+                        )),
+                    );
+                frame.register_widget(node);
+            }
+            frame.register_hitbox(self.agent_id.clone(), area, 1);
         }
 
         // Date display row

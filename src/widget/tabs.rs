@@ -27,7 +27,7 @@ impl TabState {
 pub struct Tabs {
     labels: Vec<String>,
     style: Style,
-    agent_id: String,
+    agent_id: std::borrow::Cow<'static, str>,
 }
 
 impl Tabs {
@@ -36,7 +36,7 @@ impl Tabs {
         Self {
             labels,
             style: Style::default(),
-            agent_id: String::new(),
+            agent_id: std::borrow::Cow::Borrowed(""),
         }
     }
 
@@ -55,7 +55,7 @@ impl Tabs {
         self
     }
 
-    pub fn agent_id(mut self, id: impl Into<String>) -> Self {
+    pub fn agent_id(mut self, id: impl Into<std::borrow::Cow<'static, str>>) -> Self {
         self.agent_id = id.into();
         self
     }
@@ -127,13 +127,15 @@ impl StatefulWidget for Tabs {
 
     fn render(self, area: Rect, frame: &mut Frame<'_>, state: &mut TabState) {
         if !self.agent_id.is_empty() {
-            let node = UiNode::new("Tabs", SemanticRole::Tab)
-                .with_id(&self.agent_id)
-                .with_bounds(area.into())
-                .with_property("labels", serde_json::json!(self.labels))
-                .with_property("selected", serde_json::json!(state.selected));
-            frame.register_widget(node);
-            frame.register_hitbox(&self.agent_id, area, 1);
+            if frame.ontology_enabled() {
+                let node = UiNode::new("Tabs", SemanticRole::Tab)
+                    .with_id(self.agent_id.clone())
+                    .with_bounds(area.into())
+                    .with_property("labels", serde_json::json!(self.labels))
+                    .with_property("selected", serde_json::json!(state.selected));
+                frame.register_widget(node);
+            }
+            frame.register_hitbox(self.agent_id.clone(), area, 1);
         }
 
         let tab_h = 28.0;

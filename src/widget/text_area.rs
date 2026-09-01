@@ -39,7 +39,7 @@ impl Default for TextAreaState {
 pub struct TextArea {
     placeholder: String,
     style: Style,
-    agent_id: String,
+    agent_id: std::borrow::Cow<'static, str>,
 }
 
 impl TextArea {
@@ -48,7 +48,7 @@ impl TextArea {
         Self {
             placeholder: String::new(),
             style: Style::default(),
-            agent_id: String::new(),
+            agent_id: std::borrow::Cow::Borrowed(""),
         }
     }
 
@@ -77,7 +77,7 @@ impl TextArea {
         self
     }
 
-    pub fn agent_id(mut self, id: impl Into<String>) -> Self {
+    pub fn agent_id(mut self, id: impl Into<std::borrow::Cow<'static, str>>) -> Self {
         self.agent_id = id.into();
         self
     }
@@ -180,13 +180,15 @@ impl StatefulWidget for TextArea {
 
     fn render(self, area: Rect, frame: &mut Frame<'_>, state: &mut TextAreaState) {
         if !self.agent_id.is_empty() {
-            let node = UiNode::new("TextArea", SemanticRole::Input)
-                .with_id(&self.agent_id)
-                .with_bounds(area.into())
-                .with_property("text", serde_json::json!(state.text))
-                .with_property("line_count", serde_json::json!(state.text.lines().count()));
-            frame.register_widget(node);
-            frame.register_hitbox(&self.agent_id, area, 1);
+            if frame.ontology_enabled() {
+                let node = UiNode::new("TextArea", SemanticRole::Input)
+                    .with_id(self.agent_id.clone())
+                    .with_bounds(area.into())
+                    .with_property("text", serde_json::json!(state.text))
+                    .with_property("line_count", serde_json::json!(state.text.lines().count()));
+                frame.register_widget(node);
+            }
+            frame.register_hitbox(self.agent_id.clone(), area, 1);
         }
 
         let border_radius = self.style.border_radius.unwrap_or(2.0);

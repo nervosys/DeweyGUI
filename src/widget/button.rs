@@ -21,7 +21,7 @@ pub struct Button {
     label: String,
     style: Style,
     enabled: bool,
-    agent_id: String,
+    agent_id: std::borrow::Cow<'static, str>,
 }
 
 impl Button {
@@ -31,7 +31,7 @@ impl Button {
             label: label.into(),
             style: Style::default(),
             enabled: true,
-            agent_id: String::new(),
+            agent_id: std::borrow::Cow::Borrowed(""),
         }
     }
 
@@ -70,7 +70,7 @@ impl Button {
         self
     }
 
-    pub fn agent_id(mut self, id: impl Into<String>) -> Self {
+    pub fn agent_id(mut self, id: impl Into<std::borrow::Cow<'static, str>>) -> Self {
         self.agent_id = id.into();
         self
     }
@@ -128,13 +128,15 @@ impl Discoverable for Button {
 impl Widget for Button {
     fn render(self, area: Rect, frame: &mut Frame<'_>) {
         if !self.agent_id.is_empty() {
-            let node = UiNode::new("Button", SemanticRole::Action)
-                .with_id(&self.agent_id)
-                .with_bounds(area.into())
-                .with_property("label", serde_json::json!(self.label))
-                .with_property("enabled", serde_json::json!(self.enabled));
-            frame.register_widget(node);
-            frame.register_hitbox(&self.agent_id, area, 1);
+            if frame.ontology_enabled() {
+                let node = UiNode::new("Button", SemanticRole::Action)
+                    .with_id(self.agent_id.clone())
+                    .with_bounds(area.into())
+                    .with_property("label", serde_json::json!(self.label))
+                    .with_property("enabled", serde_json::json!(self.enabled));
+                frame.register_widget(node);
+            }
+            frame.register_hitbox(self.agent_id.clone(), area, 1);
         }
 
         let bg = if self.enabled {

@@ -63,7 +63,7 @@ impl TreeNode {
 pub struct Tree {
     root: TreeNode,
     style: Style,
-    agent_id: String,
+    agent_id: std::borrow::Cow<'static, str>,
 }
 
 impl Tree {
@@ -72,7 +72,7 @@ impl Tree {
         Self {
             root,
             style: Style::default(),
-            agent_id: String::new(),
+            agent_id: std::borrow::Cow::Borrowed(""),
         }
     }
 
@@ -86,7 +86,7 @@ impl Tree {
         self
     }
 
-    pub fn agent_id(mut self, id: impl Into<String>) -> Self {
+    pub fn agent_id(mut self, id: impl Into<std::borrow::Cow<'static, str>>) -> Self {
         self.agent_id = id.into();
         self
     }
@@ -224,9 +224,9 @@ impl Discoverable for Tree {
 
 impl Widget for Tree {
     fn render(self, area: Rect, frame: &mut Frame<'_>) {
-        if !self.agent_id.is_empty() {
+        if frame.ontology_enabled() && !self.agent_id.is_empty() {
             let node = UiNode::new("Tree", SemanticRole::TreeNode)
-                .with_id(&self.agent_id)
+                .with_id(self.agent_id.clone())
                 .with_bounds(area.into())
                 .with_property("root", self.root.to_json());
             frame.register_widget(node);

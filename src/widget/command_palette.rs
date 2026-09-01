@@ -86,7 +86,7 @@ pub struct CommandPalette {
     commands: Vec<PaletteCommand>,
     placeholder: String,
     style: Style,
-    agent_id: String,
+    agent_id: std::borrow::Cow<'static, str>,
 }
 
 impl CommandPalette {
@@ -96,7 +96,7 @@ impl CommandPalette {
             commands,
             placeholder: "Type a command...".into(),
             style: Style::default(),
-            agent_id: String::new(),
+            agent_id: std::borrow::Cow::Borrowed(""),
         }
     }
 
@@ -120,7 +120,7 @@ impl CommandPalette {
         self
     }
 
-    pub fn agent_id(mut self, id: impl Into<String>) -> Self {
+    pub fn agent_id(mut self, id: impl Into<std::borrow::Cow<'static, str>>) -> Self {
         self.agent_id = id.into();
         self
     }
@@ -292,19 +292,21 @@ impl StatefulWidget for CommandPalette {
         }
 
         if !self.agent_id.is_empty() {
-            let results: Vec<_> = filtered
-                .iter()
-                .map(|c| serde_json::json!({"id": c.id, "label": c.label}))
-                .collect();
-            let node = UiNode::new("CommandPalette", SemanticRole::Navigation)
-                .with_id(&self.agent_id)
-                .with_bounds(area.into())
-                .with_property("query", serde_json::json!(state.query))
-                .with_property("open", serde_json::json!(state.open))
-                .with_property("selected_index", serde_json::json!(state.selected_index))
-                .with_property("filtered_results", serde_json::json!(results));
-            frame.register_widget(node);
-            frame.register_hitbox(&self.agent_id, area, 10);
+            if frame.ontology_enabled() {
+                let results: Vec<_> = filtered
+                    .iter()
+                    .map(|c| serde_json::json!({"id": c.id, "label": c.label}))
+                    .collect();
+                let node = UiNode::new("CommandPalette", SemanticRole::Navigation)
+                    .with_id(self.agent_id.clone())
+                    .with_bounds(area.into())
+                    .with_property("query", serde_json::json!(state.query))
+                    .with_property("open", serde_json::json!(state.open))
+                    .with_property("selected_index", serde_json::json!(state.selected_index))
+                    .with_property("filtered_results", serde_json::json!(results));
+                frame.register_widget(node);
+            }
+            frame.register_hitbox(self.agent_id.clone(), area, 10);
         }
 
         // Palette window dimensions

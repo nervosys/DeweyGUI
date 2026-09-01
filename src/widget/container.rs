@@ -20,7 +20,7 @@ use crate::widget::Widget;
 pub struct Container {
     style: Style,
     title: Option<String>,
-    agent_id: String,
+    agent_id: std::borrow::Cow<'static, str>,
 }
 
 impl Container {
@@ -29,7 +29,7 @@ impl Container {
         Self {
             style: Style::default(),
             title: None,
-            agent_id: String::new(),
+            agent_id: std::borrow::Cow::Borrowed(""),
         }
     }
 
@@ -64,7 +64,7 @@ impl Container {
         self
     }
 
-    pub fn agent_id(mut self, id: impl Into<String>) -> Self {
+    pub fn agent_id(mut self, id: impl Into<std::borrow::Cow<'static, str>>) -> Self {
         self.agent_id = id.into();
         self
     }
@@ -127,9 +127,9 @@ impl Discoverable for Container {
 
 impl Widget for Container {
     fn render(self, area: Rect, frame: &mut Frame<'_>) {
-        if !self.agent_id.is_empty() {
+        if frame.ontology_enabled() && !self.agent_id.is_empty() {
             let mut node = UiNode::new("Container", SemanticRole::Container)
-                .with_id(&self.agent_id)
+                .with_id(self.agent_id.clone())
                 .with_bounds(area.into());
             if let Some(ref title) = self.title {
                 node = node.with_property("title", serde_json::json!(title));

@@ -24,7 +24,7 @@ pub struct Select {
     options: Vec<String>,
     label: String,
     style: Style,
-    agent_id: String,
+    agent_id: std::borrow::Cow<'static, str>,
 }
 
 impl Select {
@@ -34,7 +34,7 @@ impl Select {
             options,
             label: label.into(),
             style: Style::default(),
-            agent_id: String::new(),
+            agent_id: std::borrow::Cow::Borrowed(""),
         }
     }
 
@@ -58,7 +58,7 @@ impl Select {
         self
     }
 
-    pub fn agent_id(mut self, id: impl Into<String>) -> Self {
+    pub fn agent_id(mut self, id: impl Into<std::borrow::Cow<'static, str>>) -> Self {
         self.agent_id = id.into();
         self
     }
@@ -130,19 +130,21 @@ impl StatefulWidget for Select {
 
     fn render(self, area: Rect, frame: &mut Frame<'_>, state: &mut SelectState) {
         if !self.agent_id.is_empty() {
-            let selected_text = self
-                .options
-                .get(state.selected)
-                .cloned()
-                .unwrap_or_default();
-            let node = UiNode::new("Select", SemanticRole::Selection)
-                .with_id(&self.agent_id)
-                .with_bounds(area.into())
-                .with_property("options", serde_json::json!(self.options))
-                .with_property("selected", serde_json::json!(state.selected))
-                .with_property("selected_text", serde_json::json!(selected_text));
-            frame.register_widget(node);
-            frame.register_hitbox(&self.agent_id, area, 1);
+            if frame.ontology_enabled() {
+                let selected_text = self
+                    .options
+                    .get(state.selected)
+                    .cloned()
+                    .unwrap_or_default();
+                let node = UiNode::new("Select", SemanticRole::Selection)
+                    .with_id(self.agent_id.clone())
+                    .with_bounds(area.into())
+                    .with_property("options", serde_json::json!(self.options))
+                    .with_property("selected", serde_json::json!(state.selected))
+                    .with_property("selected_text", serde_json::json!(selected_text));
+                frame.register_widget(node);
+            }
+            frame.register_hitbox(self.agent_id.clone(), area, 1);
         }
 
         // Draw select box

@@ -81,9 +81,8 @@ impl<M: Model> RpcTransport<M> {
             // MAX_LINE_BYTES, so an unbounded line can never exhaust memory
             // before this guard fires.
             if oversized {
-                let resp = AgentResponse::err(format!(
-                    "Request too large (max {MAX_LINE_BYTES} bytes)"
-                ));
+                let resp =
+                    AgentResponse::err(format!("Request too large (max {MAX_LINE_BYTES} bytes)"));
                 let json = serde_json::to_string(&resp).unwrap_or_default();
                 writeln!(stdout, "{json}")?;
                 stdout.flush()?;

@@ -10,7 +10,7 @@ pub struct Checkbox {
     label: String,
     checked: bool,
     style: Style,
-    agent_id: String,
+    agent_id: std::borrow::Cow<'static, str>,
 }
 
 impl Checkbox {
@@ -20,7 +20,7 @@ impl Checkbox {
             label: label.into(),
             checked,
             style: Style::default(),
-            agent_id: String::new(),
+            agent_id: std::borrow::Cow::Borrowed(""),
         }
     }
 
@@ -34,7 +34,7 @@ impl Checkbox {
         self
     }
 
-    pub fn agent_id(mut self, id: impl Into<String>) -> Self {
+    pub fn agent_id(mut self, id: impl Into<std::borrow::Cow<'static, str>>) -> Self {
         self.agent_id = id.into();
         self
     }
@@ -100,13 +100,15 @@ impl Discoverable for Checkbox {
 impl Widget for Checkbox {
     fn render(self, area: Rect, frame: &mut Frame<'_>) {
         if !self.agent_id.is_empty() {
-            let node = UiNode::new("Checkbox", SemanticRole::Input)
-                .with_id(&self.agent_id)
-                .with_bounds(area.into())
-                .with_property("checked", serde_json::json!(self.checked))
-                .with_property("label", serde_json::json!(self.label));
-            frame.register_widget(node);
-            frame.register_hitbox(&self.agent_id, area, 1);
+            if frame.ontology_enabled() {
+                let node = UiNode::new("Checkbox", SemanticRole::Input)
+                    .with_id(self.agent_id.clone())
+                    .with_bounds(area.into())
+                    .with_property("checked", serde_json::json!(self.checked))
+                    .with_property("label", serde_json::json!(self.label));
+                frame.register_widget(node);
+            }
+            frame.register_hitbox(self.agent_id.clone(), area, 1);
         }
 
         let box_size = 16.0;

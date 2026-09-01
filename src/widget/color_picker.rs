@@ -21,7 +21,9 @@ impl ColorPickerState {
 
 impl Default for ColorPickerState {
     fn default() -> Self {
-        Self { color: Color::WHITE }
+        Self {
+            color: Color::WHITE,
+        }
     }
 }
 
@@ -33,7 +35,7 @@ pub struct ColorPicker {
     label: String,
     show_alpha: bool,
     style: Style,
-    agent_id: String,
+    agent_id: std::borrow::Cow<'static, str>,
 }
 
 impl ColorPicker {
@@ -43,7 +45,7 @@ impl ColorPicker {
             label: label.into(),
             show_alpha: true,
             style: Style::default(),
-            agent_id: String::new(),
+            agent_id: std::borrow::Cow::Borrowed(""),
         }
     }
 
@@ -62,7 +64,7 @@ impl ColorPicker {
         self
     }
 
-    pub fn agent_id(mut self, id: impl Into<String>) -> Self {
+    pub fn agent_id(mut self, id: impl Into<std::borrow::Cow<'static, str>>) -> Self {
         self.agent_id = id.into();
         self
     }
@@ -161,16 +163,18 @@ impl StatefulWidget for ColorPicker {
 
     fn render(self, area: Rect, frame: &mut Frame<'_>, state: &mut ColorPickerState) {
         if !self.agent_id.is_empty() {
-            let node = UiNode::new("ColorPicker", SemanticRole::Input)
-                .with_id(&self.agent_id)
-                .with_bounds(area.into())
-                .with_label(&self.label)
-                .with_property("r", serde_json::json!((state.color.r * 255.0) as u8))
-                .with_property("g", serde_json::json!((state.color.g * 255.0) as u8))
-                .with_property("b", serde_json::json!((state.color.b * 255.0) as u8))
-                .with_property("a", serde_json::json!((state.color.a * 255.0) as u8));
-            frame.register_widget(node);
-            frame.register_hitbox(&self.agent_id, area, 1);
+            if frame.ontology_enabled() {
+                let node = UiNode::new("ColorPicker", SemanticRole::Input)
+                    .with_id(self.agent_id.clone())
+                    .with_bounds(area.into())
+                    .with_label(&self.label)
+                    .with_property("r", serde_json::json!((state.color.r * 255.0) as u8))
+                    .with_property("g", serde_json::json!((state.color.g * 255.0) as u8))
+                    .with_property("b", serde_json::json!((state.color.b * 255.0) as u8))
+                    .with_property("a", serde_json::json!((state.color.a * 255.0) as u8));
+                frame.register_widget(node);
+            }
+            frame.register_hitbox(self.agent_id.clone(), area, 1);
         }
 
         // Draw a color swatch filled with the current color

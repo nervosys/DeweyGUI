@@ -62,7 +62,7 @@ pub enum DrawCommand {
 
 /// A custom drawing canvas with a declarative drawing command list.
 pub struct Canvas {
-    agent_id: String,
+    agent_id: std::borrow::Cow<'static, str>,
     commands: Vec<DrawCommand>,
     background: Option<[u8; 4]>,
 }
@@ -71,13 +71,13 @@ impl Canvas {
     #[must_use]
     pub fn new() -> Self {
         Self {
-            agent_id: String::new(),
+            agent_id: std::borrow::Cow::Borrowed(""),
             commands: Vec::new(),
             background: None,
         }
     }
 
-    pub fn agent_id(mut self, id: impl Into<String>) -> Self {
+    pub fn agent_id(mut self, id: impl Into<std::borrow::Cow<'static, str>>) -> Self {
         self.agent_id = id.into();
         self
     }
@@ -244,12 +244,14 @@ impl Discoverable for Canvas {
 impl Widget for Canvas {
     fn render(self, area: Rect, frame: &mut Frame<'_>) {
         if !self.agent_id.is_empty() {
-            let node = UiNode::new("Canvas", SemanticRole::Canvas)
-                .with_id(&self.agent_id)
-                .with_bounds(area.into())
-                .with_property("command_count", serde_json::json!(self.commands.len()));
-            frame.register_widget(node);
-            frame.register_hitbox(&self.agent_id, area, 1);
+            if frame.ontology_enabled() {
+                let node = UiNode::new("Canvas", SemanticRole::Canvas)
+                    .with_id(self.agent_id.clone())
+                    .with_bounds(area.into())
+                    .with_property("command_count", serde_json::json!(self.commands.len()));
+                frame.register_widget(node);
+            }
+            frame.register_hitbox(self.agent_id.clone(), area, 1);
         }
 
         // Background fill

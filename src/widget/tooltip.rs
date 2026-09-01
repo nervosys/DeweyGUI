@@ -15,7 +15,7 @@ pub struct Tooltip {
     /// The tooltip text shown on hover.
     text: String,
     style: Style,
-    agent_id: String,
+    agent_id: std::borrow::Cow<'static, str>,
 }
 
 impl Tooltip {
@@ -27,7 +27,7 @@ impl Tooltip {
             label: label.into(),
             text: text.into(),
             style: Style::default(),
-            agent_id: String::new(),
+            agent_id: std::borrow::Cow::Borrowed(""),
         }
     }
 
@@ -37,7 +37,7 @@ impl Tooltip {
             label: String::new(),
             text: text.into(),
             style: Style::default(),
-            agent_id: String::new(),
+            agent_id: std::borrow::Cow::Borrowed(""),
         }
     }
 
@@ -51,7 +51,7 @@ impl Tooltip {
         self
     }
 
-    pub fn agent_id(mut self, id: impl Into<String>) -> Self {
+    pub fn agent_id(mut self, id: impl Into<std::borrow::Cow<'static, str>>) -> Self {
         self.agent_id = id.into();
         self
     }
@@ -109,9 +109,9 @@ impl Discoverable for Tooltip {
 
 impl Widget for Tooltip {
     fn render(self, area: Rect, frame: &mut Frame<'_>) {
-        if !self.agent_id.is_empty() {
+        if frame.ontology_enabled() && !self.agent_id.is_empty() {
             let node = UiNode::new("Tooltip", SemanticRole::Display)
-                .with_id(&self.agent_id)
+                .with_id(self.agent_id.clone())
                 .with_bounds(area.into())
                 .with_property("label", serde_json::json!(self.label))
                 .with_property("text", serde_json::json!(self.text));

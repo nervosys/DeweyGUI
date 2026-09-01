@@ -151,9 +151,9 @@ impl UiTree {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UiNode {
     /// Optional unique agent-addressable ID.
-    pub agent_id: Option<String>,
+    pub agent_id: Option<std::borrow::Cow<'static, str>>,
     /// The widget type name (matches a registered schema).
-    pub widget_type: String,
+    pub widget_type: std::borrow::Cow<'static, str>,
     /// Semantic role of this instance.
     pub role: SemanticRole,
     /// Capabilities of this instance.
@@ -245,7 +245,7 @@ impl Accessibility {
 
 impl UiNode {
     #[must_use]
-    pub fn new(widget_type: impl Into<String>, role: SemanticRole) -> Self {
+    pub fn new(widget_type: impl Into<std::borrow::Cow<'static, str>>, role: SemanticRole) -> Self {
         Self {
             agent_id: None,
             widget_type: widget_type.into(),
@@ -260,7 +260,7 @@ impl UiNode {
     }
 
     #[must_use]
-    pub fn with_id(mut self, id: impl Into<String>) -> Self {
+    pub fn with_id(mut self, id: impl Into<std::borrow::Cow<'static, str>>) -> Self {
         self.agent_id = Some(id.into());
         self
     }

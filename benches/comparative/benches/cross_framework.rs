@@ -9,6 +9,7 @@
 use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
 
 const SIZES: [usize; 3] = [100, 1_000, 5_000];
+const SCALING: [usize; 5] = [1_000, 2_000, 3_000, 4_000, 5_000];
 
 // ── Dewey ──────────────────────────────────────────────────────────
 
@@ -29,6 +30,33 @@ fn dewey_scene(n: usize) -> usize {
         Button::new(format!("Action {i}")).render(Rect::new(210.0, y, 120.0, 24.0), &mut frame);
     }
     n
+}
+
+/// The same scene with agent ids set, so every widget also registers an
+/// ontology node and a hitbox. This is how a real Dewey app is written — the
+/// agent protocol is the point of the framework — so it is the number that
+/// matters most, and the one with the most headroom.
+fn dewey_agentic_scene(n: usize) -> usize {
+    use dewey::backend::test::TestBackend;
+    use dewey::core::Rect;
+    use dewey::event::HitMap;
+    use dewey::runtime::Frame;
+    use dewey::widget::{Button, Label, Widget};
+
+    let mut painter = TestBackend::new(1280.0, 720.0);
+    let mut hit_map = HitMap::new();
+    let mut frame = Frame::new(Rect::from_size(1280.0, 720.0), &mut hit_map, &mut painter);
+
+    for i in 0..n {
+        let y = (i % 30) as f32 * 24.0;
+        Label::new(format!("Item {i}"))
+            .agent_id("item")
+            .render(Rect::new(0.0, y, 200.0, 24.0), &mut frame);
+        Button::new(format!("Action {i}"))
+            .agent_id("action")
+            .render(Rect::new(210.0, y, 120.0, 24.0), &mut frame);
+    }
+    black_box(frame.take_nodes()).len()
 }
 
 // ── egui ───────────────────────────────────────────────────────────
@@ -132,6 +160,9 @@ fn bench_frame_build(c: &mut Criterion) {
         group.bench_with_input(BenchmarkId::new("dewey", n), &n, |b, &n| {
             b.iter(|| black_box(dewey_scene(black_box(n))))
         });
+        group.bench_with_input(BenchmarkId::new("dewey_agentic", n), &n, |b, &n| {
+            b.iter(|| black_box(dewey_agentic_scene(black_box(n))))
+        });
         group.bench_with_input(BenchmarkId::new("egui", n), &n, |b, &n| {
             b.iter(|| black_box(egui_scene(&ctx, black_box(n))))
         });
@@ -145,5 +176,15 @@ fn bench_frame_build(c: &mut Criterion) {
     group.finish();
 }
 
-criterion_group!(benches, bench_frame_build);
+fn bench_agentic_scaling(c: &mut Criterion) {
+    let mut group = c.benchmark_group("agentic_scaling");
+    for n in SCALING {
+        group.bench_with_input(BenchmarkId::new("dewey_agentic", n), &n, |b, &n| {
+            b.iter(|| black_box(dewey_agentic_scene(black_box(n))))
+        });
+    }
+    group.finish();
+}
+
+criterion_group!(benches, bench_frame_build, bench_agentic_scaling);
 criterion_main!(benches);

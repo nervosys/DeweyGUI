@@ -26,7 +26,7 @@ impl ScrollState {
 pub struct ScrollArea {
     horizontal: bool,
     vertical: bool,
-    agent_id: String,
+    agent_id: std::borrow::Cow<'static, str>,
 }
 
 impl ScrollArea {
@@ -35,7 +35,7 @@ impl ScrollArea {
         Self {
             horizontal: false,
             vertical: true,
-            agent_id: String::new(),
+            agent_id: std::borrow::Cow::Borrowed(""),
         }
     }
 
@@ -44,7 +44,7 @@ impl ScrollArea {
         Self {
             horizontal: true,
             vertical: false,
-            agent_id: String::new(),
+            agent_id: std::borrow::Cow::Borrowed(""),
         }
     }
 
@@ -53,11 +53,11 @@ impl ScrollArea {
         Self {
             horizontal: true,
             vertical: true,
-            agent_id: String::new(),
+            agent_id: std::borrow::Cow::Borrowed(""),
         }
     }
 
-    pub fn agent_id(mut self, id: impl Into<String>) -> Self {
+    pub fn agent_id(mut self, id: impl Into<std::borrow::Cow<'static, str>>) -> Self {
         self.agent_id = id.into();
         self
     }
@@ -133,9 +133,9 @@ impl StatefulWidget for ScrollArea {
     type State = ScrollState;
 
     fn render(self, area: Rect, frame: &mut Frame<'_>, state: &mut ScrollState) {
-        if !self.agent_id.is_empty() {
+        if frame.ontology_enabled() && !self.agent_id.is_empty() {
             let node = UiNode::new("ScrollArea", SemanticRole::Scrollable)
-                .with_id(&self.agent_id)
+                .with_id(self.agent_id.clone())
                 .with_bounds(area.into())
                 .with_property("scroll_x", serde_json::json!(state.offset_x))
                 .with_property("scroll_y", serde_json::json!(state.offset_y));

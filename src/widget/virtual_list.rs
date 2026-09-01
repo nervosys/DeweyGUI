@@ -53,7 +53,7 @@ pub struct VirtualList<F> {
     render_item: F,
     /// Number of extra items to render above/below the viewport.
     overscan: usize,
-    agent_id: String,
+    agent_id: std::borrow::Cow<'static, str>,
 }
 
 impl<F> VirtualList<F>
@@ -65,7 +65,7 @@ where
             item_height,
             render_item,
             overscan: 2,
-            agent_id: String::new(),
+            agent_id: std::borrow::Cow::Borrowed(""),
         }
     }
 
@@ -74,7 +74,7 @@ where
         self
     }
 
-    pub fn agent_id(mut self, id: impl Into<String>) -> Self {
+    pub fn agent_id(mut self, id: impl Into<std::borrow::Cow<'static, str>>) -> Self {
         self.agent_id = id.into();
         self
     }
@@ -197,15 +197,17 @@ where
         );
 
         if !self.agent_id.is_empty() {
-            let node = UiNode::new("VirtualList", SemanticRole::Scrollable)
-                .with_id(&self.agent_id)
-                .with_bounds(area.into())
-                .with_property("total_items", serde_json::json!(state.total_items))
-                .with_property("scroll_offset", serde_json::json!(state.scroll_offset))
-                .with_property("visible_start", serde_json::json!(range.start))
-                .with_property("visible_end", serde_json::json!(range.end));
-            frame.register_widget(node);
-            frame.register_hitbox(&self.agent_id, area, 1);
+            if frame.ontology_enabled() {
+                let node = UiNode::new("VirtualList", SemanticRole::Scrollable)
+                    .with_id(self.agent_id.clone())
+                    .with_bounds(area.into())
+                    .with_property("total_items", serde_json::json!(state.total_items))
+                    .with_property("scroll_offset", serde_json::json!(state.scroll_offset))
+                    .with_property("visible_start", serde_json::json!(range.start))
+                    .with_property("visible_end", serde_json::json!(range.end));
+                frame.register_widget(node);
+            }
+            frame.register_hitbox(self.agent_id.clone(), area, 1);
         }
 
         for i in range {

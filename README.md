@@ -243,6 +243,29 @@ headless with no GPU. Full methodology, raw numbers, and caveats in
 Dewey was fastest at every size across two independent runs. Reproduce with
 `cd benches/comparative && cargo bench`.
 
+> ⚠️ These timings are provisional — they were captured on a fully loaded
+> machine and need re-measuring on an idle one. The allocation figures below
+> are deterministic and unaffected.
+
+### Frame allocation cost
+
+Heap traffic per row (one `Label` + one `Button`), measured with a counting
+allocator via `cargo run --release --bin allocs`:
+
+| Configuration           | Allocations/row | Bytes/row |
+| ----------------------- | --------------- | --------- |
+| No agent ids            | 4.0             | 500       |
+| Agent ids, ontology on  | 11.0            | 3173      |
+| Agent ids, ontology off | 4.0             | 598       |
+
+Building the agent ontology is the dominant per-frame cost in an agentic UI.
+Two changes cut it: `UiNode` ids and widget-type names are now
+`Cow<'static, str>` rather than freshly allocated `String`s (18.0 → 11.0
+allocations per row with an agent attached), and `ProgramOptions::ontology`
+lets an application that will never be agent-driven skip node construction
+entirely (18.0 → 4.0 per row, −81% bytes). Hit-testing and painting are
+unaffected either way.
+
 Two caveats worth stating plainly: Dewey estimates text extents during frame
 build rather than shaping glyphs — its GPU backends pay that cost at render
 time, which narrows the 5000-row gap from ~12× to roughly ~4–5× — and Dewey

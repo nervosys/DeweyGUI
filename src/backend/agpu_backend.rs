@@ -472,6 +472,8 @@ struct RunningApp<M: Model> {
     text: agpu::TextEngine,
     hit_map: HitMap,
     ontology: OntologyRegistry,
+    /// Whether to build the ontology tree each frame (see `ProgramOptions::ontology`).
+    ontology_enabled: bool,
     plugins: PluginRegistry,
     profiler: Option<Profiler>,
     running: bool,
@@ -593,6 +595,7 @@ impl<M: Model + 'static> RunningApp<M> {
             text,
             hit_map: HitMap::new(),
             ontology,
+            ontology_enabled: options.ontology,
             plugins,
             profiler,
             running: true,
@@ -684,7 +687,8 @@ impl<M: Model + 'static> RunningApp<M> {
         }
         {
             let mut painter = AgpuBridgePainter::new(&mut self.shapes, &mut self.text);
-            let mut dewey_frame = Frame::new(area, &mut self.hit_map, &mut painter);
+            let mut dewey_frame =
+                Frame::with_ontology(area, &mut self.hit_map, &mut painter, self.ontology_enabled);
             self.model.view(&mut dewey_frame);
 
             let nodes = dewey_frame.take_nodes();

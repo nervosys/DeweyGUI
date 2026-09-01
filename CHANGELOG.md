@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Performance
+
+- `UiNode::widget_type`, `UiNode::agent_id`, and hit-map ids are now
+  `Cow<'static, str>` instead of `String`. Every call site passes a string
+  literal, so agentic frames no longer allocate a `String` per widget per
+  field: 18.0 → 11.0 allocations per row (−39%).
+- `Frame::with_ontology` and `ProgramOptions::ontology` let an application skip
+  building the agent ontology tree when no agent will inspect it. Widgets check
+  `Frame::ontology_enabled()` before constructing a `UiNode`, so the cost is
+  skipped rather than discarded: 18.0 → 4.0 allocations per row and 3210 → 598
+  bytes per row (−81%). Defaults to `true`; hit-testing and painting are
+  unaffected when disabled.
+
+### Added
+
+- `benches/comparative` — a standalone crate benchmarking frame-build cost
+  against egui 0.31 and iced 0.13, plus an `allocs` binary that reports
+  deterministic per-frame allocation counts.
+- Regression tests covering the ontology gate: hitboxes and draw calls must be
+  identical whether or not the ontology is built.
+
+### Changed
+
+- `UiNode.widget_type` and `UiNode.agent_id` changed type (`String` →
+  `Cow<'static, str>`). Code that constructs these with literals or `String`s
+  is unaffected; code that reads the fields as `&String` needs `&*` or
+  `.as_ref()`.
+
 ## [1.0.0] - 2025-07-05
 
 ### Added

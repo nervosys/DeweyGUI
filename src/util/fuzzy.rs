@@ -62,11 +62,7 @@ pub fn fuzzy_filter<'a>(query: &str, candidates: &'a [&str]) -> Vec<(&'a str, u3
         .iter()
         .filter_map(|&c| {
             let s = fuzzy_score(query, c);
-            if s > 0 {
-                Some((c, s))
-            } else {
-                None
-            }
+            if s > 0 { Some((c, s)) } else { None }
         })
         .collect();
     results.sort_by_key(|b| std::cmp::Reverse(b.1));

@@ -47,16 +47,16 @@ impl AgentSession {
 
         while let Some(node) = stack.pop() {
             if let Some(ref id) = node.agent_id {
-                let changed = match self.prev_states.get(id) {
+                let changed = match self.prev_states.get(id.as_ref()) {
                     Some(prev) => prev != &node.state,
                     None => true,
                 };
                 if changed {
                     events.push(AgentEvent::StateChanged {
-                        agent_id: id.clone(),
+                        agent_id: id.to_string(),
                         state: node.state.clone(),
                     });
-                    self.prev_states.insert(id.clone(), node.state.clone());
+                    self.prev_states.insert(id.to_string(), node.state.clone());
                 }
             }
             for child in &node.children {

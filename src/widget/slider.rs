@@ -31,7 +31,7 @@ pub struct Slider {
     step: f64,
     label: String,
     style: Style,
-    agent_id: String,
+    agent_id: std::borrow::Cow<'static, str>,
 }
 
 impl Slider {
@@ -43,7 +43,7 @@ impl Slider {
             step: 1.0,
             label: String::new(),
             style: Style::default(),
-            agent_id: String::new(),
+            agent_id: std::borrow::Cow::Borrowed(""),
         }
     }
 
@@ -72,7 +72,7 @@ impl Slider {
         self
     }
 
-    pub fn agent_id(mut self, id: impl Into<String>) -> Self {
+    pub fn agent_id(mut self, id: impl Into<std::borrow::Cow<'static, str>>) -> Self {
         self.agent_id = id.into();
         self
     }
@@ -149,14 +149,16 @@ impl StatefulWidget for Slider {
 
     fn render(self, area: Rect, frame: &mut Frame<'_>, state: &mut SliderState) {
         if !self.agent_id.is_empty() {
-            let node = UiNode::new("Slider", SemanticRole::Input)
-                .with_id(&self.agent_id)
-                .with_bounds(area.into())
-                .with_property("value", serde_json::json!(state.value))
-                .with_property("min", serde_json::json!(self.min))
-                .with_property("max", serde_json::json!(self.max));
-            frame.register_widget(node);
-            frame.register_hitbox(&self.agent_id, area, 1);
+            if frame.ontology_enabled() {
+                let node = UiNode::new("Slider", SemanticRole::Input)
+                    .with_id(self.agent_id.clone())
+                    .with_bounds(area.into())
+                    .with_property("value", serde_json::json!(state.value))
+                    .with_property("min", serde_json::json!(self.min))
+                    .with_property("max", serde_json::json!(self.max));
+                frame.register_widget(node);
+            }
+            frame.register_hitbox(self.agent_id.clone(), area, 1);
         }
 
         // Track

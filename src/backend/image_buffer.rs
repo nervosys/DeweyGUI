@@ -289,12 +289,16 @@ impl Painter for ImagePainter {
                 if a == 0 {
                     continue;
                 }
-                self.set_pixel(x, y, Color::rgba(
-                    r as f32 / 255.0,
-                    g as f32 / 255.0,
-                    b as f32 / 255.0,
-                    a as f32 / 255.0,
-                ));
+                self.set_pixel(
+                    x,
+                    y,
+                    Color::rgba(
+                        r as f32 / 255.0,
+                        g as f32 / 255.0,
+                        b as f32 / 255.0,
+                        a as f32 / 255.0,
+                    ),
+                );
             }
         }
     }
@@ -319,8 +323,14 @@ mod tests {
         ];
         p.fill_path(&l_shape, Color::RED);
 
-        assert!(p.get_pixel(10, 10).r > 0.9, "the upper arm should be filled");
-        assert!(p.get_pixel(30, 30).r > 0.9, "the lower arm should be filled");
+        assert!(
+            p.get_pixel(10, 10).r > 0.9,
+            "the upper arm should be filled"
+        );
+        assert!(
+            p.get_pixel(30, 30).r > 0.9,
+            "the lower arm should be filled"
+        );
         assert!(
             p.get_pixel(30, 10).a < 0.01,
             "the notch must stay empty — a bounding-box fill would cover it"

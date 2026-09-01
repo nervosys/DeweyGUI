@@ -103,7 +103,7 @@ pub struct Table {
     headers: Vec<String>,
     rows: Vec<Vec<String>>,
     style: Style,
-    agent_id: String,
+    agent_id: std::borrow::Cow<'static, str>,
 }
 
 impl Table {
@@ -113,7 +113,7 @@ impl Table {
             headers,
             rows,
             style: Style::default(),
-            agent_id: String::new(),
+            agent_id: std::borrow::Cow::Borrowed(""),
         }
     }
 
@@ -132,7 +132,7 @@ impl Table {
         self
     }
 
-    pub fn agent_id(mut self, id: impl Into<String>) -> Self {
+    pub fn agent_id(mut self, id: impl Into<std::borrow::Cow<'static, str>>) -> Self {
         self.agent_id = id.into();
         self
     }
@@ -305,30 +305,32 @@ impl StatefulWidget for Table {
         };
 
         if !self.agent_id.is_empty() {
-            let node = UiNode::new("Table", SemanticRole::DataVisualization)
-                .with_id(&self.agent_id)
-                .with_bounds(area.into())
-                .with_property("headers", serde_json::json!(self.headers))
-                .with_property("row_count", serde_json::json!(self.rows.len()))
-                .with_property("visible_count", serde_json::json!(total_visible))
-                .with_property("selected_row", serde_json::json!(state.selected_row))
-                .with_property(
-                    "sort_column",
-                    serde_json::json!(state.sort_column.map(|(c, d)| {
-                        serde_json::json!({"column": c, "direction": match d {
-                            SortDirection::Ascending => "asc",
-                            SortDirection::Descending => "desc",
-                        }})
-                    })),
-                )
-                .with_property("filter", serde_json::json!(state.filter))
-                .with_property("page", serde_json::json!(state.current_page))
-                .with_property(
-                    "total_pages",
-                    serde_json::json!(state.total_pages(total_visible)),
-                );
-            frame.register_widget(node);
-            frame.register_hitbox(&self.agent_id, area, 1);
+            if frame.ontology_enabled() {
+                let node = UiNode::new("Table", SemanticRole::DataVisualization)
+                    .with_id(self.agent_id.clone())
+                    .with_bounds(area.into())
+                    .with_property("headers", serde_json::json!(self.headers))
+                    .with_property("row_count", serde_json::json!(self.rows.len()))
+                    .with_property("visible_count", serde_json::json!(total_visible))
+                    .with_property("selected_row", serde_json::json!(state.selected_row))
+                    .with_property(
+                        "sort_column",
+                        serde_json::json!(state.sort_column.map(|(c, d)| {
+                            serde_json::json!({"column": c, "direction": match d {
+                                SortDirection::Ascending => "asc",
+                                SortDirection::Descending => "desc",
+                            }})
+                        })),
+                    )
+                    .with_property("filter", serde_json::json!(state.filter))
+                    .with_property("page", serde_json::json!(state.current_page))
+                    .with_property(
+                        "total_pages",
+                        serde_json::json!(state.total_pages(total_visible)),
+                    );
+                frame.register_widget(node);
+            }
+            frame.register_hitbox(self.agent_id.clone(), area, 1);
         }
 
         frame.painter().push_clip(area);

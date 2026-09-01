@@ -29,11 +29,58 @@ rasterization, no windowing, no presentation.
 - **iced** — widget tree built, then `Widget::layout` + `Widget::draw` against
   the `tiny-skia` renderer, which accumulates primitives into layers.
 
+## Allocation counts (deterministic)
+
+Wall-clock numbers on a loaded machine are worthless — see the warning below —
+so the primary metric here is heap traffic per frame, which does not care what
+else the CPU is doing:
+
+```bash
+cd benches/comparative && cargo run --release --bin allocs
+```
+
+Per row (one `Label` + one `Button`), 1000 rows:
+
+| Configuration                      | Allocations/row | Bytes/row |
+| ---------------------------------- | --------------- | --------- |
+| No agent ids                       | 4.0             | 500       |
+| Agent ids, ontology on — *before*  | 18.0            | 3210      |
+| Agent ids, ontology on — *after*   | **11.0**        | 3173      |
+| Agent ids, ontology off — *after*  | **4.0**         | 598       |
+
+Two optimizations produced this:
+
+1. **`Cow<'static, str>` for `UiNode::widget_type`, `UiNode::agent_id`, and
+   hit-map ids.** Every call site passes a string literal, so a frame used to
+   allocate and free a `String` per widget per field for no reason. Agentic
+   frames dropped from 18.0 to 11.0 allocations per row (−39%) with an agent
+   attached.
+2. **`Frame::with_ontology(..., false)`.** A frame no agent will inspect used to
+   build a `UiNode` per widget and throw it away. Widgets now check
+   `frame.ontology_enabled()` *before* constructing the node, so the cost is
+   skipped rather than discarded: 18.0 → 4.0 allocations per row (−78%) and
+   3210 → 598 bytes per row (−81%), identical to a UI with no agent ids at all.
+   Set it via `ProgramOptions::ontology` (default `true`, so nothing changes
+   unless you opt out).
+
+Hit-testing is deliberately *not* gated — node registration and hitbox
+registration live in the same guarded block in every widget, and gating both
+would leave buttons that render correctly but are dead to the mouse.
+`ontology_gate_skips_nodes_but_keeps_hitboxes` in `tests/integration.rs` locks
+this down.
+
 ## Results
 
+> ⚠️ **These timings are provisional.** They were captured on a machine pinned
+> at 100% CPU by unrelated work. A later run measured the *unchanged* plain
+> path at 70 µs where it had previously measured 22 µs — a 3× swing on code
+> that did not change — and measured 3000 rows as slower than 5000 rows, which
+> is impossible. The ordering below was stable across two runs, but the ratios
+> should be re-measured on an idle machine before being quoted anywhere.
+> The allocation counts above are unaffected by load and can be trusted.
+
 Windows 11, release profile, criterion, two runs of 8 s measurement time each.
-Ranges below span the medians of both runs — this machine is noisy, so treat
-these as order-of-magnitude, not precise ratios.
+Ranges below span the medians of both runs.
 
 | Rows  | Dewey          | egui           | iced           | Dewey vs egui | Dewey vs iced |
 | ----- | -------------- | -------------- | -------------- | ------------- | ------------- |
@@ -71,7 +118,14 @@ Dewey < iced < egui held at 100 and 1000 rows; at 5000 rows iced overtakes egui
    upload, and present are all excluded. A framework that generates commands
    quickly but produces more expensive command streams would not show up here.
 
-5. **Slint, Dioxus, and GTK are not included.** Slint requires build-time
+5. **The Dewey column has no agent ids set.** That is the fair comparison —
+   egui and iced have no ontology to build — but it is not how a Dewey app is
+   written. With agent ids on every widget and the ontology enabled, frame
+   build costs roughly an order of magnitude more; the `dewey_agentic`
+   benchmark measures exactly that, and the allocation work above is aimed at
+   closing the gap.
+
+6. **Slint, Dioxus, and GTK are not included.** Slint requires build-time
    codegen, Dioxus targets a DOM/VDOM model, and GTK needs a display server —
    none has a comparable headless command-generation entry point, so any number
    would be measuring a different thing.

@@ -177,6 +177,8 @@ pub struct Frame<'a> {
     ui_nodes: Vec<crate::ontology::UiNode>,
     /// The painter for this frame.
     painter: &'a mut dyn crate::paint::Painter,
+    /// Whether anything is listening to the ontology this frame.
+    ontology: bool,
 }
 
 impl<'a> Frame<'a> {
@@ -186,12 +188,37 @@ impl<'a> Frame<'a> {
         hit_map: &'a mut crate::event::HitMap,
         painter: &'a mut dyn crate::paint::Painter,
     ) -> Self {
+        Self::with_ontology(area, hit_map, painter, true)
+    }
+
+    /// Create a frame, choosing whether to build the ontology tree.
+    ///
+    /// Building the tree costs an allocation-heavy `UiNode` per widget, and a
+    /// frame that no agent will ever inspect throws all of it away. Pass
+    /// `false` when no agent session is attached; hit-testing and painting are
+    /// unaffected, so input keeps working either way.
+    pub fn with_ontology(
+        area: Rect,
+        hit_map: &'a mut crate::event::HitMap,
+        painter: &'a mut dyn crate::paint::Painter,
+        ontology: bool,
+    ) -> Self {
         Self {
             area,
             hit_map,
             ui_nodes: Vec::new(),
             painter,
+            ontology,
         }
+    }
+
+    /// Whether this frame is collecting ontology nodes.
+    ///
+    /// Widgets check this before building a [`UiNode`](crate::ontology::UiNode)
+    /// so the construction cost is skipped, not just the registration.
+    #[must_use]
+    pub fn ontology_enabled(&self) -> bool {
+        self.ontology
     }
 
     /// Get a mutable reference to the painter for this frame.
@@ -201,11 +228,19 @@ impl<'a> Frame<'a> {
 
     /// Register a widget in the UI tree for agent discoverability.
     pub fn register_widget(&mut self, node: crate::ontology::UiNode) {
+        if !self.ontology {
+            return;
+        }
         self.ui_nodes.push(node);
     }
 
     /// Register a hitbox for mouse event routing.
-    pub fn register_hitbox(&mut self, agent_id: impl Into<String>, bounds: Rect, z_order: u32) {
+    pub fn register_hitbox(
+        &mut self,
+        agent_id: impl Into<std::borrow::Cow<'static, str>>,
+        bounds: Rect,
+        z_order: u32,
+    ) {
         self.hit_map.register(agent_id, bounds, z_order);
     }
 
@@ -231,6 +266,14 @@ pub struct ProgramOptions {
     pub vsync: bool,
     /// Whether to use a transparent window.
     pub transparent: bool,
+    /// Whether to build the agent ontology tree each frame.
+    ///
+    /// On by default, so agents can inspect the UI at any time. Building the
+    /// tree allocates a [`UiNode`](crate::ontology::UiNode) per widget every
+    /// frame; an application that will never be driven by an agent can set
+    /// this to `false` to skip that work. Hit-testing and input are
+    /// unaffected.
+    pub ontology: bool,
 }
 
 impl Default for ProgramOptions {
@@ -243,6 +286,7 @@ impl Default for ProgramOptions {
             resizable: true,
             vsync: true,
             transparent: false,
+            ontology: true,
         }
     }
 }

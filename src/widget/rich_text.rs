@@ -90,7 +90,7 @@ impl TextSpan {
 /// A rich text widget that renders styled text spans.
 pub struct RichText {
     spans: Vec<TextSpan>,
-    agent_id: String,
+    agent_id: std::borrow::Cow<'static, str>,
     font_size: f32,
     base_color: Color,
 }
@@ -101,7 +101,7 @@ impl RichText {
     pub fn new(spans: Vec<TextSpan>) -> Self {
         Self {
             spans,
-            agent_id: String::new(),
+            agent_id: std::borrow::Cow::Borrowed(""),
             font_size: 14.0,
             base_color: Color::WHITE,
         }
@@ -116,7 +116,7 @@ impl RichText {
     }
 
     /// Set the agent ID.
-    pub fn agent_id(mut self, id: impl Into<String>) -> Self {
+    pub fn agent_id(mut self, id: impl Into<std::borrow::Cow<'static, str>>) -> Self {
         self.agent_id = id.into();
         self
     }
@@ -242,10 +242,10 @@ impl Discoverable for RichText {
 
 impl Widget for RichText {
     fn render(self, area: Rect, frame: &mut Frame<'_>) {
-        if !self.agent_id.is_empty() {
+        if frame.ontology_enabled() && !self.agent_id.is_empty() {
             let plain: String = self.spans.iter().map(|s| s.text.as_str()).collect();
             let node = UiNode::new("RichText", SemanticRole::Display)
-                .with_id(&self.agent_id)
+                .with_id(self.agent_id.clone())
                 .with_bounds(area.into())
                 .with_property("text", serde_json::json!(plain));
             frame.register_widget(node);

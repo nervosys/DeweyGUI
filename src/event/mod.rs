@@ -189,7 +189,7 @@ pub struct HitMap {
 
 #[derive(Debug)]
 struct HitEntry {
-    agent_id: String,
+    agent_id: std::borrow::Cow<'static, str>,
     bounds: crate::core::rect::Rect,
     z_order: u32,
 }
@@ -207,7 +207,7 @@ impl HitMap {
     /// Register a widget's clickable bounds.
     pub fn register(
         &mut self,
-        agent_id: impl Into<String>,
+        agent_id: impl Into<std::borrow::Cow<'static, str>>,
         bounds: crate::core::rect::Rect,
         z_order: u32,
     ) {
@@ -224,7 +224,7 @@ impl HitMap {
             .iter()
             .filter(|e| e.bounds.contains(pos))
             .max_by_key(|e| e.z_order)
-            .map(|e| e.agent_id.as_str())
+            .map(|e| e.agent_id.as_ref())
     }
 }
 

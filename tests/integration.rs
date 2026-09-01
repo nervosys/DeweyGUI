@@ -1033,3 +1033,61 @@ fn select_builder_api() {
         .rounded(4.0);
     assert_eq!(sel.agent_state()["options"].as_array().unwrap().len(), 3);
 }
+
+// ── Ontology gating ────────────────────────────────────────────────
+
+/// Skipping ontology construction must not break input routing. The node tree
+/// and the hit map are built in the same guarded block in every widget, so it
+/// is easy to gate both by accident — a button that no longer hit-tests looks
+/// fine on screen and is simply dead to the mouse.
+#[test]
+fn ontology_gate_skips_nodes_but_keeps_hitboxes() {
+    use dewey::backend::test::TestBackend;
+    use dewey::core::{Position, Rect};
+    use dewey::event::HitMap;
+    use dewey::runtime::Frame;
+    use dewey::widget::{Button, Widget};
+
+    let area = Rect::new(0.0, 0.0, 100.0, 40.0);
+
+    // Ontology on: node registered, hitbox registered.
+    let mut painter = TestBackend::new(200.0, 100.0);
+    let mut hit_map = HitMap::new();
+    let mut frame = Frame::with_ontology(area, &mut hit_map, &mut painter, true);
+    Button::new("Go").agent_id("go").render(area, &mut frame);
+    assert_eq!(frame.take_nodes().len(), 1, "ontology on: node expected");
+    assert_eq!(hit_map.hit_test(Position::new(50.0, 20.0)), Some("go"));
+
+    // Ontology off: no node, but the hitbox must survive.
+    let mut painter = TestBackend::new(200.0, 100.0);
+    let mut hit_map = HitMap::new();
+    let mut frame = Frame::with_ontology(area, &mut hit_map, &mut painter, false);
+    Button::new("Go").agent_id("go").render(area, &mut frame);
+    assert!(frame.take_nodes().is_empty(), "ontology off: no nodes");
+    assert_eq!(
+        hit_map.hit_test(Position::new(50.0, 20.0)),
+        Some("go"),
+        "ontology off must not disable hit-testing"
+    );
+}
+
+/// Painting is identical either way — the gate is invisible on screen.
+#[test]
+fn ontology_gate_does_not_change_rendering() {
+    use dewey::backend::test::TestBackend;
+    use dewey::core::Rect;
+    use dewey::event::HitMap;
+    use dewey::runtime::Frame;
+    use dewey::widget::{Button, Widget};
+
+    let area = Rect::new(0.0, 0.0, 100.0, 40.0);
+    let mut counts = Vec::new();
+    for enabled in [true, false] {
+        let mut painter = TestBackend::new(200.0, 100.0);
+        let mut hit_map = HitMap::new();
+        let mut frame = Frame::with_ontology(area, &mut hit_map, &mut painter, enabled);
+        Button::new("Go").agent_id("go").render(area, &mut frame);
+        counts.push(painter.ops().len());
+    }
+    assert_eq!(counts[0], counts[1], "gate must not change draw calls");
+}

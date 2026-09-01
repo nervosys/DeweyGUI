@@ -52,7 +52,7 @@ impl ToolbarItem {
 pub struct Toolbar {
     items: Vec<ToolbarItem>,
     style: Style,
-    agent_id: String,
+    agent_id: std::borrow::Cow<'static, str>,
 }
 
 impl Toolbar {
@@ -61,7 +61,7 @@ impl Toolbar {
         Self {
             items,
             style: Style::default(),
-            agent_id: String::new(),
+            agent_id: std::borrow::Cow::Borrowed(""),
         }
     }
 
@@ -80,7 +80,7 @@ impl Toolbar {
         self
     }
 
-    pub fn agent_id(mut self, id: impl Into<String>) -> Self {
+    pub fn agent_id(mut self, id: impl Into<std::borrow::Cow<'static, str>>) -> Self {
         self.agent_id = id.into();
         self
     }
@@ -178,25 +178,27 @@ impl Discoverable for Toolbar {
 impl Widget for Toolbar {
     fn render(self, area: Rect, frame: &mut Frame<'_>) {
         if !self.agent_id.is_empty() {
-            let mut node = UiNode::new("Toolbar", SemanticRole::Navigation)
-                .with_id(&self.agent_id)
-                .with_bounds(area.into());
+            if frame.ontology_enabled() {
+                let mut node = UiNode::new("Toolbar", SemanticRole::Navigation)
+                    .with_id(self.agent_id.clone())
+                    .with_bounds(area.into());
 
-            let items_json: Vec<_> = self
-                .items
-                .iter()
-                .map(|i| {
-                    serde_json::json!({
-                        "id": i.id,
-                        "label": i.label,
-                        "enabled": i.enabled,
-                        "toggled": i.toggled,
+                let items_json: Vec<_> = self
+                    .items
+                    .iter()
+                    .map(|i| {
+                        serde_json::json!({
+                            "id": i.id,
+                            "label": i.label,
+                            "enabled": i.enabled,
+                            "toggled": i.toggled,
+                        })
                     })
-                })
-                .collect();
-            node = node.with_property("items", serde_json::json!(items_json));
-            frame.register_widget(node);
-            frame.register_hitbox(&self.agent_id, area, 1);
+                    .collect();
+                node = node.with_property("items", serde_json::json!(items_json));
+                frame.register_widget(node);
+            }
+            frame.register_hitbox(self.agent_id.clone(), area, 1);
         }
 
         // Toolbar background

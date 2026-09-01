@@ -20,7 +20,7 @@ pub struct Panel {
     side: PanelSide,
     title: Option<String>,
     style: Style,
-    agent_id: String,
+    agent_id: std::borrow::Cow<'static, str>,
 }
 
 impl Panel {
@@ -30,7 +30,7 @@ impl Panel {
             side,
             title: None,
             style: Style::default(),
-            agent_id: String::new(),
+            agent_id: std::borrow::Cow::Borrowed(""),
         }
     }
 
@@ -59,7 +59,7 @@ impl Panel {
         self
     }
 
-    pub fn agent_id(mut self, id: impl Into<String>) -> Self {
+    pub fn agent_id(mut self, id: impl Into<std::borrow::Cow<'static, str>>) -> Self {
         self.agent_id = id.into();
         self
     }
@@ -118,9 +118,9 @@ impl Discoverable for Panel {
 
 impl Widget for Panel {
     fn render(self, area: Rect, frame: &mut Frame<'_>) {
-        if !self.agent_id.is_empty() {
+        if frame.ontology_enabled() && !self.agent_id.is_empty() {
             let node = UiNode::new("Panel", SemanticRole::Container)
-                .with_id(&self.agent_id)
+                .with_id(self.agent_id.clone())
                 .with_bounds(area.into())
                 .with_property("side", serde_json::json!(format!("{:?}", self.side)));
             frame.register_widget(node);
