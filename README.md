@@ -259,6 +259,50 @@ asymmetry — Dewey estimates text extents during frame build and shapes in the
 backend, where egui and iced shape inline (~10% of egui's frame). Tessellation,
 rasterization, and present are excluded for all three.
 
+### Agent Scaffolding and Verification
+
+Frame time is only half of what an agent-first framework should be judged on.
+The other half is what an agent pays to *build* a program and then confirm it
+works. Full methodology in [`benches/scaffold/`](benches/scaffold/README.md).
+
+Writing the same canonical counter app — label, three buttons, wired state:
+
+| Framework     | Code lines | ~Tokens | `cargo check` |
+| ------------- | ---------- | ------- | ------------- |
+| Dewey (plain) | 39         | 425     | 4.39 s        |
+| Dewey (agent) | 52         | 495     | 4.65 s        |
+| **egui 0.31** | **33**     | **274** | **2.70 s**    |
+| **iced 0.13** | 37         | 276     | **2.23 s**    |
+
+**Dewey loses on scaffolding cost.** A plain Dewey counter costs ~1.55× egui's
+tokens and ~1.6× its compile-check latency — the Elm `Msg` enum and explicit
+constraint layout are real code that immediate mode does not need.
+
+Verifying it afterwards is where that inverts. Dewey closes the full
+discover → understand → act → verify loop over the agent protocol headlessly,
+with no window, GPU or screenshot:
+
+| Step                                  | Time        |
+| ------------------------------------- | ----------- |
+| discover (`get_tree`)                 | 5.8 µs      |
+| understand (`query_ontology`)         | 1.1 µs      |
+| read schema (`get_schema`)            | 1.1 µs      |
+| act (`execute_action inc.click`)      | 1.4 µs      |
+| verify (`get_state count`)            | 2.1 µs      |
+| **full loop**                         | **11.9 µs** |
+
+≈84,000 complete agent loops per second, single-threaded. egui and iced have no
+equivalent to measure: neither exposes a widget tree, a typed action, or a
+readable state snapshot to an external process, so an agent must open a real
+window, synthesise input at guessed coordinates, screenshot it and ask a vision
+model what the label says. That returns a probabilistic reading of an image
+where `get_state` returns `"Count: 1"` — an agent can assert on one and only
+guess at the other.
+
+So: Dewey is worse at being *written* by an agent, and uniquely good at being
+*verified* by one. Verification cost is paid on every iteration, and an agent
+that cannot check its work reliably does more iterations.
+
 ### Frame allocation cost
 
 Heap traffic per row (one `Label` + one `Button`), measured with a counting

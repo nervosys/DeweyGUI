@@ -123,7 +123,12 @@ pub trait Model: Sized {
 
     /// Convert a raw event into an application message.
     /// Return `None` to ignore the event.
-    fn handle_event(&self, event: crate::event::Event) -> Option<Self::Msg>;
+    /// Defaults to ignoring every event, which is what an application driven
+    /// entirely by widget interaction and agent actions wants. Override to
+    /// handle raw keyboard or mouse input.
+    fn handle_event(&self, _event: crate::event::Event) -> Option<Self::Msg> {
+        None
+    }
 
     /// Called once at startup. Return an initial command.
     fn init(&self) -> Command<Self::Msg> {

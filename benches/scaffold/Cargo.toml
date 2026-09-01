@@ -1,0 +1,14 @@
+# Agent-scaffolding benchmark. Standalone crate so the framework itself never
+# depends on eframe or iced. See README.md.
+[package]
+name = "dewey-scaffold-benches"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+dewey = { package = "deweygui", path = "../.." }
+eframe = "0.31"
+egui = "0.31"
+iced = "0.13"
+serde_json = "1"

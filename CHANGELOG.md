@@ -48,6 +48,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `benches/scaffold` — canonical counter app implemented in Dewey (with and
+  without agent affordances), egui, and iced, with `measure.py` reporting what
+  an agent must write and how long it waits for `cargo check`.
+- `agent_loop` benchmark measuring the full headless discover → understand →
+  act → verify loop over the agent protocol: 11.9 µs end to end, ≈84,000 loops
+  per second.
+- `Model::handle_event` has a default implementation returning `None`, so an
+  application driven entirely by widget interaction and agent actions no longer
+  has to write it.
+
 - `benches/comparative` — a standalone crate benchmarking frame-build cost
   against egui 0.31 and iced 0.13, plus an `allocs` binary reporting
   deterministic per-frame allocation counts and a `timing` binary that

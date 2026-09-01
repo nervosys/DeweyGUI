@@ -17,3 +17,6 @@ CHAT-SUMMARY.md
 
 # Cargo lock is committed for binaries, optional for libraries
 # Cargo.lock
+
+# Benchmark crate build artifacts
+benches/*/target/
