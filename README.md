@@ -227,6 +227,29 @@ Dewey speaks JSON Lines over stdin/stdout. Any language that can read/write line
 | **Backend-Agnostic**    | ✅ Painter trait (6 backends) | ❌                 | ❌                 | ✅                      | ❌                | ✅                             | ❌                        | ❌                | ❌                    | ✅                        |
 | **License**             | AGPLv3/Commercial            | MIT/Apache        | MIT               | GPL/Commercial         | LGPL             | GPL/Commercial                | BSD                      | MIT              | MIT/Apache           | MIT                      |
 
+### Measured Performance
+
+CPU frame-build cost — widget construction, layout, and render-command
+generation for a list of N rows, each with a label and a button, running
+headless with no GPU. Full methodology, raw numbers, and caveats in
+[`benches/comparative/`](benches/comparative/README.md).
+
+| Rows | Dewey            | egui 0.31  | iced 0.13    | Dewey vs egui | Dewey vs iced |
+| ---- | ---------------- | ---------- | ------------ | ------------- | ------------- |
+| 100  | **27–35 µs**     | 193–283 µs | 94–111 µs    | 5.4–8.0×      | 2.7–3.5×      |
+| 1000 | **0.35–0.65 ms** | 3.1–8.0 ms | 1.02–1.08 ms | 4.8–12×       | 1.6–3.1×      |
+| 5000 | **1.7–2.4 ms**   | 28–30 ms   | 51–55 ms     | 11.5–17×      | 21–32×        |
+
+Dewey was fastest at every size across two independent runs. Reproduce with
+`cd benches/comparative && cargo bench`.
+
+Two caveats worth stating plainly: Dewey estimates text extents during frame
+build rather than shaping glyphs — its GPU backends pay that cost at render
+time, which narrows the 5000-row gap from ~12× to roughly ~4–5× — and Dewey
+defers the interaction pass that egui performs inline, so part of the margin is
+architectural rather than raw efficiency. Tessellation, rasterization, and
+present are excluded for all three.
+
 ### Dewey's Unique Advantages
 
 1. **Agent-native** — The only GUI framework with a built-in semantic protocol for AI agents (JSON Lines + WebSocket)

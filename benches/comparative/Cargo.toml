@@ -1,0 +1,24 @@
+# Comparative benchmark harness — a standalone crate, deliberately not a
+# member/dev-dependency of the framework, so that `cargo test` and the
+# published package never pull egui, iced, or tiny-skia.
+#
+#   cd benches/comparative && cargo bench
+[package]
+name = "dewey-comparative-benches"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+dewey = { package = "deweygui", path = "../..", default-features = false }
+egui = "0.31"
+iced_core = "0.13"
+iced_widget = "0.13"
+iced_renderer = { version = "0.13", features = ["tiny-skia"] }
+
+[dev-dependencies]
+criterion = { version = "0.5", features = ["html_reports"] }
+
+[[bench]]
+name = "cross_framework"
+harness = false

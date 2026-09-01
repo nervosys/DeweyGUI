@@ -18,6 +18,7 @@ exclude = [
     "docs/",
     "scripts/",
     "CHAT-SUMMARY.md",
+    "benches/comparative/",
     "target/",
 ]
 
