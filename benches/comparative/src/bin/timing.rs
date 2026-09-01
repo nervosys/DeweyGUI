@@ -18,18 +18,33 @@ use std::time::{Duration, Instant};
 // ── Scenes (identical to benches/cross_framework.rs) ───────────────
 
 fn dewey_scene(n: usize, agentic: bool, ontology: bool) -> usize {
-    use dewey::backend::test::TestBackend;
+    let mut painter = dewey::backend::test::TestBackend::new(1280.0, 720.0);
+    dewey_scene_with(&mut painter, n, agentic, ontology)
+}
+
+/// The ontology-only pass `OntologyMode::OnDemand` runs: widgets and layout,
+/// but a `NullPainter` instead of real drawing.
+fn dewey_ontology_pass(n: usize) -> usize {
+    let mut painter = dewey::paint::NullPainter;
+    dewey_scene_with(&mut painter, n, true, true)
+}
+
+fn dewey_scene_with(
+    painter: &mut dyn dewey::paint::Painter,
+    n: usize,
+    agentic: bool,
+    ontology: bool,
+) -> usize {
     use dewey::core::Rect;
     use dewey::event::HitMap;
     use dewey::runtime::Frame;
     use dewey::widget::{Button, Label, Widget};
 
-    let mut painter = TestBackend::new(1280.0, 720.0);
     let mut hit_map = HitMap::new();
     let mut frame = Frame::with_ontology(
         Rect::from_size(1280.0, 720.0),
         &mut hit_map,
-        &mut painter,
+        painter,
         ontology,
     );
     for i in 0..n {
@@ -109,10 +124,11 @@ fn iced_scene(
 
 // ── Harness ────────────────────────────────────────────────────────
 
-const LABELS: [&str; 5] = [
+const LABELS: [&str; 6] = [
     "dewey (no agent ids)",
     "dewey (agentic, ontology on)",
     "dewey (agentic, ontology off)",
+    "dewey (on-demand ontology pass)",
     "egui 0.31",
     "iced 0.13",
 ];
@@ -155,12 +171,16 @@ fn main() {
             samples[2].push(t.elapsed());
 
             let t = Instant::now();
-            black_box(egui_scene(&ctx, n));
+            black_box(dewey_ontology_pass(n));
             samples[3].push(t.elapsed());
 
             let t = Instant::now();
-            black_box(iced_scene(&mut ir, &mut itree, n));
+            black_box(egui_scene(&ctx, n));
             samples[4].push(t.elapsed());
+
+            let t = Instant::now();
+            black_box(iced_scene(&mut ir, &mut itree, n));
+            samples[5].push(t.elapsed());
         }
 
         println!("\n── {n} rows ({rounds} interleaved rounds) ──");
@@ -179,10 +199,19 @@ fn main() {
             );
         }
         let base = mins[0].as_secs_f64();
+        // Amortized: 60 fps with an agent querying the tree 5 times a second.
+        let every_frame = 60.0 * mins[1].as_secs_f64();
+        let on_demand = 60.0 * mins[0].as_secs_f64() + 5.0 * mins[3].as_secs_f64();
+        println!(
+            "  amortized/sec @60fps+5 queries:  every-frame {:.1} ms   on-demand {:.1} ms   ({:.1}x less)",
+            every_frame * 1000.0,
+            on_demand * 1000.0,
+            every_frame / on_demand,
+        );
         println!(
             "  dewey(plain) vs egui: {:.1}x   vs iced: {:.1}x   agentic-on vs plain: {:.1}x",
-            mins[3].as_secs_f64() / base,
             mins[4].as_secs_f64() / base,
+            mins[5].as_secs_f64() / base,
             mins[1].as_secs_f64() / base,
         );
     }

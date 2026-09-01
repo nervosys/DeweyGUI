@@ -472,8 +472,8 @@ struct RunningApp<M: Model> {
     text: agpu::TextEngine,
     hit_map: HitMap,
     ontology: OntologyRegistry,
-    /// Whether to build the ontology tree each frame (see `ProgramOptions::ontology`).
-    ontology_enabled: bool,
+    /// When to build the ontology tree (see `ProgramOptions::ontology`).
+    ontology_mode: crate::runtime::OntologyMode,
     plugins: PluginRegistry,
     profiler: Option<Profiler>,
     running: bool,
@@ -595,7 +595,7 @@ impl<M: Model + 'static> RunningApp<M> {
             text,
             hit_map: HitMap::new(),
             ontology,
-            ontology_enabled: options.ontology,
+            ontology_mode: options.ontology,
             plugins,
             profiler,
             running: true,
@@ -687,8 +687,12 @@ impl<M: Model + 'static> RunningApp<M> {
         }
         {
             let mut painter = AgpuBridgePainter::new(&mut self.shapes, &mut self.text);
-            let mut dewey_frame =
-                Frame::with_ontology(area, &mut self.hit_map, &mut painter, self.ontology_enabled);
+            let mut dewey_frame = Frame::with_ontology(
+                area,
+                &mut self.hit_map,
+                &mut painter,
+                self.ontology_mode == crate::runtime::OntologyMode::EveryFrame,
+            );
             self.model.view(&mut dewey_frame);
 
             let nodes = dewey_frame.take_nodes();
@@ -780,6 +784,18 @@ impl<M: Model + 'static> RunningApp<M> {
                 action,
                 params,
             } => {
+                // On demand: refresh the tree just before it is read, so the
+                // frame loop never pays for it.
+                if self.ontology_mode == crate::runtime::OntologyMode::OnDemand {
+                    let area = crate::core::Rect::new(
+                        0.0,
+                        0.0,
+                        self.surface_config.width as f32,
+                        self.surface_config.height as f32,
+                    );
+                    let tree = crate::runtime::build_ontology_tree(&self.model, area);
+                    self.ontology.set_tree(tree);
+                }
                 if let Some(node) = self.ontology.find_node(&agent_id) {
                     if let Err(e) =
                         self.ontology

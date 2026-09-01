@@ -28,12 +28,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   8.0 → 6.0 allocations per row; 18.0 → 6.0 (−67%) cumulatively. Node
   registration still follows render order. `Table` and the four widgets with
   early returns in `render` were left unchanged.
-- `Frame::with_ontology` and `ProgramOptions::ontology` let an application skip
-  building the agent ontology tree when no agent will inspect it. Widgets check
-  `Frame::ontology_enabled()` before constructing a `UiNode`, so the cost is
-  skipped rather than discarded: 18.0 → 4.0 allocations per row and 3210 → 598
-  bytes per row (−81%). Defaults to `true`; hit-testing and painting are
-  unaffected when disabled.
+- `OntologyMode` decides when the ontology tree is built, and defaults to
+  `OnDemand`: the tree is built on the next agent query by a paint-free `view`
+  pass rather than during every rendered frame. A UI at 60 fps queried 5 times
+  a second spends 1.9× less on the ontology at 1000 rows and 3–4× less at 5000.
+  `Model::view` takes `&self`, so the pass has no side effects and the tree is
+  built from current model state rather than the last painted frame.
+  `EveryFrame` restores the previous behavior; `Disabled` skips it entirely.
+- `runtime::build_ontology_tree` builds a tree from a model without painting.
+- `Frame::with_ontology` and `Frame::ontology_enabled` let a frame skip
+  building the tree. Widgets check before constructing a `UiNode`, so the cost
+  is skipped rather than discarded: 18.0 → 4.0 allocations per row and
+  3210 → 598 bytes (−81%). Hit-testing and painting are unaffected.
 
 ### Added
 
@@ -53,6 +59,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Re-measured with the interleaved minimum-time harness.
 
 ### Changed
+
+- `ProgramOptions::ontology` is an `OntologyMode` rather than a `bool`, and the
+  ontology tree is no longer rebuilt during every rendered frame by default.
+  Code reading the ontology registry outside the agent request path should call
+  `runtime::build_ontology_tree`, or select `OntologyMode::EveryFrame`.
 
 - `UiNode.widget_type` and `UiNode.agent_id` changed type (`String` →
   `Cow<'static, str>`). Code that constructs these with literals or `String`s

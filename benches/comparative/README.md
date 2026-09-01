@@ -108,19 +108,40 @@ run measured egui 20% faster with egui's code untouched. The stable, load-
 independent quantity is the ratio *within* a run, so that is what the
 optimization claims rest on.
 
-| Rows | Dewey        | Dewey, ontology off | Dewey, agentic | egui 0.31 | iced 0.13 |
-| ---- | ------------ | ------------------- | -------------- | --------- | --------- |
-| 100  | **13.6 µs**  | 14.5 µs             | 29.2 µs        | 111.2 µs  | 43.5 µs   |
-| 1000 | **132.3 µs** | 136.2 µs            | 283.7 µs       | 1.56 ms   | 492.1 µs  |
-| 5000 | **926.5 µs** | 1.01 ms             | 5.27 ms        | 15.04 ms  | 15.25 ms  |
+| Rows | Dewey        | Ontology off | Agentic  | On-demand pass | egui 0.31 | iced 0.13 |
+| ---- | ------------ | ------------ | -------- | -------------- | --------- | --------- |
+| 100  | **14.5 µs**  | 14.8 µs      | 30.6 µs  | 23.8 µs        | 115.1 µs  | 43.9 µs   |
+| 1000 | **135.0 µs** | 140.9 µs     | 293.3 µs | 230.4 µs       | 1.13 ms   | 436.5 µs  |
+| 5000 | **736.3 µs** | 734.6 µs     | 2.78 ms  | 2.36 ms        | 9.48 ms   | 5.17 ms   |
 
 Speedup over Dewey with no agent ids:
 
 | Rows | vs egui | vs iced |
 | ---- | ------- | ------- |
-| 100  | 8.2×    | 3.2×    |
-| 1000 | 11.8×   | 3.7×    |
-| 5000 | 16.2×   | 16.5×   |
+| 100  | 7.9×    | 3.0×    |
+| 1000 | 8.4×    | 3.2×    |
+| 5000 | 12.9×   | 7.0×    |
+
+### On-demand ontology, amortized
+
+`OntologyMode::OnDemand` (the default) does not build the tree during a frame.
+It builds one on the next agent query, by running a paint-free `view` pass —
+the *On-demand pass* column above. A UI redrawing at 60 fps with an agent
+querying 5 times a second therefore pays:
+
+| Rows | Every frame  | On demand   | Saving   |
+| ---- | ------------ | ----------- | -------- |
+| 100  | 1.8 ms/s     | 1.0 ms/s    | 1.9×     |
+| 1000 | 17.6 ms/s    | 9.3 ms/s    | 1.9×     |
+| 5000 | 166.8 ms/s   | 56.0 ms/s   | 3.0×     |
+
+A second run reproduced 1.8× / 1.8× / 4.1×. The saving grows with widget count
+and with the gap between frame rate and query rate: the tree was being built
+60 times a second to be read 5 times.
+
+Because `Model::view` takes `&self`, the extra pass has no side effects, and
+the tree an agent reads is built from current model state rather than from
+whatever the last painted frame happened to contain.
 
 A second run agreed on every ratio (8.1× / 11.8× / 13.0× vs egui, and the
 agentic ratios below identical to one decimal place).
@@ -135,7 +156,10 @@ loaded the machine is:
 | ---- | ------------------------- | ------------------- | ------------------ |
 | 100  | 3.0×                      | 2.3×                | **2.1×**           |
 | 1000 | 4.2×                      | 2.7×                | **2.1×**           |
-| 5000 | 9.1×                      | 6.2×                | **5.7×**           |
+| 5000 | 9.1×                      | 6.2×                | **3.8–5.7×**       |
+
+And with `OntologyMode::OnDemand` a rendered frame pays none of it at all —
+the ratio applies only to the occasional query pass.
 
 Three things the columns show:
 

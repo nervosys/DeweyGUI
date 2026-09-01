@@ -1243,3 +1243,71 @@ fn list_state_carries_items_after_move() {
         &serde_json::json!(["alpha", "beta"])
     );
 }
+
+// ── On-demand ontology ─────────────────────────────────────────────
+
+/// `build_ontology_tree` runs a paint-free `view` pass. It must produce the
+/// same tree the every-frame path produces, or on-demand mode would show
+/// agents a different UI than the one on screen.
+#[test]
+fn on_demand_tree_matches_every_frame_tree() {
+    use dewey::backend::test::TestBackend;
+    use dewey::core::Rect;
+    use dewey::event::HitMap;
+    use dewey::runtime::{Frame, build_ontology_tree};
+
+    let area = Rect::from_size(400.0, 200.0);
+    let model = TestApp { count: 7 };
+
+    // The every-frame path: build the tree while painting.
+    let mut painter = TestBackend::new(400.0, 200.0);
+    let mut hit_map = HitMap::new();
+    let mut frame = Frame::with_ontology(area, &mut hit_map, &mut painter, true);
+    model.view(&mut frame);
+    let painted = frame.take_nodes();
+
+    // The on-demand path: no painting at all.
+    let tree = build_ontology_tree(&model, area);
+
+    assert_eq!(
+        tree.root.children.len(),
+        painted.len(),
+        "on-demand pass must see the same widgets"
+    );
+    for (a, b) in tree.root.children.iter().zip(painted.iter()) {
+        assert_eq!(a.agent_id, b.agent_id);
+        assert_eq!(a.widget_type, b.widget_type);
+        assert_eq!(a.state, b.state, "state must match the painted frame");
+    }
+    assert!(!painted.is_empty(), "fixture must produce nodes");
+}
+
+/// The on-demand pass reflects current model state, which is the whole reason
+/// it is safe to skip building the tree every frame.
+#[test]
+fn on_demand_tree_tracks_model_changes() {
+    use dewey::core::Rect;
+    use dewey::runtime::build_ontology_tree;
+
+    let area = Rect::from_size(400.0, 200.0);
+
+    let before = build_ontology_tree(&TestApp { count: 1 }, area);
+    let after = build_ontology_tree(&TestApp { count: 2 }, area);
+
+    let find = |t: &dewey::ontology::UiTree| {
+        t.root
+            .children
+            .iter()
+            .find(|n| n.agent_id.as_deref() == Some("counter_label"))
+            .and_then(|n| n.state.get("text").cloned())
+    };
+    assert_ne!(find(&before), find(&after), "tree must track model state");
+}
+
+/// `OntologyMode::OnDemand` is the default, so a plain `ProgramOptions` skips
+/// per-frame tree building.
+#[test]
+fn ontology_mode_defaults_to_on_demand() {
+    use dewey::runtime::{OntologyMode, ProgramOptions};
+    assert_eq!(ProgramOptions::default().ontology, OntologyMode::OnDemand);
+}

@@ -250,6 +250,47 @@ impl<'a> Frame<'a> {
     }
 }
 
+/// When the runtime builds the agent ontology tree.
+///
+/// Building it allocates a [`UiNode`](crate::ontology::UiNode) per widget. A
+/// GUI redraws at 60 Hz; an agent inspects it a handful of times a second at
+/// most, so building the tree on every frame does that work one to two orders
+/// of magnitude more often than anything reads it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum OntologyMode {
+    /// Build the tree just before an agent reads it, by running an extra
+    /// paint-free `view` pass. `Model::view` takes `&self`, so the pass has no
+    /// side effects, and the tree an agent sees is current by construction.
+    ///
+    /// This is the default: the tree is always fresh when read, and normal
+    /// frames skip the work entirely.
+    #[default]
+    OnDemand,
+    /// Build the tree during every rendered frame.
+    ///
+    /// Use when something outside the agent request path reads the ontology
+    /// registry and expects it to track the last rendered frame.
+    EveryFrame,
+    /// Never build the tree. Agents see an empty ontology.
+    Disabled,
+}
+
+/// Build an ontology tree for a model without painting anything.
+///
+/// Runs `view` against a [`NullPainter`](crate::paint::NullPainter), so it
+/// costs widget construction and layout but no rendering. This is what
+/// [`OntologyMode::OnDemand`] uses to answer an agent query.
+pub fn build_ontology_tree<M: Model>(model: &M, area: Rect) -> crate::ontology::UiTree {
+    let mut painter = crate::paint::NullPainter;
+    let mut hit_map = crate::event::HitMap::new();
+    let mut frame = Frame::with_ontology(area, &mut hit_map, &mut painter, true);
+    model.view(&mut frame);
+
+    let mut root = crate::ontology::UiNode::new("root", crate::ontology::SemanticRole::Container);
+    root.children = frame.take_nodes();
+    crate::ontology::UiTree::new(root)
+}
+
 /// Configuration for the application runner.
 pub struct ProgramOptions {
     /// Tick interval for animation. `None` disables ticking.
@@ -266,14 +307,8 @@ pub struct ProgramOptions {
     pub vsync: bool,
     /// Whether to use a transparent window.
     pub transparent: bool,
-    /// Whether to build the agent ontology tree each frame.
-    ///
-    /// On by default, so agents can inspect the UI at any time. Building the
-    /// tree allocates a [`UiNode`](crate::ontology::UiNode) per widget every
-    /// frame; an application that will never be driven by an agent can set
-    /// this to `false` to skip that work. Hit-testing and input are
-    /// unaffected.
-    pub ontology: bool,
+    /// When to build the agent ontology tree. See [`OntologyMode`].
+    pub ontology: OntologyMode,
 }
 
 impl Default for ProgramOptions {
@@ -286,7 +321,7 @@ impl Default for ProgramOptions {
             resizable: true,
             vsync: true,
             transparent: false,
-            ontology: true,
+            ontology: OntologyMode::default(),
         }
     }
 }

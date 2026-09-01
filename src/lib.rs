@@ -134,7 +134,9 @@ pub mod prelude {
     pub use crate::plugin::{Plugin, PluginContext, PluginRegistry};
     #[cfg(feature = "egui-backend")]
     pub use crate::runtime::Program;
-    pub use crate::runtime::{CancellationToken, Command, Frame, Model, ProgramOptions};
+    pub use crate::runtime::{
+        CancellationToken, Command, Frame, Model, OntologyMode, ProgramOptions,
+    };
     pub use crate::theme::{Theme, ThemeToken, ThemeWatcher};
     pub use crate::widget::*;
     pub use crate::window::{WindowConfig, WindowId, WindowManager};

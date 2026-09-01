@@ -237,9 +237,9 @@ best of two runs. Full methodology and caveats in
 
 | Rows | Dewey        | Dewey, agentic | egui 0.31 | iced 0.13 | vs egui | vs iced |
 | ---- | ------------ | -------------- | --------- | --------- | ------- | ------- |
-| 100  | **13.6 µs**  | 29.2 µs        | 111.2 µs  | 43.5 µs   | 8.2×    | 3.2×    |
-| 1000 | **132.3 µs** | 283.7 µs       | 1.56 ms   | 492.1 µs  | 11.8×   | 3.7×    |
-| 5000 | **926.5 µs** | 5.27 ms        | 15.04 ms  | 15.25 ms  | 16.2×   | 16.5×   |
+| 100  | **14.5 µs**  | 30.6 µs        | 115.1 µs  | 43.9 µs   | 7.9×    | 3.0×    |
+| 1000 | **135.0 µs** | 293.3 µs       | 1.13 ms   | 436.5 µs  | 8.4×    | 3.2×    |
+| 5000 | **736.3 µs** | 2.78 ms        | 9.48 ms   | 5.17 ms   | 12.9×   | 7.0×    |
 
 All figures come from a single run — absolute times shift with machine load, so
 the stable quantity is the ratio within a run. A second run agreed on every
@@ -247,10 +247,13 @@ ratio.
 
 Reproduce with `cd benches/comparative && cargo run --release --bin timing`.
 
-The *agentic* column is the honest one for real applications: with an agent id
-on every widget, Dewey builds an ontology node per widget per frame. That used
-to cost 3–10× the plain path; after the allocation work below it costs
-2.1–5.7×. egui and iced have no equivalent to build, so the
+The *agentic* column shows what building the ontology costs when it happens.
+By default it no longer happens per frame: `OntologyMode::OnDemand` builds the
+tree on the next agent query instead, via a paint-free `view` pass. A UI at
+60 fps queried 5 times a second spends 1.9× less at 1000 rows and 3× less at
+5000 rows than building it every frame — and because `Model::view` takes
+`&self`, the tree an agent reads is built from current state rather than from
+the last painted frame. egui and iced have no equivalent to build, so the
 like-for-like comparison is the first column. Text shaping is a second
 asymmetry — Dewey estimates text extents during frame build and shapes in the
 backend, where egui and iced shape inline (~10% of egui's frame). Tessellation,
@@ -278,8 +281,9 @@ Four changes cut it by 67%:
 - Widgets build their node at the end of `render`, so owned values *move* into
   the state instead of being cloned — for `List`, `Select`, and `Tabs` that
   turns one allocation per item per frame into zero.
-- `ProgramOptions::ontology` lets an application that will never be
-  agent-driven skip node construction entirely, which measures within a few
+- `ProgramOptions::ontology` (an `OntologyMode`) decides when the tree is
+  built: `OnDemand` by default, or `EveryFrame`, or `Disabled` for an
+  application no agent will ever drive — the latter two measuring within a few
   percent of a UI with no agent ids at all.
 
 Hit-testing and painting are unaffected by all of it.
