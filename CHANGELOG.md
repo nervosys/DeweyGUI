@@ -51,6 +51,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `benches/scaffold` — canonical counter app implemented in Dewey (with and
   without agent affordances), egui, and iced, with `measure.py` reporting what
   an agent must write and how long it waits for `cargo check`.
+- TodoMVC added to `benches/scaffold` as the complex canonical app, in all four
+  variants, plus an `agent_task` benchmark driving a nine-step agent workflow
+  against it: 51.9 µs end to end, ≈19,000 runs per second, asserted before it
+  is timed.
 - `agent_loop` benchmark measuring the full headless discover → understand →
   act → verify loop over the agent protocol: 11.9 µs end to end, ≈84,000 loops
   per second.

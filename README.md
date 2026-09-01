@@ -265,39 +265,37 @@ Frame time is only half of what an agent-first framework should be judged on.
 The other half is what an agent pays to *build* a program and then confirm it
 works. Full methodology in [`benches/scaffold/`](benches/scaffold/README.md).
 
-Writing the same canonical counter app — label, three buttons, wired state:
+Writing the same app in each framework — a counter, and TodoMVC as the complex
+case (input, filters, dynamic list, per-item toggle and delete, live count):
 
-| Framework     | Code lines | ~Tokens | `cargo check` |
-| ------------- | ---------- | ------- | ------------- |
-| Dewey (plain) | 39         | 425     | 4.39 s        |
-| Dewey (agent) | 52         | 495     | 4.65 s        |
-| **egui 0.31** | **33**     | **274** | **2.70 s**    |
-| **iced 0.13** | 37         | 276     | **2.23 s**    |
+| Framework     | counter ~tokens | todomvc ~tokens | todomvc vs egui |
+| ------------- | --------------- | --------------- | --------------- |
+| Dewey (plain) | 425             | 1245            | 1.90×           |
+| Dewey (agent) | 495             | 1648            | 2.51×           |
+| **egui 0.31** | **274**         | **656**         | 1.00×           |
+| iced 0.13     | 276             | 799             | 1.22×           |
 
-**Dewey loses on scaffolding cost.** A plain Dewey counter costs ~1.55× egui's
-tokens and ~1.6× its compile-check latency — the Elm `Msg` enum and explicit
-constraint layout are real code that immediate mode does not need.
+**Dewey loses on scaffolding cost, and the gap widens with complexity** — 1.55×
+egui's tokens on the counter, 1.90× on TodoMVC. The Elm `Msg` enum and explicit
+constraint layout are real code immediate mode does not need, and list rows
+need manual rectangle arithmetic where egui and iced push into a flow.
 
 Verifying it afterwards is where that inverts. Dewey closes the full
-discover → understand → act → verify loop over the agent protocol headlessly,
-with no window, GPU or screenshot:
+discover → act → verify loop over the agent protocol headlessly — no window,
+no GPU, no screenshot. A nine-step TodoMVC task (add two items, complete one,
+switch filter, read the result back):
 
-| Step                                  | Time        |
-| ------------------------------------- | ----------- |
-| discover (`get_tree`)                 | 5.8 µs      |
-| understand (`query_ontology`)         | 1.1 µs      |
-| read schema (`get_schema`)            | 1.1 µs      |
-| act (`execute_action inc.click`)      | 1.4 µs      |
-| verify (`get_state count`)            | 2.1 µs      |
-| **full loop**                         | **11.9 µs** |
+| Task                                       | Time        | Rate      |
+| ------------------------------------------ | ----------- | --------- |
+| counter: discover → understand → act → verify | **11.9 µs** | 84,000/s  |
+| todomvc: 9-step add/complete/filter/verify | **51.9 µs** | 19,000/s  |
 
-≈84,000 complete agent loops per second, single-threaded. egui and iced have no
-equivalent to measure: neither exposes a widget tree, a typed action, or a
-readable state snapshot to an external process, so an agent must open a real
-window, synthesise input at guessed coordinates, screenshot it and ask a vision
-model what the label says. That returns a probabilistic reading of an image
-where `get_state` returns `"Count: 1"` — an agent can assert on one and only
-guess at the other.
+egui and iced have no equivalent to measure: neither exposes a widget tree, a
+typed action, or a readable state snapshot to an external process, so an agent
+must open a real window, synthesise input at guessed coordinates, screenshot it
+and ask a vision model what the label says. That returns a probabilistic
+reading of an image where `get_state` returns `"1 items left"` — an agent can
+assert on one and only guess at the other.
 
 So: Dewey is worse at being *written* by an agent, and uniquely good at being
 *verified* by one. Verification cost is paid on every iteration, and an agent

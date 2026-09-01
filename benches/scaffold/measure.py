@@ -1,14 +1,21 @@
 """Scaffold-cost metrics: what an agent must produce, and how fast it finds out
 whether the code compiles."""
-import re, subprocess, time, os, sys
+import re, subprocess, time, os
 
-FILES = {
-    "Dewey (plain)": "src/bin/counter_dewey_plain.rs",
-    "Dewey (agent)": "src/bin/counter_dewey.rs",
-    "egui 0.31": "src/bin/counter_egui.rs",
-    "iced 0.13": "src/bin/counter_iced.rs",
+APPS = {
+    "counter (simple)": {
+        "Dewey (plain)": "counter_dewey_plain",
+        "Dewey (agent)": "counter_dewey",
+        "egui 0.31": "counter_egui",
+        "iced 0.13": "counter_iced",
+    },
+    "todomvc (complex)": {
+        "Dewey (plain)": "todo_dewey_plain",
+        "Dewey (agent)": "todo_dewey",
+        "egui 0.31": "todo_egui",
+        "iced 0.13": "todo_iced",
+    },
 }
-BINS = {"Dewey (plain)": "counter_dewey_plain", "Dewey (agent)": "counter_dewey", "egui 0.31": "counter_egui", "iced 0.13": "counter_iced"}
 
 def source_metrics(path):
     src = open(path, encoding="utf-8").read()
@@ -17,27 +24,41 @@ def source_metrics(path):
     toks = re.findall(r"[A-Za-z_][A-Za-z0-9_]*|\d+|\S", src)
     return len(code), len(src), len(toks)
 
-def check_latency(bin_name, path, rounds=3):
-    """Time `cargo check` after touching the file — the agent's edit→error loop."""
-    best = None
+def _one_check(bin_name, path):
+    os.utime(path, None)
+    t = time.perf_counter()
+    subprocess.run(["cargo", "check", "--bin", bin_name], capture_output=True, check=False)
+    return time.perf_counter() - t
+
+def check_latencies(bins, rounds=4):
+    """Time `cargo check` after touching each file - the agent's edit/error loop.
+
+    Interleaved across frameworks and reported as the minimum: run
+    sequentially, whichever bin goes first absorbs shared dependency work and
+    looks slower, which made an earlier version of this script rank the same
+    code 1.6x apart between runs.
+    """
+    best = {name: None for name in bins}
     for _ in range(rounds):
-        os.utime(path, None)
-        t = time.perf_counter()
-        subprocess.run(["cargo", "check", "--release", "--bin", bin_name],
-                       capture_output=True, check=False)
-        e = time.perf_counter() - t
-        best = e if best is None else min(best, e)
+        for name, b in bins.items():
+            e = _one_check(b, "src/bin/%s.rs" % b)
+            if best[name] is None or e < best[name]:
+                best[name] = e
     return best
 
-print(f"{'Framework':<15} {'code':>5} {'bytes':>6} {'~tok':>6} {'check':>8}")
-rows = {}
-for name, path in FILES.items():
-    c, b, t = source_metrics(path)
-    lat = check_latency(BINS[name], path)
-    rows[name] = (c, b, t, lat)
-    print(f"{name:<15} {c:>5} {b:>6} {t:>6} {lat:>7.2f}s")
-
-base = rows["Dewey (plain)"]
-print()
-for name, (c, b, t, lat) in rows.items():
-    print(f"{name:<15} code {c/base[0]:.2f}x   tokens {t/base[2]:.2f}x   check {lat/base[3]:.2f}x  (vs Dewey plain)")
+for app, bins in APPS.items():
+    print("\n=== %s ===" % app)
+    print("%-15s %5s %6s %6s %8s" % ("Framework", "code", "bytes", "~tok", "check"))
+    for name, b in bins.items():   # warm up so no bin absorbs first-run dep work
+        _one_check(b, "src/bin/%s.rs" % b)
+    lats = check_latencies(bins)
+    rows = {}
+    for name, b in bins.items():
+        c, by, t = source_metrics("src/bin/%s.rs" % b)
+        rows[name] = (c, by, t, lats[name])
+        print("%-15s %5d %6d %6d %7.2fs" % (name, c, by, t, lats[name]))
+    base = rows["Dewey (plain)"]
+    print()
+    for name, (c, by, t, lat) in rows.items():
+        print("%-15s code %.2fx   tokens %.2fx   check %.2fx  (vs Dewey plain)"
+              % (name, c / base[0], t / base[2], lat / base[3]))

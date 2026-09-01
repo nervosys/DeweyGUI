@@ -10,38 +10,55 @@ each framework? Two costs, measured separately:
 
 ```bash
 cd benches/scaffold && python measure.py           # scaffolding cost
-cd benches/comparative && cargo run --release --bin agent_loop   # the loop
+cd benches/comparative && cargo run --release --bin agent_loop   # counter loop
+cd benches/scaffold   && cargo run --release --bin agent_task    # todomvc task
 ```
 
-## The canonical program
+## The canonical programs
 
-The same application in every framework: a 400×200 window showing `Count: N`
-above three buttons — Decrement, Reset, Increment — wired to the state. Four
-implementations, all idiomatic and minimal:
+Two, because a counter is too small to show how a framework scales:
 
-| Bin                   | What it is                                        |
-| --------------------- | ------------------------------------------------- |
-| `counter_dewey_plain` | Dewey, no agent affordances                       |
-| `counter_dewey`       | Dewey, agent-driveable (`agent_id` + action handler) |
-| `counter_egui`        | egui / eframe                                     |
-| `counter_iced`        | iced                                              |
+- **counter** — a 400×200 window showing `Count: N` above three buttons,
+  Decrement / Reset / Increment, wired to the state.
+- **todomvc** — the standard cross-framework complex app: a text input and Add
+  button, a filter row (All / Active / Completed), a list of items each with a
+  toggle checkbox and a delete button, an "N items left" counter, and Clear
+  completed.
+
+Each is implemented four ways — `*_dewey_plain` (no agent affordances),
+`*_dewey` (agent-driveable), `*_egui`, `*_iced` — all idiomatic and minimal.
 
 ## 1. Scaffolding cost
 
 `check` is `cargo check` after touching the file, warm deps, best of three —
 the latency of one step in an agent's edit → compile → fix loop.
 
-| Framework      | Code lines | Bytes | ~Tokens | `cargo check` |
-| -------------- | ---------- | ----- | ------- | ------------- |
-| Dewey (plain)  | 39         | 1455  | 425     | 4.39 s        |
-| Dewey (agent)  | 52         | 1685  | 495     | 4.65 s        |
-| **egui 0.31**  | **33**     | 1021  | **274** | **2.70 s**    |
-| **iced 0.13**  | 37         | **970** | 276   | **2.23 s**    |
+**counter**
 
-**Dewey loses this half, and not narrowly.** A plain Dewey counter costs ~1.55×
-egui's tokens and ~1.6× its compile-check latency; the agent-driveable version
-costs ~1.8× the tokens. For an agent, that is more to generate, more surface to
-get wrong, and a slower feedback loop on every iteration.
+| Framework     | Code lines | Bytes   | ~Tokens | vs egui |
+| ------------- | ---------- | ------- | ------- | ------- |
+| Dewey (plain) | 39         | 1455    | 425     | 1.55×   |
+| Dewey (agent) | 52         | 1685    | 495     | 1.81×   |
+| **egui 0.31** | **33**     | 1021    | **274** | 1.00×   |
+| **iced 0.13** | 37         | **970** | 276     | 1.01×   |
+
+**todomvc**
+
+| Framework     | Code lines | Bytes    | ~Tokens  | vs egui |
+| ------------- | ---------- | -------- | -------- | ------- |
+| Dewey (plain) | 140        | 4641     | 1245     | 1.90×   |
+| Dewey (agent) | 186        | 6197     | 1648     | 2.51×   |
+| **egui 0.31** | **85**     | **2807** | **656**  | 1.00×   |
+| iced 0.13     | 110        | 3169     | 799      | 1.22×   |
+
+**Dewey loses this half, and the gap widens with complexity** — from 1.55× to
+1.90× egui's tokens for a plain app, and from 1.81× to 2.51× for an
+agent-driveable one. For an agent that means more to generate and more surface
+to get wrong, and it gets worse as the app grows, which is the wrong direction.
+
+`cargo check` latency measured 2.4–4.2 s for all four, with the ranking
+flipping between runs on a loaded machine; it does not discriminate at this
+size and is not reported.
 
 Where the extra goes:
 
@@ -50,8 +67,13 @@ Where the extra goes:
   mutates `self.count` inline at the click site.
 - **Layout is explicit.** Dewey splits rectangles by constraint; egui and iced
   infer flow from widget order.
-- **Agent affordances are opt-in and hand-written**: +13 code lines and +70
-  tokens for `agent_id` calls and an `execute_action` handler.
+- **Agent affordances are opt-in and hand-written**: +33% code in both apps —
+  `agent_id` calls, and an `execute_action` handler that in TodoMVC has to
+  string-match `toggle_0`, `delete_3` and parse the index back out.
+- **Lists are the worst case.** TodoMVC's item rows need manual rectangle
+  arithmetic (`let row = Rect::new(x, y, w, 28.0); y += 28.0;`) plus a manual
+  overflow break, where egui and iced simply push widgets into a flow. This is
+  most of why the gap grows from 1.55× to 1.90×.
 
 ## 2. Closing the loop
 
@@ -75,6 +97,30 @@ full discover→act→verify loop                    11.9 µs
 
 **≈84,000 complete agent loops per second, single-threaded.**
 
+On TodoMVC, a realistic nine-step task — add two items, complete one, switch
+filter, and read the result back (`cargo run --release --bin agent_task`):
+
+```
+task verified: 2 added, 1 completed, filter=active, footer reads "1 items left"
+
+discover        (get_tree)                   10.2 µs
+type item 1     (set_text)                    2.8 µs
+add item 1      (click add)                   2.7 µs
+type item 2     (set_text)                    3.7 µs
+add item 2      (click add)                   3.5 µs
+complete item 1 (click toggle_0)              4.4 µs
+filter active   (click filter_active)         4.4 µs
+re-read tree    (get_tree)                   14.7 µs
+verify counter  (get_state remaining)         4.3 µs
+----------------------------------------------------
+full 9-step task                             51.9 µs
+```
+
+**≈19,000 complete task runs per second.** Both harnesses assert the workflow
+before timing it — the TodoMVC one checks that the completed item really has
+disappeared from the tree under the Active filter and that the footer reads
+`1 items left`, so it cannot degenerate into timing a no-op.
+
 **egui and iced have no equivalent to measure.** Neither exposes a widget tree,
 a typed action, or a readable state snapshot to an external process. An agent
 verifying a counter written in either must:
@@ -97,11 +143,16 @@ Dewey is worse at being *written* by an agent and uniquely good at being
 iterations the agent needs: verification cost is paid on every loop, and an
 agent that cannot check its work reliably does more loops.
 
-The clearest way to close the scaffolding gap would be to let widgets carry
-their message directly — `Button::new("+").on_click(Msg::Increment)` — which
-would delete both the `execute_action` handler and much of the `update` arm
-wiring, making agent-driveability roughly free instead of +13 lines. That is a
-framework design change, not a benchmark change, and is not implemented.
+Two framework changes would close most of the scaffolding gap. Neither is
+implemented; both are design changes rather than benchmark changes.
+
+1. **Let widgets carry their message**: `Button::new("+").on_click(Msg::Add)`
+   would delete the whole `execute_action` dispatch — including TodoMVC's
+   `toggle_0` string parsing — and make agent-driveability close to free
+   instead of +33% code.
+2. **A flow layout for lists**: something like `Layout::stack(28.0)` yielding
+   successive rows would remove the manual rectangle arithmetic that makes
+   Dewey's disadvantage grow with app size.
 
 ## Caveats
 
@@ -111,5 +162,9 @@ framework design change, not a benchmark change, and is not implemented.
   model thinking time, how many iterations each framework's API tends to need,
   or how well any model knows each library — all of which need real agent runs
   to answer, and none of which this harness attempts.
-- `cargo check` latency is one machine, warm cache, and includes type-checking
-  the framework's generics.
+- `cargo check` latency was measured (interleaved, minimum of four rounds after
+  touching each file) but is not reported: at 2.4–4.2 s for every framework the
+  differences were inside machine noise and the ranking was not stable.
+- The `agent_task` binary duplicates the model from `todo_dewey.rs` so that the
+  scaffold-metric file stays a self-contained application; they are kept
+  identical by hand.
