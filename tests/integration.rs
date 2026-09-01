@@ -1091,3 +1091,80 @@ fn ontology_gate_does_not_change_rendering() {
     }
     assert_eq!(counts[0], counts[1], "gate must not change draw calls");
 }
+
+// ── Ontology property storage ──────────────────────────────────────
+
+/// `Properties` replaced `serde_json::Value` as the state store for speed. The
+/// agent protocol is a wire contract, so the JSON must be byte-identical to
+/// what a plain object produced — an object, not the underlying vector of
+/// pairs.
+#[test]
+fn properties_serialize_as_a_json_object() {
+    use dewey::ontology::{SemanticRole, UiNode};
+
+    let node = UiNode::new("Button", SemanticRole::Action)
+        .with_id("go")
+        .with_property("label", serde_json::json!("Go"))
+        .with_property("enabled", serde_json::json!(true));
+
+    let v = serde_json::to_value(&node).unwrap();
+    let state = v.get("state").expect("state field present");
+    assert!(state.is_object(), "state must serialize as an object");
+    assert_eq!(state.get("label").unwrap(), &serde_json::json!("Go"));
+    assert_eq!(state.get("enabled").unwrap(), &serde_json::json!(true));
+
+    // And it must survive a round trip.
+    let back: UiNode = serde_json::from_value(v).unwrap();
+    assert_eq!(back.state.get("label").unwrap(), &serde_json::json!("Go"));
+    assert_eq!(back.state, node.state);
+}
+
+/// Re-setting a key must overwrite, matching the map semantics it replaced,
+/// rather than appending a duplicate entry.
+#[test]
+fn properties_insert_replaces_existing_key() {
+    use dewey::ontology::{SemanticRole, UiNode};
+
+    let node = UiNode::new("Label", SemanticRole::Display)
+        .with_property("text", serde_json::json!("first"))
+        .with_property("text", serde_json::json!("second"));
+
+    assert_eq!(node.state.len(), 1, "duplicate key must not be appended");
+    assert_eq!(
+        node.state.get("text").unwrap(),
+        &serde_json::json!("second")
+    );
+}
+
+/// An empty state stays `null` on the wire, as it did before.
+#[test]
+fn properties_empty_state_is_null() {
+    use dewey::ontology::{SemanticRole, UiNode};
+
+    let node = UiNode::new("Label", SemanticRole::Display);
+    assert!(node.state.is_empty());
+    assert_eq!(node.state.to_value(), serde_json::Value::Null);
+}
+
+/// Guards the state-change detection path directly: same content, different
+/// insertion order, must compare equal.
+#[test]
+fn properties_equality_ignores_key_order() {
+    use dewey::ontology::{SemanticRole, UiNode};
+
+    let a = UiNode::new("W", SemanticRole::Display)
+        .with_property("x", serde_json::json!(1))
+        .with_property("y", serde_json::json!(2));
+    let b = UiNode::new("W", SemanticRole::Display)
+        .with_property("y", serde_json::json!(2))
+        .with_property("x", serde_json::json!(1));
+    assert_eq!(a.state, b.state);
+
+    let c = UiNode::new("W", SemanticRole::Display)
+        .with_property("y", serde_json::json!(3))
+        .with_property("x", serde_json::json!(1));
+    assert_ne!(
+        a.state, c.state,
+        "differing values must still compare unequal"
+    );
+}

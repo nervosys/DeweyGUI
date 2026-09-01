@@ -11,7 +11,7 @@ mod schema;
 
 pub use action::{ActionParam, ActionParamType, AgentAction};
 pub use capability::AgentCapability;
-pub use registry::{Accessibility, NodeBounds, OntologyRegistry, UiNode, UiTree};
+pub use registry::{Accessibility, NodeBounds, OntologyRegistry, Properties, UiNode, UiTree};
 pub use schema::{PropertyConstraint, PropertySchema, PropertyType, SemanticRole, WidgetSchema};
 
 /// Trait for widgets that expose metadata to agents.

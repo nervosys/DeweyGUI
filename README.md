@@ -237,9 +237,9 @@ best of two runs. Full methodology and caveats in
 
 | Rows | Dewey       | Dewey, agentic | egui 0.31 | iced 0.13 | vs egui | vs iced |
 | ---- | ----------- | -------------- | --------- | --------- | ------- | ------- |
-| 100  | **19.4 µs** | 57.7 µs        | 139.8 µs  | 56.2 µs   | 7.2×    | 2.9×    |
-| 1000 | **205 µs**  | 717 µs         | 1.97 ms   | 872 µs    | 9.6×    | 4.2×    |
-| 5000 | **1.25 ms** | 12.24 ms       | 15.35 ms  | 14.10 ms  | 12.3×   | 11.3×   |
+| 100  | **19.4 µs** | 44.6 µs        | 139.8 µs  | 56.2 µs   | 7.2×    | 2.9×    |
+| 1000 | **205 µs**  | 566 µs         | 1.97 ms   | 872 µs    | 9.6×    | 4.2×    |
+| 5000 | **1.25 ms** | 7.77 ms        | 15.35 ms  | 14.10 ms  | 12.3×   | 11.3×   |
 
 Reproduce with `cd benches/comparative && cargo run --release --bin timing`.
 
@@ -260,16 +260,17 @@ clock:
 | Configuration           | Allocations/row | Bytes/row |
 | ----------------------- | --------------- | --------- |
 | No agent ids            | 4.0             | 500       |
-| Agent ids, ontology on  | 11.0            | 3173      |
-| Agent ids, ontology off | 4.0             | 598       |
+| Agent ids, ontology on  | 18.0 → **8.0**  | 3210 → **2308** |
+| Agent ids, ontology off | 18.0 → **4.0**  | 3210 → **598**  |
 
 Building the agent ontology is the dominant per-frame cost in an agentic UI.
-Two changes cut it: `UiNode` ids and widget-type names are now
-`Cow<'static, str>` rather than freshly allocated `String`s (18.0 → 11.0
-allocations per row with an agent attached), and `ProgramOptions::ontology`
-lets an application that will never be agent-driven skip node construction
-entirely (18.0 → 4.0 per row, −81% bytes), which measures within 1–2% of a UI
-with no agent ids at all. Hit-testing and painting are unaffected either way.
+Three changes cut it by 56%: `UiNode` ids and widget-type names are now
+`Cow<'static, str>` rather than freshly allocated `String`s; `UiNode::state`
+is a flat `Properties` vector with borrowed keys instead of a `serde_json`
+map that allocated a `String` per key per frame; and
+`ProgramOptions::ontology` lets an application that will never be agent-driven
+skip node construction entirely, which measures within 1–2% of a UI with no
+agent ids at all. Hit-testing and painting are unaffected either way.
 
 ### Dewey's Unique Advantages
 

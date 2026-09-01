@@ -17,7 +17,7 @@ const MAX_SUBSCRIPTIONS: usize = 100;
 pub struct AgentSession {
     subscriptions: HashSet<String>,
     /// Previous state snapshots keyed by agent_id for diffing.
-    prev_states: HashMap<String, serde_json::Value>,
+    prev_states: HashMap<String, crate::ontology::Properties>,
 }
 
 impl AgentSession {
@@ -54,7 +54,7 @@ impl AgentSession {
                 if changed {
                     events.push(AgentEvent::StateChanged {
                         agent_id: id.to_string(),
-                        state: node.state.clone(),
+                        state: node.state.to_value(),
                     });
                     self.prev_states.insert(id.to_string(), node.state.clone());
                 }
@@ -122,7 +122,7 @@ impl AgentSession {
                         "agent_id": node.agent_id,
                         "widget_type": node.widget_type,
                         "role": node.role,
-                        "state": node.state,
+                        "state": node.state.to_value(),
                         "label": node.label,
                         "bounds": node.bounds,
                         "capabilities": node.capabilities,

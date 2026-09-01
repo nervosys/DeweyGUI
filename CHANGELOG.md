@@ -13,6 +13,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `Cow<'static, str>` instead of `String`. Every call site passes a string
   literal, so agentic frames no longer allocate a `String` per widget per
   field: 18.0 → 11.0 allocations per row (−39%).
+- `UiNode::state` is now a `Properties` vector with borrowed keys rather than a
+  `serde_json::Value`. Widgets built a `serde_json` map every frame and
+  allocated a `String` for each key, though the keys are string literals baked
+  into the widget; `Properties` serializes identically but costs one vector
+  allocation and no key allocations: 11.0 → 8.0 allocations per row (−27%),
+  3173 → 2308 bytes. Agentic frame build improved 23% at 100 rows and 21% at
+  1000 rows.
 - `Frame::with_ontology` and `ProgramOptions::ontology` let an application skip
   building the agent ontology tree when no agent will inspect it. Widgets check
   `Frame::ontology_enabled()` before constructing a `UiNode`, so the cost is
@@ -43,6 +50,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `Cow<'static, str>`). Code that constructs these with literals or `String`s
   is unaffected; code that reads the fields as `&String` needs `&*` or
   `.as_ref()`.
+- `UiNode.state` changed type (`serde_json::Value` → `Properties`). The JSON
+  wire format is unchanged. `with_state` accepts anything convertible, so
+  passing a `serde_json::Value` still works; code that called `Value` methods
+  on the field directly should use `Properties::get`/`iter`, or `to_value()`
+  for a `serde_json::Value`. `Properties` compares by content, not key order,
+  so `StateChanged` is not emitted for a state that merely round-tripped
+  through JSON.
 
 ## [1.0.0] - 2025-07-05
 

@@ -158,8 +158,8 @@ pub struct UiNode {
     pub role: SemanticRole,
     /// Capabilities of this instance.
     pub capabilities: Vec<AgentCapability>,
-    /// Current state snapshot as JSON.
-    pub state: serde_json::Value,
+    /// Current state snapshot as named properties.
+    pub state: Properties,
     /// Accessibility label.
     pub label: Option<String>,
     /// Bounding rectangle in logical pixel coordinates.
@@ -169,6 +169,122 @@ pub struct UiNode {
     pub accessibility: Accessibility,
     /// Child nodes.
     pub children: Vec<UiNode>,
+}
+
+/// A widget's state snapshot: an ordered set of named JSON properties.
+///
+/// Serializes and deserializes exactly like a JSON object, so the agent
+/// protocol is unchanged. It exists because `serde_json::Value` is the wrong
+/// shape for this job on the hot path: every frame, every widget built a
+/// `Map` and allocated a fresh `String` for each key, even though the keys are
+/// always string literals baked into the widget. Storing borrowed keys in a
+/// flat `Vec` makes property keys allocation-free and collapses the per-widget
+/// map into a single vector allocation.
+#[derive(Debug, Clone, Default)]
+pub struct Properties(Vec<(std::borrow::Cow<'static, str>, serde_json::Value)>);
+
+/// Equality is by key/value content, not insertion order.
+///
+/// This matters: `AgentSession` decides whether to emit a `StateChanged` event
+/// by comparing a widget's previous state to its current one, and a round trip
+/// through `serde_json` reorders keys (its map is sorted). Order-sensitive
+/// equality would report unchanged state as changed and flood subscribers.
+impl PartialEq for Properties {
+    fn eq(&self, other: &Self) -> bool {
+        self.0.len() == other.0.len()
+            && self
+                .0
+                .iter()
+                .all(|(k, v)| other.get(k).is_some_and(|o| o == v))
+    }
+}
+
+impl Properties {
+    #[must_use]
+    pub fn new() -> Self {
+        Self(Vec::new())
+    }
+
+    /// Set a property, replacing any existing value for the same key.
+    pub fn insert(
+        &mut self,
+        key: impl Into<std::borrow::Cow<'static, str>>,
+        value: serde_json::Value,
+    ) {
+        let key = key.into();
+        match self.0.iter_mut().find(|(k, _)| *k == key) {
+            Some(slot) => slot.1 = value,
+            None => self.0.push((key, value)),
+        }
+    }
+
+    #[must_use]
+    pub fn get(&self, key: &str) -> Option<&serde_json::Value> {
+        self.0.iter().find(|(k, _)| k == key).map(|(_, v)| v)
+    }
+
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
+    #[must_use]
+    pub fn len(&self) -> usize {
+        self.0.len()
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = (&str, &serde_json::Value)> {
+        self.0.iter().map(|(k, v)| (k.as_ref(), v))
+    }
+
+    /// Materialize as a `serde_json::Value` object.
+    ///
+    /// Allocates, so this is for the agent-facing paths (events, responses),
+    /// not for frame building.
+    #[must_use]
+    pub fn to_value(&self) -> serde_json::Value {
+        if self.0.is_empty() {
+            return serde_json::Value::Null;
+        }
+        let mut map = serde_json::Map::with_capacity(self.0.len());
+        for (k, v) in &self.0 {
+            map.insert(k.to_string(), v.clone());
+        }
+        serde_json::Value::Object(map)
+    }
+}
+
+impl From<serde_json::Value> for Properties {
+    fn from(value: serde_json::Value) -> Self {
+        match value {
+            serde_json::Value::Object(map) => Self(
+                map.into_iter()
+                    .map(|(k, v)| (std::borrow::Cow::Owned(k), v))
+                    .collect(),
+            ),
+            serde_json::Value::Null => Self::new(),
+            // A non-object state has no key of its own; keep it addressable.
+            other => Self(vec![(std::borrow::Cow::Borrowed("value"), other)]),
+        }
+    }
+}
+
+impl Serialize for Properties {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeMap;
+        let mut m = s.serialize_map(Some(self.0.len()))?;
+        for (k, v) in &self.0 {
+            m.serialize_entry(k.as_ref(), v)?;
+        }
+        m.end()
+    }
+}
+
+impl<'de> Deserialize<'de> for Properties {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let value = serde_json::Value::deserialize(d)?;
+        Ok(Self::from(value))
+    }
 }
 
 /// Bounding rectangle of a UI node in logical pixel coordinates.
@@ -251,7 +367,7 @@ impl UiNode {
             widget_type: widget_type.into(),
             role,
             capabilities: Vec::new(),
-            state: serde_json::Value::Null,
+            state: Properties::new(),
             label: None,
             bounds: None,
             accessibility: Accessibility::default(),
@@ -278,8 +394,8 @@ impl UiNode {
     }
 
     #[must_use]
-    pub fn with_state(mut self, state: serde_json::Value) -> Self {
-        self.state = state;
+    pub fn with_state(mut self, state: impl Into<Properties>) -> Self {
+        self.state = state.into();
         self
     }
 
@@ -304,13 +420,12 @@ impl UiNode {
 
     /// Convenience: set a named property in the state JSON object.
     #[must_use]
-    pub fn with_property(mut self, key: &str, value: serde_json::Value) -> Self {
-        if self.state.is_null() {
-            self.state = serde_json::json!({});
-        }
-        if let Some(obj) = self.state.as_object_mut() {
-            obj.insert(key.to_string(), value);
-        }
+    pub fn with_property(
+        mut self,
+        key: impl Into<std::borrow::Cow<'static, str>>,
+        value: serde_json::Value,
+    ) -> Self {
+        self.state.insert(key, value);
         self
     }
 
