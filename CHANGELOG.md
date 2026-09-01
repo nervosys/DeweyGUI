@@ -28,6 +28,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   8.0 → 6.0 allocations per row; 18.0 → 6.0 (−67%) cumulatively. Node
   registration still follows render order. `Table` and the four widgets with
   early returns in `render` were left unchanged.
+- `UiNode` shrank from 304 to 176 bytes (−42%). `Accessibility` is 136 bytes of
+  mostly-`None` options and was stored inline in every node, though no widget
+  in the library sets it; it is now `Option<Box<Accessibility>>`. Bytes
+  allocated per row fell 2290 → 1767 (−23%) with the allocation count
+  unchanged. The JSON wire format is unchanged.
 - `OntologyMode` decides when the ontology tree is built, and defaults to
   `OnDemand`: the tree is built on the next agent query by a paint-free `view`
   pass rather than during every rendered frame. A UI at 60 fps queried 5 times
@@ -60,6 +65,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- `UiNode.accessibility` is `Option<Box<Accessibility>>` rather than
+  `Accessibility`. Read it with `UiNode::accessibility()`, which returns an
+  empty set when unset; `with_accessibility` is unchanged and stores nothing
+  for an all-default value.
 - `ProgramOptions::ontology` is an `OntologyMode` rather than a `bool`, and the
   ontology tree is no longer rebuilt during every rendered frame by default.
   Code reading the ontology registry outside the agent request path should call

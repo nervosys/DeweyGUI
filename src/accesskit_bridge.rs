@@ -46,42 +46,42 @@ pub fn to_accesskit_node(ui_node: &UiNode) -> accesskit::Node {
     }
 
     // Description from accessibility
-    if let Some(desc) = &ui_node.accessibility.description {
+    if let Some(desc) = &ui_node.accessibility().description {
         node.set_description(desc.as_str());
     }
 
     // Value text
-    if let Some(val) = &ui_node.accessibility.value_text {
+    if let Some(val) = &ui_node.accessibility().value_text {
         node.set_value(val.as_str());
     }
 
     // Disabled state
-    if ui_node.accessibility.disabled == Some(true) {
+    if ui_node.accessibility().disabled == Some(true) {
         node.set_disabled();
     }
 
     // Expanded state
-    if let Some(expanded) = ui_node.accessibility.expanded {
+    if let Some(expanded) = ui_node.accessibility().expanded {
         node.set_expanded(expanded);
     }
 
     // Selected state
-    if ui_node.accessibility.selected == Some(true) {
+    if ui_node.accessibility().selected == Some(true) {
         node.set_selected(true);
     }
 
     // Required state
-    if ui_node.accessibility.required == Some(true) {
+    if ui_node.accessibility().required == Some(true) {
         node.set_required();
     }
 
     // Keyboard shortcut
-    if let Some(shortcut) = &ui_node.accessibility.shortcut {
+    if let Some(shortcut) = &ui_node.accessibility().shortcut {
         node.set_keyboard_shortcut(shortcut.as_str());
     }
 
     // Live region
-    if let Some(live) = &ui_node.accessibility.live {
+    if let Some(live) = &ui_node.accessibility().live {
         let live_setting = match live.as_str() {
             "assertive" => accesskit::Live::Assertive,
             "polite" => accesskit::Live::Polite,
@@ -123,12 +123,12 @@ mod tests {
     fn ui_node_to_accesskit_node() {
         let mut ui = UiNode::new("Button", SemanticRole::Action);
         ui.label = Some("Save".into());
-        ui.accessibility = Accessibility {
+        ui.accessibility = Some(Box::new(Accessibility {
             description: Some("Save current file".into()),
             shortcut: Some("Ctrl+S".into()),
             disabled: Some(false),
             ..Default::default()
-        };
+        }));
 
         let ak = to_accesskit_node(&ui);
         assert_eq!(ak.role(), accesskit::Role::Button);

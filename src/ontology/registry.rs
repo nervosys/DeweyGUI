@@ -165,8 +165,13 @@ pub struct UiNode {
     /// Bounding rectangle in logical pixel coordinates.
     pub bounds: Option<NodeBounds>,
     /// Accessibility attributes for screen readers and assistive agents.
-    #[serde(default, skip_serializing_if = "Accessibility::is_empty")]
-    pub accessibility: Accessibility,
+    ///
+    /// Boxed and optional: `Accessibility` is 136 bytes of mostly-`None`
+    /// options, which was 45% of every `UiNode` even though the overwhelming
+    /// majority of widgets never set it. Use [`UiNode::accessibility`] to read
+    /// it without unwrapping.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub accessibility: Option<Box<Accessibility>>,
     /// Child nodes.
     pub children: Vec<UiNode>,
 }
@@ -370,7 +375,7 @@ impl UiNode {
             state: Properties::new(),
             label: None,
             bounds: None,
-            accessibility: Accessibility::default(),
+            accessibility: None,
             children: Vec::new(),
         }
     }
@@ -414,8 +419,30 @@ impl UiNode {
     /// Set accessibility attributes.
     #[must_use]
     pub fn with_accessibility(mut self, acc: Accessibility) -> Self {
-        self.accessibility = acc;
+        self.accessibility = if acc.is_empty() {
+            None
+        } else {
+            Some(Box::new(acc))
+        };
         self
+    }
+
+    /// Accessibility attributes, or an empty set if none were set.
+    #[must_use]
+    pub fn accessibility(&self) -> &Accessibility {
+        static EMPTY: Accessibility = Accessibility {
+            role: None,
+            description: None,
+            disabled: None,
+            value_text: None,
+            expanded: None,
+            selected: None,
+            required: None,
+            shortcut: None,
+            tab_index: None,
+            live: None,
+        };
+        self.accessibility.as_deref().unwrap_or(&EMPTY)
     }
 
     /// Convenience: set a named property in the state JSON object.

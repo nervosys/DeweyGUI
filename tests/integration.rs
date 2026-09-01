@@ -475,8 +475,8 @@ fn accessibility_struct() {
     };
 
     let node = UiNode::new("Button", SemanticRole::Action).with_accessibility(acc);
-    assert_eq!(node.accessibility.role, Some("button".into()));
-    assert!(node.accessibility.tab_index.is_none());
+    assert_eq!(node.accessibility().role, Some("button".into()));
+    assert!(node.accessibility().tab_index.is_none());
 }
 
 // ── New widget ontology tests ───────────────────────────────────────
@@ -1310,4 +1310,48 @@ fn on_demand_tree_tracks_model_changes() {
 fn ontology_mode_defaults_to_on_demand() {
     use dewey::runtime::{OntologyMode, ProgramOptions};
     assert_eq!(ProgramOptions::default().ontology, OntologyMode::OnDemand);
+}
+
+/// `UiNode::accessibility` is boxed to keep the node small. The wire format
+/// must not change: absent when unset, a plain object when set.
+#[test]
+fn boxed_accessibility_keeps_wire_format() {
+    use dewey::ontology::{Accessibility, SemanticRole, UiNode};
+
+    let bare = UiNode::new("Label", SemanticRole::Display);
+    let v = serde_json::to_value(&bare).unwrap();
+    assert!(
+        v.get("accessibility").is_none(),
+        "unset accessibility must be omitted, not serialized as null"
+    );
+    assert!(
+        bare.accessibility().role.is_none(),
+        "accessor gives empty set"
+    );
+
+    let described = UiNode::new("Button", SemanticRole::Action).with_accessibility(Accessibility {
+        role: Some("button".into()),
+        shortcut: Some("Ctrl+S".into()),
+        ..Default::default()
+    });
+    let v = serde_json::to_value(&described).unwrap();
+    let acc = v
+        .get("accessibility")
+        .expect("set accessibility serialized");
+    assert_eq!(acc.get("role").unwrap(), &serde_json::json!("button"));
+
+    let back: UiNode = serde_json::from_value(v).unwrap();
+    assert_eq!(back.accessibility().role.as_deref(), Some("button"));
+    assert_eq!(back.accessibility().shortcut.as_deref(), Some("Ctrl+S"));
+}
+
+/// Setting an all-default `Accessibility` must not allocate a box, so an
+/// application that passes one by habit does not pay for it.
+#[test]
+fn empty_accessibility_is_not_boxed() {
+    use dewey::ontology::{Accessibility, SemanticRole, UiNode};
+
+    let node =
+        UiNode::new("Label", SemanticRole::Display).with_accessibility(Accessibility::default());
+    assert!(node.accessibility.is_none());
 }

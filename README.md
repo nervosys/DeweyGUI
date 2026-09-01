@@ -268,7 +268,7 @@ clock:
 | Configuration           | Allocations/row | Bytes/row       |
 | ----------------------- | --------------- | --------------- |
 | No agent ids            | 4.0             | 500             |
-| Agent ids, ontology on  | 18.0 → **6.0**  | 3210 → **2290** |
+| Agent ids, ontology on  | 18.0 → **6.0**  | 3210 → **1767** |
 | Agent ids, ontology off | 18.0 → **4.0**  | 3210 → **598**  |
 
 Building the agent ontology is the dominant per-frame cost in an agentic UI.
@@ -286,7 +286,12 @@ Four changes cut it by 67%:
   application no agent will ever drive — the latter two measuring within a few
   percent of a UI with no agent ids at all.
 
-Hit-testing and painting are unaffected by all of it.
+- `UiNode` shrank from 304 to 176 bytes: `Accessibility` is 136 bytes of
+  mostly-`None` options that was stored inline in every node although no
+  widget sets it, and is now boxed behind `UiNode::accessibility()`.
+
+Hit-testing and painting are unaffected by all of it, and the agent wire
+format is unchanged throughout.
 
 ### Dewey's Unique Advantages
 

@@ -44,13 +44,23 @@ Per row (one `Label` + one `Button`), 1000 rows:
 | Configuration           | Allocations/row | Bytes/row       |
 | ----------------------- | --------------- | --------------- |
 | No agent ids            | 4.0             | 500             |
-| Agent ids, ontology on  | 18.0 → **6.0**  | 3210 → **2290** |
+| Agent ids, ontology on  | 18.0 → **6.0**  | 3210 → **1767** |
 | Agent ids, ontology off | 18.0 → **4.0**  | 3210 → **598**  |
 
 Step by step, with an agent attached: 18.0 → 11.0 (borrowed ids) → 8.0
 (borrowed property keys) → 6.0 (moved owned values), a 67% reduction. The
 remaining 6.0 is 4.0 that the plain path also pays plus one `Properties`
 vector per widget.
+
+Bytes fell further than allocations because `UiNode` itself shrank from **304
+to 176 bytes (−42%)**: `Accessibility` is 136 bytes of mostly-`None` options
+and was stored inline in every node, though no widget in the library sets it.
+It is now `Option<Box<Accessibility>>`, read through `UiNode::accessibility()`,
+which returns an empty set when unset. No widget pays a box it does not use,
+and the wire format is unchanged — absent when unset, a plain object when set.
+This is a memory-bandwidth win rather than an allocation win: the count stayed
+at 6.0, bytes per row fell 2290 → 1767 (−23%), and the agentic-vs-plain ratio
+at 100 rows went 2.1× → 1.8×, with the larger sizes inside run-to-run noise.
 
 Four optimizations produced this:
 
