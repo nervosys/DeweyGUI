@@ -71,26 +71,61 @@ this down.
 
 ## Results
 
-> ⚠️ **These timings are provisional.** They were captured on a machine pinned
-> at 100% CPU by unrelated work. A later run measured the *unchanged* plain
-> path at 70 µs where it had previously measured 22 µs — a 3× swing on code
-> that did not change — and measured 3000 rows as slower than 5000 rows, which
-> is impossible. The ordering below was stable across two runs, but the ratios
-> should be re-measured on an idle machine before being quoted anywhere.
-> The allocation counts above are unaffected by load and can be trusted.
+```bash
+cd benches/comparative && cargo run --release --bin timing
+```
 
-Windows 11, release profile, criterion, two runs of 8 s measurement time each.
-Ranges below span the medians of both runs.
+Windows 11, release profile. Fastest observed frame of 400/120/40 interleaved
+rounds, best of two independent runs.
 
-| Rows  | Dewey          | egui           | iced           | Dewey vs egui | Dewey vs iced |
-| ----- | -------------- | -------------- | -------------- | ------------- | ------------- |
-| 100   | **27–35 µs**   | 193–283 µs     | 94–111 µs      | 5.4–8.0×      | 2.7–3.5×      |
-| 1000  | **0.35–0.65 ms** | 3.1–8.0 ms   | 1.02–1.08 ms   | 4.8–12×       | 1.6–3.1×      |
-| 5000  | **1.7–2.4 ms** | 28–30 ms       | 51–55 ms       | 11.5–17×      | 21–32×        |
+| Rows | Dewey        | Dewey, ontology off | Dewey, agentic | egui 0.31 | iced 0.13 |
+| ---- | ------------ | ------------------- | -------------- | --------- | --------- |
+| 100  | **19.4 µs**  | 20.3 µs             | 57.7 µs        | 139.8 µs  | 56.2 µs   |
+| 1000 | **205 µs**   | 208 µs              | 717 µs         | 1.97 ms   | 872 µs    |
+| 5000 | **1.25 ms**  | 1.23 ms             | 12.24 ms       | 15.35 ms  | 14.10 ms  |
 
-Dewey was fastest in all six comparisons across both runs. The ordering
-Dewey < iced < egui held at 100 and 1000 rows; at 5000 rows iced overtakes egui
-(iced's cost grows superlinearly as its layer stack and layout tree grow).
+Speedup over Dewey with no agent ids:
+
+| Rows | vs egui | vs iced |
+| ---- | ------- | ------- |
+| 100  | 7.2×    | 2.9×    |
+| 1000 | 9.6×    | 4.2×    |
+| 5000 | 12.3×   | 11.3×   |
+
+Three things the columns show:
+
+- **The ontology gate is free.** `Dewey, ontology off` lands within 1–2% of the
+  no-agent-ids column at every size, in both runs. Skipping node construction
+  really does recover the entire cost.
+- **The ontology is the expensive part.** With it on, Dewey costs 3.0× the plain
+  path at 100 rows and 9.8× at 5000 — the gap grows with widget count, so an
+  agent-driven UI at 5000 rows (12.2 ms) is only modestly ahead of egui.
+- **Dewey leads at every size** on the like-for-like comparison, but by less
+  than an earlier version of this file claimed (see below).
+
+### Methodology, and why not criterion
+
+An earlier revision reported these numbers from `cargo bench` and got them
+badly wrong: it published iced at 51–55 ms and egui at 28–30 ms for 5000 rows,
+roughly 3× and 2× worse than they actually are. That run was taken on a machine
+pinned at 100% CPU by unrelated work, where criterion's mean/median measure the
+machine's load rather than the code — it ranked 3000 rows slower than 5000 rows,
+and moved an untouched code path by 3× between runs.
+
+`src/bin/timing.rs` is built for a contended machine instead:
+
+1. **Interleaved** — every framework runs once per round, so load drift is
+   common-mode rather than landing on whichever framework ran last.
+2. **Minimum, not mean** — the fastest observed frame approximates the
+   uncontended cost. No round can run faster than the real work allows, while
+   any round can be arbitrarily slowed by a competing process.
+3. **Noise is reported** — each row prints median/min, so a run whose numbers
+   were shaped by load is visible rather than silently published. These runs
+   sat at 1.1–1.5×.
+
+Run it at raised priority for the cleanest result. The residual spread between
+the two runs was ≤3% at 100 rows and 6–27% at 1000–5000 rows; treat the
+one-significant-figure ratios as solid and the rest as approximate.
 
 ## Caveats — read before quoting these numbers
 

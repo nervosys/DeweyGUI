@@ -23,10 +23,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - `benches/comparative` — a standalone crate benchmarking frame-build cost
-  against egui 0.31 and iced 0.13, plus an `allocs` binary that reports
-  deterministic per-frame allocation counts.
+  against egui 0.31 and iced 0.13, plus an `allocs` binary reporting
+  deterministic per-frame allocation counts and a `timing` binary that
+  interleaves frameworks and reports minimum frame time, so results stay
+  meaningful on a contended machine.
 - Regression tests covering the ontology gate: hitboxes and draw calls must be
   identical whether or not the ontology is built.
+
+### Fixed
+
+- Corrected the comparative performance table. The first version was measured
+  with criterion on a machine at 100% CPU and overstated egui's cost by ~2× and
+  iced's by ~3× at 5000 rows; it also ranked 3000 rows slower than 5000 rows.
+  Re-measured with the interleaved minimum-time harness.
 
 ### Changed
 

@@ -231,26 +231,31 @@ Dewey speaks JSON Lines over stdin/stdout. Any language that can read/write line
 
 CPU frame-build cost — widget construction, layout, and render-command
 generation for a list of N rows, each with a label and a button, running
-headless with no GPU. Full methodology, raw numbers, and caveats in
+headless with no GPU. Fastest observed frame of 400/120/40 interleaved rounds,
+best of two runs. Full methodology and caveats in
 [`benches/comparative/`](benches/comparative/README.md).
 
-| Rows | Dewey            | egui 0.31  | iced 0.13    | Dewey vs egui | Dewey vs iced |
-| ---- | ---------------- | ---------- | ------------ | ------------- | ------------- |
-| 100  | **27–35 µs**     | 193–283 µs | 94–111 µs    | 5.4–8.0×      | 2.7–3.5×      |
-| 1000 | **0.35–0.65 ms** | 3.1–8.0 ms | 1.02–1.08 ms | 4.8–12×       | 1.6–3.1×      |
-| 5000 | **1.7–2.4 ms**   | 28–30 ms   | 51–55 ms     | 11.5–17×      | 21–32×        |
+| Rows | Dewey       | Dewey, agentic | egui 0.31 | iced 0.13 | vs egui | vs iced |
+| ---- | ----------- | -------------- | --------- | --------- | ------- | ------- |
+| 100  | **19.4 µs** | 57.7 µs        | 139.8 µs  | 56.2 µs   | 7.2×    | 2.9×    |
+| 1000 | **205 µs**  | 717 µs         | 1.97 ms   | 872 µs    | 9.6×    | 4.2×    |
+| 5000 | **1.25 ms** | 12.24 ms       | 15.35 ms  | 14.10 ms  | 12.3×   | 11.3×   |
 
-Dewey was fastest at every size across two independent runs. Reproduce with
-`cd benches/comparative && cargo bench`.
+Reproduce with `cd benches/comparative && cargo run --release --bin timing`.
 
-> ⚠️ These timings are provisional — they were captured on a fully loaded
-> machine and need re-measuring on an idle one. The allocation figures below
-> are deterministic and unaffected.
+The *agentic* column is the honest one for real applications: with an agent id
+on every widget, Dewey builds an ontology node per widget per frame, and that
+costs 3–10× the plain path. egui and iced have no equivalent to build, so the
+like-for-like comparison is the first column. Text shaping is a second
+asymmetry — Dewey estimates text extents during frame build and shapes in the
+backend, where egui and iced shape inline (~10% of egui's frame). Tessellation,
+rasterization, and present are excluded for all three.
 
 ### Frame allocation cost
 
 Heap traffic per row (one `Label` + one `Button`), measured with a counting
-allocator via `cargo run --release --bin allocs`:
+allocator via `cargo run --release --bin allocs` — deterministic, unlike wall
+clock:
 
 | Configuration           | Allocations/row | Bytes/row |
 | ----------------------- | --------------- | --------- |
@@ -263,15 +268,8 @@ Two changes cut it: `UiNode` ids and widget-type names are now
 `Cow<'static, str>` rather than freshly allocated `String`s (18.0 → 11.0
 allocations per row with an agent attached), and `ProgramOptions::ontology`
 lets an application that will never be agent-driven skip node construction
-entirely (18.0 → 4.0 per row, −81% bytes). Hit-testing and painting are
-unaffected either way.
-
-Two caveats worth stating plainly: Dewey estimates text extents during frame
-build rather than shaping glyphs — its GPU backends pay that cost at render
-time, which narrows the 5000-row gap from ~12× to roughly ~4–5× — and Dewey
-defers the interaction pass that egui performs inline, so part of the margin is
-architectural rather than raw efficiency. Tessellation, rasterization, and
-present are excluded for all three.
+entirely (18.0 → 4.0 per row, −81% bytes), which measures within 1–2% of a UI
+with no agent ids at all. Hit-testing and painting are unaffected either way.
 
 ### Dewey's Unique Advantages
 
