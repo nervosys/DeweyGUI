@@ -153,7 +153,9 @@ impl Discoverable for Button {
 
 impl Widget for Button {
     fn render(mut self, area: Rect, frame: &mut Frame<'_>) {
-        if !self.agent_id.is_empty() {
+        if self.agent_id.is_empty() {
+            frame.note_unaddressable("Button");
+        } else {
             frame.register_hitbox(self.agent_id.clone(), area, 1);
             if let Some(msg) = self.on_click.take() {
                 frame.register_message(self.agent_id.clone(), msg);

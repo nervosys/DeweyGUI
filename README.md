@@ -291,8 +291,25 @@ switch filter, read the result back):
 
 | Task                                       | Time        | Rate      |
 | ------------------------------------------ | ----------- | --------- |
-| counter: discover → understand → act → verify | **11.9 µs** | 84,000/s  |
+| counter: discover → understand → act → verify | **8.2 µs**  | 122,000/s |
 | todomvc: 9-step add/complete/filter/verify | **44.7 µs** | 22,000/s  |
+
+An agent can also ask whether the interface it just built is *operable*, which
+a screenshot cannot tell it:
+
+```jsonc
+-> {"type": "validate"}
+<- {"ok": false, "errors": 1, "diagnostics": [
+     {"severity": "error", "code": "unaddressable_widget", "widget_type": "Button",
+      "message": "1 `Button` widget(s) rendered without an id, so they are not
+                  hit-testable and no agent can act on them; give each one
+                  `.action(id, msg)`"}]}
+```
+
+`validate` catches faults that render perfectly: id-less widgets that cannot be
+clicked, duplicate ids that make an action ambiguous, and zero-size or offscreen
+bounds. The first of those is not hypothetical — it was made while writing this
+project's own benchmarks, where a button looked right and was simply dead.
 
 egui and iced have no equivalent to measure: neither exposes a widget tree, a
 typed action, or a readable state snapshot to an external process, so an agent

@@ -189,6 +189,10 @@ pub struct Frame<'a> {
         std::borrow::Cow<'static, str>,
         Box<dyn std::any::Any + Send>,
     )>,
+    /// Interactive widgets that rendered without an id, and so cannot be
+    /// clicked or addressed. Collected here because such a widget never
+    /// reaches the UI tree to be noticed afterwards.
+    unaddressable: Vec<&'static str>,
 }
 
 impl<'a> Frame<'a> {
@@ -220,6 +224,7 @@ impl<'a> Frame<'a> {
             painter,
             ontology,
             messages: Vec::new(),
+            unaddressable: Vec::new(),
         }
     }
 
@@ -266,6 +271,19 @@ impl<'a> Frame<'a> {
         msg: Box<dyn std::any::Any + Send>,
     ) {
         self.messages.push((agent_id.into(), msg));
+    }
+
+    /// Record that an interactive widget rendered with no id.
+    ///
+    /// Such a widget looks correct on screen but is dead: no hitbox, no
+    /// ontology node, and nothing an agent can name.
+    pub fn note_unaddressable(&mut self, widget_type: &'static str) {
+        self.unaddressable.push(widget_type);
+    }
+
+    /// Take the unaddressable-widget reports collected this frame.
+    pub fn take_unaddressable(&mut self) -> Vec<&'static str> {
+        std::mem::take(&mut self.unaddressable)
     }
 
     /// Take the messages widgets registered this frame.

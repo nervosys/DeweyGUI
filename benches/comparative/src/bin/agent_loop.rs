@@ -105,6 +105,9 @@ fn driver() -> HeadlessDriver<App> {
 
 fn fmt(d: Duration) -> String {
     let us = d.as_secs_f64() * 1e6;
+    if us < 1.0 {
+        return format!("{:.0} ns", d.as_secs_f64() * 1e9);
+    }
     if us >= 1000.0 {
         format!("{:.2} ms", us / 1000.0)
     } else {

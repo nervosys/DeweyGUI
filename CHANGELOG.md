@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Performance
 
+- The headless driver no longer re-renders the application for requests that do
+  not read the UI tree. `query_ontology` and `get_schema` are answered from the
+  registry alone and dropped from ~1.1 µs to below timer resolution; the
+  five-step agent loop went from 11.9 µs to 8.2 µs.
+
 - `UiNode::widget_type`, `UiNode::agent_id`, and hit-map ids are now
   `Cow<'static, str>` instead of `String`. Every call site passes a string
   literal, so agentic frames no longer allocate a `String` per widget per
@@ -47,6 +52,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   3210 → 598 bytes (−81%). Hit-testing and painting are unaffected.
 
 ### Added
+
+- `AgentRequest::Validate` and `HeadlessDriver::validate` check a rendered
+  interface for structural faults an agent cannot see from a screenshot:
+  widgets that rendered without an id (unclickable and unaddressable, though
+  they look correct), duplicate agent ids, zero-size bounds, and offscreen
+  bounds. Returns `ontology::Diagnostic` values carrying a stable code, the
+  widget id and type, and how to fix it. This is how an agent confirms the GUI
+  it just scaffolded is operable rather than merely rendering.
+- `Frame::note_unaddressable` / `take_unaddressable`, which is how `Button` and
+  `Checkbox` report themselves when rendered with no id — such a widget never
+  reaches the UI tree, so it cannot be noticed afterwards.
 
 - `Button::action(id, msg)` and `Checkbox::action(id, msg)` wire a widget for a
   person and an agent in one call. The runtime routes a mouse click through the

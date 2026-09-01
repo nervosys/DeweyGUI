@@ -147,6 +147,11 @@ verify counter  (get_state remaining)         4.3 µs
 full 9-step task                             44.7 µs
 ```
 
+An agent can additionally ask `validate` whether the interface is operable at
+all — it reports id-less widgets that cannot be clicked, duplicate ids, and
+zero-size or offscreen bounds, which is the class of fault that renders
+perfectly and fails silently.
+
 **≈22,000 complete task runs per second**, up from 51.9 µs and ≈19,000 before
 the dispatch work — the same task now routes through widget messages rather
 than a hand-written handler. Both harnesses assert the workflow

@@ -116,7 +116,9 @@ impl Discoverable for Checkbox {
 
 impl Widget for Checkbox {
     fn render(mut self, area: Rect, frame: &mut Frame<'_>) {
-        if !self.agent_id.is_empty() {
+        if self.agent_id.is_empty() {
+            frame.note_unaddressable("Checkbox");
+        } else {
             frame.register_hitbox(self.agent_id.clone(), area, 1);
             if let Some(msg) = self.on_toggle.take() {
                 frame.register_message(self.agent_id.clone(), msg);

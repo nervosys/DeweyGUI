@@ -1503,3 +1503,134 @@ fn widget_message_is_consumed_once() {
         "each request re-renders and re-arms the message"
     );
 }
+
+// ── Structural validation ──────────────────────────────────────────
+
+/// The exact mistake made while writing this project's own benchmarks: a
+/// button with no id renders correctly and is completely dead.
+struct DeadButtonApp;
+
+#[derive(Debug)]
+enum DeadMsg {}
+
+impl Model for DeadButtonApp {
+    type Msg = DeadMsg;
+    fn update(&mut self, _m: DeadMsg) -> Command<DeadMsg> {
+        Command::None
+    }
+    fn view(&self, frame: &mut Frame<'_>) {
+        Button::new("click me").render(frame.area, frame);
+    }
+}
+
+#[test]
+fn validate_flags_a_button_with_no_id() {
+    use dewey::agent::driver::HeadlessDriver;
+    use dewey::ontology::Severity;
+
+    let mut d = HeadlessDriver::new(DeadButtonApp, 200.0, 100.0);
+    d.init();
+    let found = d.validate();
+
+    let dead = found
+        .iter()
+        .find(|x| x.code == "unaddressable_widget")
+        .expect("an id-less button must be reported");
+    assert_eq!(dead.severity, Severity::Error);
+    assert_eq!(dead.widget_type.as_deref(), Some("Button"));
+    assert!(
+        dead.message.contains("action"),
+        "the diagnostic should say how to fix it: {}",
+        dead.message
+    );
+}
+
+struct DuplicateIdApp;
+
+#[derive(Debug)]
+enum DupMsg {
+    Go,
+}
+
+impl Model for DuplicateIdApp {
+    type Msg = DupMsg;
+    fn update(&mut self, _m: DupMsg) -> Command<DupMsg> {
+        Command::None
+    }
+    fn view(&self, frame: &mut Frame<'_>) {
+        let rows = dewey::layout::Layout::vertical([
+            dewey::layout::Constraint::Length(40.0),
+            dewey::layout::Constraint::Length(40.0),
+        ])
+        .split(frame.area);
+        Button::new("a")
+            .action("go", DupMsg::Go)
+            .render(rows[0], frame);
+        Button::new("b")
+            .action("go", DupMsg::Go)
+            .render(rows[1], frame);
+    }
+}
+
+#[test]
+fn validate_flags_duplicate_ids() {
+    use dewey::agent::driver::HeadlessDriver;
+
+    let mut d = HeadlessDriver::new(DuplicateIdApp, 200.0, 200.0);
+    d.init();
+    let found = d.validate();
+    let dup = found
+        .iter()
+        .find(|x| x.code == "duplicate_agent_id")
+        .expect("two widgets sharing an id must be reported");
+    assert_eq!(dup.agent_id.as_deref(), Some("go"));
+}
+
+/// A correct interface must produce no findings, or the check is noise.
+#[test]
+fn validate_passes_a_well_formed_app() {
+    use dewey::agent::driver::HeadlessDriver;
+
+    let mut d = HeadlessDriver::new(
+        ActionApp {
+            count: 0,
+            on: false,
+        },
+        200.0,
+        200.0,
+    );
+    d.init();
+    let found = d.validate();
+    assert!(found.is_empty(), "well-formed app reported: {found:?}");
+}
+
+/// And it must be reachable over the protocol, not just from Rust.
+#[test]
+fn validate_is_available_to_agents() {
+    use dewey::agent::driver::HeadlessDriver;
+    use dewey::agent::protocol::AgentRequest;
+
+    let mut d = HeadlessDriver::new(DeadButtonApp, 200.0, 100.0);
+    d.init();
+    let r = d.process_request(&AgentRequest::Validate);
+    assert!(r.success);
+    let data = r.data.expect("validate returns data");
+    assert_eq!(data["ok"], serde_json::json!(false));
+    assert_eq!(data["errors"], serde_json::json!(1));
+    assert_eq!(
+        data["diagnostics"][0]["code"],
+        serde_json::json!("unaddressable_widget")
+    );
+
+    let mut good = HeadlessDriver::new(
+        ActionApp {
+            count: 0,
+            on: false,
+        },
+        200.0,
+        200.0,
+    );
+    good.init();
+    let r = good.process_request(&AgentRequest::Validate);
+    assert_eq!(r.data.unwrap()["ok"], serde_json::json!(true));
+}

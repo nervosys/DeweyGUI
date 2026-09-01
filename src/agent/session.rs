@@ -111,6 +111,13 @@ impl AgentSession {
                 ),
             },
 
+            // The driver replaces this: validation needs the frame's own record
+            // of what rendered, which a session cannot see.
+            AgentRequest::Validate => (
+                AgentResponse::ok(serde_json::json!({ "ok": true, "diagnostics": [] })),
+                false,
+            ),
+
             AgentRequest::GetTree => {
                 let tree = registry.export_tree();
                 (AgentResponse::ok(tree), false)

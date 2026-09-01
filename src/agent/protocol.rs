@@ -38,6 +38,15 @@ pub enum AgentRequest {
     #[serde(rename = "get_schema")]
     GetSchema { widget_type: String },
 
+    /// Check the rendered interface for structural faults.
+    ///
+    /// Returns a list of [`Diagnostic`](crate::ontology::Diagnostic)s: widgets
+    /// that are unclickable, duplicated ids, zero-size or offscreen bounds.
+    /// This is how an agent confirms the interface it just scaffolded is
+    /// actually operable, rather than merely rendering.
+    #[serde(rename = "validate")]
+    Validate,
+
     /// Get the current UI tree snapshot.
     #[serde(rename = "get_tree")]
     GetTree,

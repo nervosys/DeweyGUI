@@ -21,6 +21,8 @@ pub struct HeadlessDriver<M: Model> {
     hit_map: crate::event::HitMap,
     /// Messages registered by widgets during the last render, keyed by agent id.
     messages: std::collections::HashMap<String, Box<dyn std::any::Any + Send>>,
+    /// Interactive widgets that rendered without an id in the last frame.
+    unaddressable: Vec<&'static str>,
 }
 
 impl<M: Model> HeadlessDriver<M> {
@@ -37,6 +39,7 @@ impl<M: Model> HeadlessDriver<M> {
             window_size: crate::core::Size::new(width, height),
             hit_map: crate::event::HitMap::new(),
             messages: std::collections::HashMap::new(),
+            unaddressable: Vec::new(),
         }
     }
 
@@ -67,8 +70,12 @@ impl<M: Model> HeadlessDriver<M> {
 
     /// Process a single agent request and return the response.
     pub fn process_request(&mut self, request: &AgentRequest) -> AgentResponse {
-        // Render to build the UI tree before processing tree-dependent requests
-        self.render();
+        // Only the requests that actually read the tree pay for building it.
+        // Answering `get_schema` or `ping` used to re-render the whole
+        // application first.
+        if Self::needs_tree(request) {
+            self.render();
+        }
 
         let (mut response, should_quit) = self.session.process_request(request, &self.ontology);
 
@@ -90,6 +97,21 @@ impl<M: Model> HeadlessDriver<M> {
             if !result.is_null() {
                 response.data = Some(result);
             }
+        }
+
+        // Structural check: answered here because it needs the frame's own
+        // record of what rendered, which the session cannot see.
+        if matches!(request, AgentRequest::Validate) {
+            let findings = self.validate();
+            let errors = findings
+                .iter()
+                .filter(|d| d.severity == crate::ontology::Severity::Error)
+                .count();
+            response = AgentResponse::ok(serde_json::json!({
+                "ok": errors == 0,
+                "errors": errors,
+                "diagnostics": findings,
+            }));
         }
 
         // Handle batch actions.
@@ -172,6 +194,7 @@ impl<M: Model> HeadlessDriver<M> {
         let mut frame = Frame::new(area, &mut self.hit_map, &mut backend);
         self.model.view(&mut frame);
 
+        self.unaddressable = frame.take_unaddressable();
         self.messages = frame
             .take_messages()
             .into_iter()
@@ -185,6 +208,40 @@ impl<M: Model> HeadlessDriver<M> {
             root.children = nodes;
             self.ontology.set_tree(crate::ontology::UiTree::new(root));
         }
+    }
+
+    /// Check the rendered interface for structural faults.
+    ///
+    /// Renders once, then reports widgets that cannot be clicked or addressed,
+    /// duplicated ids, and bounds that are empty or offscreen. An agent can
+    /// call this after scaffolding an interface to confirm it is operable
+    /// without opening a window.
+    pub fn validate(&mut self) -> Vec<crate::ontology::Diagnostic> {
+        self.render();
+        let tree = self.ontology.tree().cloned().unwrap_or_else(|| {
+            crate::ontology::UiTree::new(crate::ontology::UiNode::new(
+                "root",
+                crate::ontology::SemanticRole::Container,
+            ))
+        });
+        crate::ontology::diagnostics::check(&tree, &self.unaddressable, self.window_size)
+    }
+
+    /// Whether answering this request requires a freshly rendered UI tree.
+    ///
+    /// Type catalogue queries (`query_ontology`, `get_schema`), liveness checks
+    /// and session bookkeeping are answered from the registry alone.
+    fn needs_tree(request: &AgentRequest) -> bool {
+        matches!(
+            request,
+            AgentRequest::GetTree
+                | AgentRequest::GetState { .. }
+                | AgentRequest::ExecuteAction { .. }
+                | AgentRequest::BatchActions { .. }
+                | AgentRequest::InjectEvent { .. }
+                | AgentRequest::Screenshot { .. }
+                | AgentRequest::Validate
+        )
     }
 
     /// Dispatch the message a widget registered for `agent_id`, if any.
