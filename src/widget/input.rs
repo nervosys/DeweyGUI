@@ -173,15 +173,6 @@ impl StatefulWidget for TextInput {
 
     fn render(self, area: Rect, frame: &mut Frame<'_>, state: &mut TextInputState) {
         if !self.agent_id.is_empty() {
-            if frame.ontology_enabled() {
-                let node = UiNode::new("TextInput", SemanticRole::Input)
-                    .with_id(self.agent_id.clone())
-                    .with_bounds(area.into())
-                    .with_property("text", serde_json::json!(state.text))
-                    .with_property("placeholder", serde_json::json!(self.placeholder))
-                    .with_property("focused", serde_json::json!(state.focused));
-                frame.register_widget(node);
-            }
             frame.register_hitbox(self.agent_id.clone(), area, 1);
         }
 
@@ -226,6 +217,18 @@ impl StatefulWidget for TextInput {
                 Color::WHITE,
                 1.5,
             );
+        }
+
+        // Built last so owned fields move into the state instead of being
+        // cloned; painting above only borrows them.
+        if frame.ontology_enabled() && !self.agent_id.is_empty() {
+            let node = UiNode::new("TextInput", SemanticRole::Input)
+                .with_id(self.agent_id.clone())
+                .with_bounds(area.into())
+                .with_property("text", serde_json::json!(state.text))
+                .with_property("placeholder", serde_json::Value::from(self.placeholder))
+                .with_property("focused", serde_json::json!(state.focused));
+            frame.register_widget(node);
         }
     }
 }

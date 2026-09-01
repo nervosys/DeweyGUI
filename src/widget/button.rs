@@ -128,14 +128,6 @@ impl Discoverable for Button {
 impl Widget for Button {
     fn render(self, area: Rect, frame: &mut Frame<'_>) {
         if !self.agent_id.is_empty() {
-            if frame.ontology_enabled() {
-                let node = UiNode::new("Button", SemanticRole::Action)
-                    .with_id(self.agent_id.clone())
-                    .with_bounds(area.into())
-                    .with_property("label", serde_json::json!(self.label))
-                    .with_property("enabled", serde_json::json!(self.enabled));
-                frame.register_widget(node);
-            }
             frame.register_hitbox(self.agent_id.clone(), area, 1);
         }
 
@@ -161,5 +153,16 @@ impl Widget for Button {
         frame
             .painter()
             .text(crate::core::Position::new(tx, ty), &self.label, &ts);
+
+        // Built last so owned fields (text, item vectors) move into the
+        // state instead of being cloned; painting above only borrows them.
+        if frame.ontology_enabled() && !self.agent_id.is_empty() {
+            let node = UiNode::new("Button", SemanticRole::Action)
+                .with_id(self.agent_id.clone())
+                .with_bounds(area.into())
+                .with_property("label", serde_json::Value::from(self.label))
+                .with_property("enabled", serde_json::json!(self.enabled));
+            frame.register_widget(node);
+        }
     }
 }

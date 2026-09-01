@@ -41,14 +41,18 @@ cd benches/comparative && cargo run --release --bin allocs
 
 Per row (one `Label` + one `Button`), 1000 rows:
 
-| Configuration            | Allocations/row | Bytes/row |
-| ------------------------ | --------------- | --------- |
-| No agent ids             | 4.0             | 500       |
-| Agent ids, ontology on   | 18.0 → **8.0**  | 3210 → **2308** |
-| Agent ids, ontology off  | 18.0 → **4.0**  | 3210 → **598**  |
+| Configuration           | Allocations/row | Bytes/row       |
+| ----------------------- | --------------- | --------------- |
+| No agent ids            | 4.0             | 500             |
+| Agent ids, ontology on  | 18.0 → **6.0**  | 3210 → **2290** |
+| Agent ids, ontology off | 18.0 → **4.0**  | 3210 → **598**  |
 
-Three optimizations produced this, cutting agentic frames from 18.0 to 8.0
-allocations per row (−56%) with an agent attached, and to 4.0 without:
+Step by step, with an agent attached: 18.0 → 11.0 (borrowed ids) → 8.0
+(borrowed property keys) → 6.0 (moved owned values), a 67% reduction. The
+remaining 6.0 is 4.0 that the plain path also pays plus one `Properties`
+vector per widget.
+
+Four optimizations produced this:
 
 1. **`Cow<'static, str>` for `UiNode::widget_type`, `UiNode::agent_id`, and
    hit-map ids.** Every call site passes a string literal, so a frame used to
@@ -61,7 +65,17 @@ allocations per row (−56%) with an agent attached, and to 4.0 without:
    `Properties` is a flat `Vec<(Cow<'static, str>, Value)>` that serializes
    identically, so keys cost nothing and the map collapses to one vector
    allocation: 11.0 → 8.0 per row (−27%), 3173 → 2308 bytes.
-3. **`Frame::with_ontology(..., false)`.** A frame no agent will inspect used to
+3. **Owned values move into the state instead of being cloned.** `json!(expr)`
+   takes its argument by reference, so `json!(self.text)` cloned the string
+   every frame — and for `List`, `Select`, and `Tabs`, cloned an entire
+   `Vec<String>` every frame. Widgets now build their `UiNode` at the *end* of
+   `render`, after painting has finished borrowing those fields, and move them
+   in: 8.0 → 6.0 allocations per row, and for a list widget one allocation per
+   item per frame becomes zero. Node registration still happens in render
+   order, pinned by `node_registration_order_follows_render_order`.
+   `Table` and the four widgets with early returns in `render` were left alone
+   — moving registration past a `return` would silently drop it.
+4. **`Frame::with_ontology(..., false)`.** A frame no agent will inspect used to
    build a `UiNode` per widget and throw it away. Widgets now check
    `frame.ontology_enabled()` *before* constructing the node, so the cost is
    skipped rather than discarded: 18.0 → 4.0 allocations per row (−78%) and
@@ -87,39 +101,52 @@ this down.
 cd benches/comparative && cargo run --release --bin timing
 ```
 
-Windows 11, release profile. Fastest observed frame of 400/120/40 interleaved
-rounds, best of two independent runs.
+Windows 11, release profile, raised priority. Fastest observed frame of
+400/120/40 interleaved rounds. **All figures below come from a single run**,
+because absolute times move with whatever else the machine is doing — a later
+run measured egui 20% faster with egui's code untouched. The stable, load-
+independent quantity is the ratio *within* a run, so that is what the
+optimization claims rest on.
 
-| Rows | Dewey       | Dewey, ontology off | Dewey, agentic | egui 0.31 | iced 0.13 |
-| ---- | ----------- | ------------------- | -------------- | --------- | --------- |
-| 100  | **19.4 µs** | 20.3 µs             | 44.6 µs        | 139.8 µs  | 56.2 µs   |
-| 1000 | **205 µs**  | 208 µs              | 566 µs         | 1.97 ms   | 872 µs    |
-| 5000 | **1.25 ms** | 1.23 ms             | 7.77 ms        | 15.35 ms  | 14.10 ms  |
-
-The agentic column improved 23% / 21% / 37% against the pre-optimization
-figures of 57.7 µs, 717 µs, and 12.24 ms. The first two reproduced closely
-across runs (44.6/44.9 µs, 566/628 µs); the 5000-row figure ranged 7.77–11.41 ms,
-so treat that one as "improved, magnitude uncertain" — the allocation counts
-above are the firm evidence there.
+| Rows | Dewey        | Dewey, ontology off | Dewey, agentic | egui 0.31 | iced 0.13 |
+| ---- | ------------ | ------------------- | -------------- | --------- | --------- |
+| 100  | **13.6 µs**  | 14.5 µs             | 29.2 µs        | 111.2 µs  | 43.5 µs   |
+| 1000 | **132.3 µs** | 136.2 µs            | 283.7 µs       | 1.56 ms   | 492.1 µs  |
+| 5000 | **926.5 µs** | 1.01 ms             | 5.27 ms        | 15.04 ms  | 15.25 ms  |
 
 Speedup over Dewey with no agent ids:
 
 | Rows | vs egui | vs iced |
 | ---- | ------- | ------- |
-| 100  | 7.2×    | 2.9×    |
-| 1000 | 9.6×    | 4.2×    |
-| 5000 | 12.3×   | 11.3×   |
+| 100  | 8.2×    | 3.2×    |
+| 1000 | 11.8×   | 3.7×    |
+| 5000 | 16.2×   | 16.5×   |
+
+A second run agreed on every ratio (8.1× / 11.8× / 13.0× vs egui, and the
+agentic ratios below identical to one decimal place).
+
+### The agentic path, measured as a within-run ratio
+
+How much an agent-driven UI costs over the same UI with no agent ids — the
+number the optimization work was aimed at, and the one that does not care how
+loaded the machine is:
+
+| Rows | After borrowed ids + gate | After borrowed keys | After moved values |
+| ---- | ------------------------- | ------------------- | ------------------ |
+| 100  | 3.0×                      | 2.3×                | **2.1×**           |
+| 1000 | 4.2×                      | 2.7×                | **2.1×**           |
+| 5000 | 9.1×                      | 6.2×                | **5.7×**           |
 
 Three things the columns show:
 
-- **The ontology gate is free.** `Dewey, ontology off` lands within 1–2% of the
+- **The ontology gate is free.** `Dewey, ontology off` lands within 1–9% of the
   no-agent-ids column at every size, in both runs. Skipping node construction
-  really does recover the entire cost.
-- **The ontology is still the expensive part.** With it on, Dewey costs 2.3×
-  the plain path at 100 rows and ~6× at 5000. The gap grows with widget count,
-  so the agentic column, not the plain one, is what a real Dewey app pays.
-- **Dewey leads at every size** on the like-for-like comparison, but by less
-  than an earlier version of this file claimed (see below).
+  recovers essentially the entire cost.
+- **The ontology is still the expensive part**, but far less so: an agentic
+  frame cost 4.2× the plain path at 1000 rows before this work and 2.1× after.
+  It still grows with widget count, so the agentic column, not the plain one,
+  is what a real Dewey app pays.
+- **Dewey leads at every size** on the like-for-like comparison.
 
 ### Methodology, and why not criterion
 

@@ -137,14 +137,6 @@ impl Discoverable for Menu {
 
 impl Widget for Menu {
     fn render(self, area: Rect, frame: &mut Frame<'_>) {
-        if frame.ontology_enabled() && !self.agent_id.is_empty() {
-            let node = UiNode::new("Menu", SemanticRole::Menu)
-                .with_id(self.agent_id.clone())
-                .with_bounds(area.into())
-                .with_property("title", serde_json::json!(self.title));
-            frame.register_widget(node);
-        }
-
         // Menu bar background
         let bar_h = 28.0;
         let bar = Rect::new(area.x, area.y, area.width, bar_h);
@@ -154,5 +146,15 @@ impl Widget for Menu {
         frame
             .painter()
             .text(Position::new(area.x + 8.0, area.y + 6.0), &self.title, &ts);
+
+        // Built last so owned fields (text, item vectors) move into the
+        // state instead of being cloned; painting above only borrows them.
+        if frame.ontology_enabled() && !self.agent_id.is_empty() {
+            let node = UiNode::new("Menu", SemanticRole::Menu)
+                .with_id(self.agent_id.clone())
+                .with_bounds(area.into())
+                .with_property("title", serde_json::Value::from(self.title));
+            frame.register_widget(node);
+        }
     }
 }

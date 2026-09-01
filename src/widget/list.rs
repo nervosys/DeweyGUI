@@ -152,14 +152,6 @@ impl StatefulWidget for List {
 
     fn render(self, area: Rect, frame: &mut Frame<'_>, state: &mut ListState) {
         if !self.agent_id.is_empty() {
-            if frame.ontology_enabled() {
-                let node = UiNode::new("List", SemanticRole::Selection)
-                    .with_id(self.agent_id.clone())
-                    .with_bounds(area.into())
-                    .with_property("items", serde_json::json!(self.items))
-                    .with_property("selected", serde_json::json!(state.selected));
-                frame.register_widget(node);
-            }
             frame.register_hitbox(self.agent_id.clone(), area, 1);
         }
 
@@ -179,5 +171,16 @@ impl StatefulWidget for List {
                 .text(Position::new(area.x + 4.0, y + 4.0), item, &ts);
         }
         frame.painter().pop_clip();
+
+        // Built last so owned fields move into the state instead of being
+        // cloned; painting above only borrows them.
+        if frame.ontology_enabled() && !self.agent_id.is_empty() {
+            let node = UiNode::new("List", SemanticRole::Selection)
+                .with_id(self.agent_id.clone())
+                .with_bounds(area.into())
+                .with_property("items", serde_json::Value::from(self.items))
+                .with_property("selected", serde_json::json!(state.selected));
+            frame.register_widget(node);
+        }
     }
 }

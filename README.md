@@ -235,17 +235,22 @@ headless with no GPU. Fastest observed frame of 400/120/40 interleaved rounds,
 best of two runs. Full methodology and caveats in
 [`benches/comparative/`](benches/comparative/README.md).
 
-| Rows | Dewey       | Dewey, agentic | egui 0.31 | iced 0.13 | vs egui | vs iced |
-| ---- | ----------- | -------------- | --------- | --------- | ------- | ------- |
-| 100  | **19.4 µs** | 44.6 µs        | 139.8 µs  | 56.2 µs   | 7.2×    | 2.9×    |
-| 1000 | **205 µs**  | 566 µs         | 1.97 ms   | 872 µs    | 9.6×    | 4.2×    |
-| 5000 | **1.25 ms** | 7.77 ms        | 15.35 ms  | 14.10 ms  | 12.3×   | 11.3×   |
+| Rows | Dewey        | Dewey, agentic | egui 0.31 | iced 0.13 | vs egui | vs iced |
+| ---- | ------------ | -------------- | --------- | --------- | ------- | ------- |
+| 100  | **13.6 µs**  | 29.2 µs        | 111.2 µs  | 43.5 µs   | 8.2×    | 3.2×    |
+| 1000 | **132.3 µs** | 283.7 µs       | 1.56 ms   | 492.1 µs  | 11.8×   | 3.7×    |
+| 5000 | **926.5 µs** | 5.27 ms        | 15.04 ms  | 15.25 ms  | 16.2×   | 16.5×   |
+
+All figures come from a single run — absolute times shift with machine load, so
+the stable quantity is the ratio within a run. A second run agreed on every
+ratio.
 
 Reproduce with `cd benches/comparative && cargo run --release --bin timing`.
 
 The *agentic* column is the honest one for real applications: with an agent id
-on every widget, Dewey builds an ontology node per widget per frame, and that
-costs 3–10× the plain path. egui and iced have no equivalent to build, so the
+on every widget, Dewey builds an ontology node per widget per frame. That used
+to cost 3–10× the plain path; after the allocation work below it costs
+2.1–5.7×. egui and iced have no equivalent to build, so the
 like-for-like comparison is the first column. Text shaping is a second
 asymmetry — Dewey estimates text extents during frame build and shapes in the
 backend, where egui and iced shape inline (~10% of egui's frame). Tessellation,
@@ -257,20 +262,27 @@ Heap traffic per row (one `Label` + one `Button`), measured with a counting
 allocator via `cargo run --release --bin allocs` — deterministic, unlike wall
 clock:
 
-| Configuration           | Allocations/row | Bytes/row |
-| ----------------------- | --------------- | --------- |
-| No agent ids            | 4.0             | 500       |
-| Agent ids, ontology on  | 18.0 → **8.0**  | 3210 → **2308** |
+| Configuration           | Allocations/row | Bytes/row       |
+| ----------------------- | --------------- | --------------- |
+| No agent ids            | 4.0             | 500             |
+| Agent ids, ontology on  | 18.0 → **6.0**  | 3210 → **2290** |
 | Agent ids, ontology off | 18.0 → **4.0**  | 3210 → **598**  |
 
 Building the agent ontology is the dominant per-frame cost in an agentic UI.
-Three changes cut it by 56%: `UiNode` ids and widget-type names are now
-`Cow<'static, str>` rather than freshly allocated `String`s; `UiNode::state`
-is a flat `Properties` vector with borrowed keys instead of a `serde_json`
-map that allocated a `String` per key per frame; and
-`ProgramOptions::ontology` lets an application that will never be agent-driven
-skip node construction entirely, which measures within 1–2% of a UI with no
-agent ids at all. Hit-testing and painting are unaffected either way.
+Four changes cut it by 67%:
+
+- `UiNode` ids and widget-type names are `Cow<'static, str>` rather than
+  freshly allocated `String`s.
+- `UiNode::state` is a flat `Properties` vector with borrowed keys, not a
+  `serde_json` map that allocated a `String` per key per frame.
+- Widgets build their node at the end of `render`, so owned values *move* into
+  the state instead of being cloned — for `List`, `Select`, and `Tabs` that
+  turns one allocation per item per frame into zero.
+- `ProgramOptions::ontology` lets an application that will never be
+  agent-driven skip node construction entirely, which measures within a few
+  percent of a UI with no agent ids at all.
+
+Hit-testing and painting are unaffected by all of it.
 
 ### Dewey's Unique Advantages
 

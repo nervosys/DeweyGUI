@@ -121,14 +121,6 @@ impl Discoverable for Label {
 
 impl Widget for Label {
     fn render(self, area: Rect, frame: &mut Frame<'_>) {
-        if frame.ontology_enabled() && !self.agent_id.is_empty() {
-            let node = UiNode::new("Label", SemanticRole::Display)
-                .with_id(self.agent_id.clone())
-                .with_bounds(area.into())
-                .with_property("text", serde_json::json!(self.text));
-            frame.register_widget(node);
-        }
-
         // Draw background if specified
         if let Some(bg) = self.style.background {
             if bg.a > 0.0 {
@@ -143,5 +135,15 @@ impl Widget for Label {
         let tx = area.x + 4.0;
         let ty = area.y + (area.height - text_size.height).max(0.0) * 0.5;
         frame.painter().text(Position::new(tx, ty), &self.text, &ts);
+
+        // Built last so owned fields (text, item vectors) move into the
+        // state instead of being cloned; painting above only borrows them.
+        if frame.ontology_enabled() && !self.agent_id.is_empty() {
+            let node = UiNode::new("Label", SemanticRole::Display)
+                .with_id(self.agent_id.clone())
+                .with_bounds(area.into())
+                .with_property("text", serde_json::Value::from(self.text));
+            frame.register_widget(node);
+        }
     }
 }

@@ -20,6 +20,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   allocation and no key allocations: 11.0 → 8.0 allocations per row (−27%),
   3173 → 2308 bytes. Agentic frame build improved 23% at 100 rows and 21% at
   1000 rows.
+- Widgets now build their `UiNode` at the end of `render`, after painting has
+  finished borrowing their fields, so owned values move into the state instead
+  of being cloned. `json!(expr)` takes its argument by reference, so
+  `json!(self.text)` cloned the string every frame — and `List`, `Select`, and
+  `Tabs` cloned an entire `Vec<String>` every frame, one allocation per item.
+  8.0 → 6.0 allocations per row; 18.0 → 6.0 (−67%) cumulatively. Node
+  registration still follows render order. `Table` and the four widgets with
+  early returns in `render` were left unchanged.
 - `Frame::with_ontology` and `ProgramOptions::ontology` let an application skip
   building the agent ontology tree when no agent will inspect it. Widgets check
   `Frame::ontology_enabled()` before constructing a `UiNode`, so the cost is

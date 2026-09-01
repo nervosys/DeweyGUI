@@ -100,14 +100,6 @@ impl Discoverable for Checkbox {
 impl Widget for Checkbox {
     fn render(self, area: Rect, frame: &mut Frame<'_>) {
         if !self.agent_id.is_empty() {
-            if frame.ontology_enabled() {
-                let node = UiNode::new("Checkbox", SemanticRole::Input)
-                    .with_id(self.agent_id.clone())
-                    .with_bounds(area.into())
-                    .with_property("checked", serde_json::json!(self.checked))
-                    .with_property("label", serde_json::json!(self.label));
-                frame.register_widget(node);
-            }
             frame.register_hitbox(self.agent_id.clone(), area, 1);
         }
 
@@ -126,5 +118,16 @@ impl Widget for Checkbox {
             &self.label,
             &ts,
         );
+
+        // Built last so owned fields (text, item vectors) move into the
+        // state instead of being cloned; painting above only borrows them.
+        if frame.ontology_enabled() && !self.agent_id.is_empty() {
+            let node = UiNode::new("Checkbox", SemanticRole::Input)
+                .with_id(self.agent_id.clone())
+                .with_bounds(area.into())
+                .with_property("checked", serde_json::json!(self.checked))
+                .with_property("label", serde_json::Value::from(self.label));
+            frame.register_widget(node);
+        }
     }
 }

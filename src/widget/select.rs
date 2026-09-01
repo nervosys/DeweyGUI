@@ -130,20 +130,6 @@ impl StatefulWidget for Select {
 
     fn render(self, area: Rect, frame: &mut Frame<'_>, state: &mut SelectState) {
         if !self.agent_id.is_empty() {
-            if frame.ontology_enabled() {
-                let selected_text = self
-                    .options
-                    .get(state.selected)
-                    .cloned()
-                    .unwrap_or_default();
-                let node = UiNode::new("Select", SemanticRole::Selection)
-                    .with_id(self.agent_id.clone())
-                    .with_bounds(area.into())
-                    .with_property("options", serde_json::json!(self.options))
-                    .with_property("selected", serde_json::json!(state.selected))
-                    .with_property("selected_text", serde_json::json!(selected_text));
-                frame.register_widget(node);
-            }
             frame.register_hitbox(self.agent_id.clone(), area, 1);
         }
 
@@ -178,5 +164,22 @@ impl StatefulWidget for Select {
         frame
             .painter()
             .text(Position::new(arrow_x, arrow_y - 7.0), "\u{25BC}", &ts);
+
+        // Built last so owned fields move into the state instead of being
+        // cloned; painting above only borrows them.
+        if frame.ontology_enabled() && !self.agent_id.is_empty() {
+            let selected_text = self
+                .options
+                .get(state.selected)
+                .cloned()
+                .unwrap_or_default();
+            let node = UiNode::new("Select", SemanticRole::Selection)
+                .with_id(self.agent_id.clone())
+                .with_bounds(area.into())
+                .with_property("options", serde_json::Value::from(self.options))
+                .with_property("selected", serde_json::json!(state.selected))
+                .with_property("selected_text", serde_json::json!(selected_text));
+            frame.register_widget(node);
+        }
     }
 }

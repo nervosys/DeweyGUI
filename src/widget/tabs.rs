@@ -127,14 +127,6 @@ impl StatefulWidget for Tabs {
 
     fn render(self, area: Rect, frame: &mut Frame<'_>, state: &mut TabState) {
         if !self.agent_id.is_empty() {
-            if frame.ontology_enabled() {
-                let node = UiNode::new("Tabs", SemanticRole::Tab)
-                    .with_id(self.agent_id.clone())
-                    .with_bounds(area.into())
-                    .with_property("labels", serde_json::json!(self.labels))
-                    .with_property("selected", serde_json::json!(state.selected));
-                frame.register_widget(node);
-            }
             frame.register_hitbox(self.agent_id.clone(), area, 1);
         }
 
@@ -160,5 +152,16 @@ impl StatefulWidget for Tabs {
             Color::GRAY,
             1.0,
         );
+
+        // Built last so owned fields move into the state instead of being
+        // cloned; painting above only borrows them.
+        if frame.ontology_enabled() && !self.agent_id.is_empty() {
+            let node = UiNode::new("Tabs", SemanticRole::Tab)
+                .with_id(self.agent_id.clone())
+                .with_bounds(area.into())
+                .with_property("labels", serde_json::Value::from(self.labels))
+                .with_property("selected", serde_json::json!(state.selected));
+            frame.register_widget(node);
+        }
     }
 }

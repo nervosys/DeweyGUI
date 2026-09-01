@@ -109,15 +109,6 @@ impl Discoverable for Tooltip {
 
 impl Widget for Tooltip {
     fn render(self, area: Rect, frame: &mut Frame<'_>) {
-        if frame.ontology_enabled() && !self.agent_id.is_empty() {
-            let node = UiNode::new("Tooltip", SemanticRole::Display)
-                .with_id(self.agent_id.clone())
-                .with_bounds(area.into())
-                .with_property("label", serde_json::json!(self.label))
-                .with_property("text", serde_json::json!(self.text));
-            frame.register_widget(node);
-        }
-
         let label = if self.label.is_empty() {
             "(?)"
         } else {
@@ -127,5 +118,16 @@ impl Widget for Tooltip {
         frame
             .painter()
             .text(Position::new(area.x, area.y), label, &ts);
+
+        // Built last so owned fields (text, item vectors) move into the
+        // state instead of being cloned; painting above only borrows them.
+        if frame.ontology_enabled() && !self.agent_id.is_empty() {
+            let node = UiNode::new("Tooltip", SemanticRole::Display)
+                .with_id(self.agent_id.clone())
+                .with_bounds(area.into())
+                .with_property("label", serde_json::Value::from(self.label))
+                .with_property("text", serde_json::Value::from(self.text));
+            frame.register_widget(node);
+        }
     }
 }

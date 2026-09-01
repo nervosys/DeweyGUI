@@ -142,14 +142,6 @@ impl Discoverable for Image {
 
 impl Widget for Image {
     fn render(self, area: Rect, frame: &mut Frame<'_>) {
-        if frame.ontology_enabled() && !self.agent_id.is_empty() {
-            let node = UiNode::new("Image", SemanticRole::Media)
-                .with_id(self.agent_id.clone())
-                .with_bounds(area.into())
-                .with_property("alt", serde_json::json!(self.alt));
-            frame.register_widget(node);
-        }
-
         // Draw a placeholder frame with the alt text.
         // Actual image decoding and texture upload is handled by
         // backend-specific extensions outside the core Painter trait.
@@ -170,5 +162,15 @@ impl Widget for Image {
         let tx = area.x + (area.width - sz.width) * 0.5;
         let ty = area.y + (area.height - sz.height) * 0.5;
         frame.painter().text(Position::new(tx, ty), label, &ts);
+
+        // Built last so owned fields (text, item vectors) move into the
+        // state instead of being cloned; painting above only borrows them.
+        if frame.ontology_enabled() && !self.agent_id.is_empty() {
+            let node = UiNode::new("Image", SemanticRole::Media)
+                .with_id(self.agent_id.clone())
+                .with_bounds(area.into())
+                .with_property("alt", serde_json::Value::from(self.alt));
+            frame.register_widget(node);
+        }
     }
 }

@@ -1168,3 +1168,78 @@ fn properties_equality_ignores_key_order() {
         "differing values must still compare unequal"
     );
 }
+
+/// Widgets build their ontology node at the end of `render` so owned fields
+/// move into the state instead of being cloned. That reorder must not change
+/// what an agent sees: nodes must still appear in the order the widgets were
+/// rendered, and must still carry their state.
+#[test]
+fn node_registration_order_follows_render_order() {
+    use dewey::backend::test::TestBackend;
+    use dewey::core::Rect;
+    use dewey::event::HitMap;
+    use dewey::runtime::Frame;
+    use dewey::widget::{Button, Label, Widget};
+
+    let mut painter = TestBackend::new(400.0, 200.0);
+    let mut hit_map = HitMap::new();
+    let mut frame = Frame::new(Rect::from_size(400.0, 200.0), &mut hit_map, &mut painter);
+
+    Label::new("first")
+        .agent_id("a")
+        .render(Rect::new(0.0, 0.0, 100.0, 20.0), &mut frame);
+    Button::new("second")
+        .agent_id("b")
+        .render(Rect::new(0.0, 20.0, 100.0, 20.0), &mut frame);
+    Label::new("third")
+        .agent_id("c")
+        .render(Rect::new(0.0, 40.0, 100.0, 20.0), &mut frame);
+
+    let nodes = frame.take_nodes();
+    let ids: Vec<_> = nodes
+        .iter()
+        .map(|n| n.agent_id.as_deref().unwrap())
+        .collect();
+    assert_eq!(ids, ["a", "b", "c"], "nodes must follow render order");
+
+    // State survived the move into the node.
+    assert_eq!(
+        nodes[0].state.get("text").unwrap(),
+        &serde_json::json!("first")
+    );
+    assert_eq!(
+        nodes[1].state.get("label").unwrap(),
+        &serde_json::json!("second")
+    );
+    assert_eq!(
+        nodes[2].state.get("text").unwrap(),
+        &serde_json::json!("third")
+    );
+}
+
+/// A list moves its whole item vector into the state rather than cloning it
+/// every frame; the contents must still arrive intact.
+#[test]
+fn list_state_carries_items_after_move() {
+    use dewey::backend::test::TestBackend;
+    use dewey::core::Rect;
+    use dewey::event::HitMap;
+    use dewey::runtime::Frame;
+    use dewey::widget::{List, ListState, StatefulWidget};
+
+    let mut painter = TestBackend::new(400.0, 200.0);
+    let mut hit_map = HitMap::new();
+    let mut frame = Frame::new(Rect::from_size(400.0, 200.0), &mut hit_map, &mut painter);
+    let mut state = ListState::default();
+
+    List::new(vec!["alpha".to_string(), "beta".to_string()])
+        .agent_id("lst")
+        .render(Rect::new(0.0, 0.0, 200.0, 100.0), &mut frame, &mut state);
+
+    let nodes = frame.take_nodes();
+    assert_eq!(nodes.len(), 1);
+    assert_eq!(
+        nodes[0].state.get("items").unwrap(),
+        &serde_json::json!(["alpha", "beta"])
+    );
+}
