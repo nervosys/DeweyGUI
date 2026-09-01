@@ -99,6 +99,48 @@ impl Rect {
     }
 
     #[must_use]
+    /// Successive rows of `height` down this rectangle, stopping at its bottom.
+    ///
+    /// List rendering is where hand-written layout goes wrong: tracking a `y`
+    /// cursor, adding the row height, and remembering to stop before running
+    /// off the bottom. Zip this with the data instead — it ends when either
+    /// the rows or the space run out.
+    ///
+    /// ```
+    /// # use dewey::core::Rect;
+    /// let area = Rect::new(0.0, 0.0, 100.0, 50.0);
+    /// let rows: Vec<_> = area.rows(20.0).collect();
+    /// assert_eq!(rows.len(), 2);            // 50 / 20, the partial row dropped
+    /// assert_eq!(rows[1].y, 20.0);
+    /// ```
+    pub fn rows(&self, height: f32) -> impl Iterator<Item = Rect> + '_ {
+        self.strips(height, true)
+    }
+
+    /// Successive columns of `width` across this rectangle.
+    ///
+    /// The horizontal counterpart of [`Rect::rows`].
+    pub fn columns(&self, width: f32) -> impl Iterator<Item = Rect> + '_ {
+        self.strips(width, false)
+    }
+
+    fn strips(&self, size: f32, vertical: bool) -> impl Iterator<Item = Rect> + '_ {
+        let total = if vertical { self.height } else { self.width };
+        let count = if size > 0.0 {
+            (total / size).floor().max(0.0) as usize
+        } else {
+            0
+        };
+        (0..count).map(move |i| {
+            let offset = i as f32 * size;
+            if vertical {
+                Rect::new(self.x, self.y + offset, self.width, size)
+            } else {
+                Rect::new(self.x + offset, self.y, size, self.height)
+            }
+        })
+    }
+
     pub fn is_empty(&self) -> bool {
         self.width <= 0.0 || self.height <= 0.0
     }

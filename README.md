@@ -270,15 +270,19 @@ case (input, filters, dynamic list, per-item toggle and delete, live count):
 
 | Framework     | counter ~tokens | todomvc ~tokens | todomvc vs egui |
 | ------------- | --------------- | --------------- | --------------- |
-| Dewey (plain) | 425             | 1245            | 1.90×           |
-| Dewey (agent) | 495             | 1648            | 2.51×           |
-| **egui 0.31** | **274**         | **656**         | 1.00×           |
-| iced 0.13     | 276             | 799             | 1.22×           |
+| Dewey (plain) | 393             | 1196            | 1.86×           |
+| Dewey (agent) | 400             | 1357            | 2.11× (was 2.51×) |
+| **egui 0.31** | **264**         | **643**         | 1.00×           |
+| iced 0.13     | 268             | 788             | 1.23×           |
 
-**Dewey loses on scaffolding cost, and the gap widens with complexity** — 1.55×
-egui's tokens on the counter, 1.90× on TodoMVC. The Elm `Msg` enum and explicit
-constraint layout are real code immediate mode does not need, and list rows
-need manual rectangle arithmetic where egui and iced push into a flow.
+**Dewey costs more to scaffold, but agent-driveability is now nearly free.**
+`Button::action(id, msg)` wires a widget for a person and an agent in one call —
+the runtime routes a mouse click through the hit map to that message, and an
+agent's `execute_action(id, "click")` dispatches the same one — so the premium
+an app pays to be agent-driveable fell from **+36% to +2%** on the counter and
+from +37% to +13% on TodoMVC. `Rect::rows(h)` removed the manual `y` cursor
+from list rendering. The remaining ~1.5–1.9× over egui is architectural: the
+Elm `Msg` enum and constraint layout that names its rectangles.
 
 Verifying it afterwards is where that inverts. Dewey closes the full
 discover → act → verify loop over the agent protocol headlessly — no window,
@@ -288,7 +292,7 @@ switch filter, read the result back):
 | Task                                       | Time        | Rate      |
 | ------------------------------------------ | ----------- | --------- |
 | counter: discover → understand → act → verify | **11.9 µs** | 84,000/s  |
-| todomvc: 9-step add/complete/filter/verify | **51.9 µs** | 19,000/s  |
+| todomvc: 9-step add/complete/filter/verify | **44.7 µs** | 22,000/s  |
 
 egui and iced have no equivalent to measure: neither exposes a widget tree, a
 typed action, or a readable state snapshot to an external process, so an agent

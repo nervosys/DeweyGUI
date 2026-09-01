@@ -471,6 +471,8 @@ struct RunningApp<M: Model> {
     shapes: agpu::ShapeRenderer,
     text: agpu::TextEngine,
     hit_map: HitMap,
+    /// Messages registered by widgets during the last rendered frame.
+    messages: std::collections::HashMap<String, Box<dyn std::any::Any + Send>>,
     ontology: OntologyRegistry,
     /// When to build the ontology tree (see `ProgramOptions::ontology`).
     ontology_mode: crate::runtime::OntologyMode,
@@ -594,6 +596,7 @@ impl<M: Model + 'static> RunningApp<M> {
             shapes,
             text,
             hit_map: HitMap::new(),
+            messages: std::collections::HashMap::new(),
             ontology,
             ontology_mode: options.ontology,
             plugins,
@@ -695,6 +698,12 @@ impl<M: Model + 'static> RunningApp<M> {
             );
             self.model.view(&mut dewey_frame);
 
+            self.messages = dewey_frame
+                .take_messages()
+                .into_iter()
+                .map(|(id, msg)| (id.into_owned(), msg))
+                .collect();
+
             let nodes = dewey_frame.take_nodes();
             if !nodes.is_empty() {
                 let mut root = UiNode::new("root", SemanticRole::Container);
@@ -758,6 +767,27 @@ impl<M: Model + 'static> RunningApp<M> {
         }
     }
 
+    /// Dispatch the message a widget registered for `agent_id`, if any.
+    fn dispatch(&mut self, agent_id: &str) -> bool {
+        let Some(boxed) = self.messages.remove(agent_id) else {
+            return false;
+        };
+        match boxed.downcast::<M::Msg>() {
+            Ok(msg) => {
+                let cmd = self.model.update(*msg);
+                self.process_command(cmd);
+                true
+            }
+            Err(_) => {
+                debug_assert!(
+                    false,
+                    "widget message for `{agent_id}` was not this model's Msg"
+                );
+                false
+            }
+        }
+    }
+
     fn process_command(&mut self, cmd: Command<M::Msg>) {
         match cmd {
             Command::None => {}
@@ -784,6 +814,10 @@ impl<M: Model + 'static> RunningApp<M> {
                 action,
                 params,
             } => {
+                // A widget carrying its own message needs no application handler.
+                if action == "click" && self.dispatch(&agent_id) {
+                    return;
+                }
                 // On demand: refresh the tree just before it is read, so the
                 // frame loop never pays for it.
                 if self.ontology_mode == crate::runtime::OntologyMode::OnDemand {
@@ -916,6 +950,16 @@ impl<M: Model + 'static> ApplicationHandler for AppHandler<M> {
                 }
             }
             if let Some(dewey_ev) = to_dewey_event(agpu_ev) {
+                // A click goes to whatever the hit map says is under it, so a
+                // widget built with `action` responds without the application
+                // doing coordinate arithmetic in `handle_event`.
+                if let crate::event::Event::Mouse(m) = &dewey_ev {
+                    if m.is_click() {
+                        if let Some(id) = app.hit_map.hit_test(m.position).map(str::to_owned) {
+                            app.dispatch(&id);
+                        }
+                    }
+                }
                 if let Some(msg) = app.model.handle_event(dewey_ev) {
                     let cmd = app.model.update(msg);
                     app.process_command(cmd);

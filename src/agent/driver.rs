@@ -19,6 +19,8 @@ pub struct HeadlessDriver<M: Model> {
     running: bool,
     window_size: crate::core::Size,
     hit_map: crate::event::HitMap,
+    /// Messages registered by widgets during the last render, keyed by agent id.
+    messages: std::collections::HashMap<String, Box<dyn std::any::Any + Send>>,
 }
 
 impl<M: Model> HeadlessDriver<M> {
@@ -34,6 +36,7 @@ impl<M: Model> HeadlessDriver<M> {
             running: true,
             window_size: crate::core::Size::new(width, height),
             hit_map: crate::event::HitMap::new(),
+            messages: std::collections::HashMap::new(),
         }
     }
 
@@ -76,10 +79,14 @@ impl<M: Model> HeadlessDriver<M> {
             params,
         } = request
         {
-            // The model's result replaces the session's generic acknowledgement.
-            // Otherwise an agent gets "ok" back from a search and has no way to
-            // read what was found.
-            let result = self.model.execute_action(agent_id, action, params);
+            // A widget that carries its own message needs no handler in the
+            // application at all; fall back to `execute_action` for the rest.
+            let handled = action == "click" && self.dispatch(agent_id);
+            let result = if handled {
+                serde_json::Value::Null
+            } else {
+                self.model.execute_action(agent_id, action, params)
+            };
             if !result.is_null() {
                 response.data = Some(result);
             }
@@ -102,6 +109,16 @@ impl<M: Model> HeadlessDriver<M> {
         // Handle injected events
         if let AgentRequest::InjectEvent { event } = request {
             if let Some(ev) = AgentSession::convert_injected_event(event) {
+                // A click lands on whatever the hit map says is under it, so a
+                // widget with an `action` responds without the application
+                // doing coordinate arithmetic in `handle_event`.
+                if let crate::event::Event::Mouse(m) = &ev {
+                    if m.is_click() {
+                        if let Some(id) = self.hit_map.hit_test(m.position).map(str::to_owned) {
+                            self.dispatch(&id);
+                        }
+                    }
+                }
                 if let Some(msg) = self.model.handle_event(ev) {
                     let cmd = self.model.update(msg);
                     self.process_command(cmd);
@@ -155,12 +172,43 @@ impl<M: Model> HeadlessDriver<M> {
         let mut frame = Frame::new(area, &mut self.hit_map, &mut backend);
         self.model.view(&mut frame);
 
+        self.messages = frame
+            .take_messages()
+            .into_iter()
+            .map(|(id, msg)| (id.into_owned(), msg))
+            .collect();
+
         let nodes = frame.take_nodes();
         if !nodes.is_empty() {
             let mut root =
                 crate::ontology::UiNode::new("root", crate::ontology::SemanticRole::Container);
             root.children = nodes;
             self.ontology.set_tree(crate::ontology::UiTree::new(root));
+        }
+    }
+
+    /// Dispatch the message a widget registered for `agent_id`, if any.
+    ///
+    /// Returns whether a message was found and applied. This is what lets a
+    /// button be driven without the application writing an `execute_action`
+    /// arm for it.
+    fn dispatch(&mut self, agent_id: &str) -> bool {
+        let Some(boxed) = self.messages.remove(agent_id) else {
+            return false;
+        };
+        match boxed.downcast::<M::Msg>() {
+            Ok(msg) => {
+                let cmd = self.model.update(*msg);
+                self.process_command(cmd);
+                true
+            }
+            Err(_) => {
+                debug_assert!(
+                    false,
+                    "widget message for `{agent_id}` was not this model's Msg"
+                );
+                false
+            }
         }
     }
 

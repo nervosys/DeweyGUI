@@ -18,11 +18,18 @@ APPS = {
 }
 
 def source_metrics(path):
+    """Code lines, bytes, and tokens - all with comments stripped.
+
+    Comments must not count: they are explanatory prose written for a human
+    reader of this benchmark, and including them once made a strictly smaller
+    program score higher than the one it was derived from.
+    """
     src = open(path, encoding="utf-8").read()
-    lines = src.splitlines()
-    code = [l for l in lines if l.strip() and not l.strip().startswith("//")]
-    toks = re.findall(r"[A-Za-z_][A-Za-z0-9_]*|\d+|\S", src)
-    return len(code), len(src), len(toks)
+    code = [l for l in src.splitlines() if l.strip() and not l.strip().startswith("//")]
+    body = "
+".join(code)
+    toks = re.findall(r"[A-Za-z_][A-Za-z0-9_]*|\d+|\S", body)
+    return len(code), len(body), len(toks)
 
 def _one_check(bin_name, path):
     os.utime(path, None)

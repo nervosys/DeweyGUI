@@ -22,6 +22,7 @@ pub struct Button {
     style: Style,
     enabled: bool,
     agent_id: std::borrow::Cow<'static, str>,
+    on_click: Option<Box<dyn std::any::Any + Send>>,
 }
 
 impl Button {
@@ -32,6 +33,7 @@ impl Button {
             style: Style::default(),
             enabled: true,
             agent_id: std::borrow::Cow::Borrowed(""),
+            on_click: None,
         }
     }
 
@@ -67,6 +69,30 @@ impl Button {
 
     pub fn enabled(mut self, enabled: bool) -> Self {
         self.enabled = enabled;
+        self
+    }
+
+    /// Name this button and give it the message to send when it is pressed.
+    ///
+    /// One call makes the button work for a person *and* for an agent: the
+    /// runtime routes a mouse click through the hit map to this message, and
+    /// an agent's `execute_action(id, "click")` dispatches the same one. It
+    /// replaces both a separate `agent_id` call and a hand-written
+    /// `Model::execute_action` arm.
+    ///
+    /// ```no_run
+    /// # use dewey::prelude::*;
+    /// # #[derive(Debug)] enum Msg { Increment }
+    /// Button::new("+").action("inc", Msg::Increment);
+    /// ```
+    #[must_use]
+    pub fn action<T: std::any::Any + Send>(
+        mut self,
+        id: impl Into<std::borrow::Cow<'static, str>>,
+        msg: T,
+    ) -> Self {
+        self.agent_id = id.into();
+        self.on_click = Some(Box::new(msg));
         self
     }
 
@@ -126,9 +152,12 @@ impl Discoverable for Button {
 }
 
 impl Widget for Button {
-    fn render(self, area: Rect, frame: &mut Frame<'_>) {
+    fn render(mut self, area: Rect, frame: &mut Frame<'_>) {
         if !self.agent_id.is_empty() {
             frame.register_hitbox(self.agent_id.clone(), area, 1);
+            if let Some(msg) = self.on_click.take() {
+                frame.register_message(self.agent_id.clone(), msg);
+            }
         }
 
         let bg = if self.enabled {

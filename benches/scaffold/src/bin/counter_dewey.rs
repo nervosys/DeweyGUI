@@ -1,4 +1,4 @@
-//! Canonical counter — Dewey.
+//! Canonical counter — Dewey, agent-driveable.
 
 use dewey::prelude::*;
 
@@ -34,21 +34,9 @@ impl Model for App {
             .render(rows[0], frame);
 
         let cols = Layout::horizontal([Constraint::Ratio(1, 3); 3]).split(rows[1]);
-        Button::new("- Decrement").agent_id("dec").render(cols[0], frame);
-        Button::new("Reset").agent_id("reset").render(cols[1], frame);
-        Button::new("+ Increment").agent_id("inc").render(cols[2], frame);
-    }
-
-    fn execute_action(&mut self, id: &str, action: &str, _p: &serde_json::Value) -> serde_json::Value {
-        if action == "click" {
-            match id {
-                "inc" => self.count += 1,
-                "dec" => self.count -= 1,
-                "reset" => self.count = 0,
-                _ => {}
-            }
-        }
-        serde_json::json!({ "count": self.count })
+        Button::new("- Decrement").action("dec", Msg::Decrement).render(cols[0], frame);
+        Button::new("Reset").action("reset", Msg::Reset).render(cols[1], frame);
+        Button::new("+ Increment").action("inc", Msg::Increment).render(cols[2], frame);
     }
 }
 

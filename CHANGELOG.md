@@ -48,6 +48,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `Button::action(id, msg)` and `Checkbox::action(id, msg)` wire a widget for a
+  person and an agent in one call. The runtime routes a mouse click through the
+  hit map to the message, and an agent's `execute_action(id, "click")`
+  dispatches the same one, so an application no longer writes a
+  `Model::execute_action` arm for ordinary buttons. Cuts the agent-driveable
+  TodoMVC by 16% (1612 → 1357 tokens); the premium for being agent-driveable at
+  all fell from +37% to +13%, and from +36% to +2% on a counter. Costs one
+  boxed message per interactive widget per frame.
+- `Rect::rows(height)` and `Rect::columns(width)` yield successive strips of a
+  rectangle, replacing the hand-written cursor and overflow check that list
+  rendering needed.
+
 - `benches/scaffold` — canonical counter app implemented in Dewey (with and
   without agent affordances), egui, and iced, with `measure.py` reporting what
   an agent must write and how long it waits for `cargo check`.
@@ -71,6 +83,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   identical whether or not the ontology is built.
 
 ### Fixed
+
+- Mouse clicks now route to widgets. `HitMap::hit_test` was never called
+  anywhere: Dewey built a hit map every frame and discarded it, so every
+  application had to store widget rectangles and compare coordinates by hand in
+  `handle_event`.
 
 - Corrected the comparative performance table. The first version was measured
   with criterion on a machine at 100% CPU and overstated egui's cost by ~2× and

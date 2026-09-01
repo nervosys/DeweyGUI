@@ -33,47 +33,72 @@ Each is implemented four ways — `*_dewey_plain` (no agent affordances),
 `check` is `cargo check` after touching the file, warm deps, best of three —
 the latency of one step in an agent's edit → compile → fix loop.
 
+Comments are stripped before counting: they are prose for a human reader of
+this benchmark, and counting them once made a strictly smaller program score
+higher than the one it was derived from.
+
 **counter**
 
-| Framework     | Code lines | Bytes   | ~Tokens | vs egui |
-| ------------- | ---------- | ------- | ------- | ------- |
-| Dewey (plain) | 39         | 1455    | 425     | 1.55×   |
-| Dewey (agent) | 52         | 1685    | 495     | 1.81×   |
-| **egui 0.31** | **33**     | 1021    | **274** | 1.00×   |
-| **iced 0.13** | 37         | **970** | 276     | 1.01×   |
+| Framework     | Code lines | ~Tokens | vs egui | Was    |
+| ------------- | ---------- | ------- | ------- | ------ |
+| Dewey (plain) | 39         | 393     | 1.49×   | —      |
+| Dewey (agent) | 41         | 400     | 1.52×   | 1.84×  |
+| **egui 0.31** | **33**     | **264** | 1.00×   |        |
+| iced 0.13     | 37         | 268     | 1.02×   |        |
 
 **todomvc**
 
-| Framework     | Code lines | Bytes    | ~Tokens  | vs egui |
-| ------------- | ---------- | -------- | -------- | ------- |
-| Dewey (plain) | 140        | 4641     | 1245     | 1.90×   |
-| Dewey (agent) | 186        | 6197     | 1648     | 2.51×   |
-| **egui 0.31** | **85**     | **2807** | **656**  | 1.00×   |
-| iced 0.13     | 110        | 3169     | 799      | 1.22×   |
+| Framework     | Code lines | ~Tokens  | vs egui | Was    |
+| ------------- | ---------- | -------- | ------- | ------ |
+| Dewey (plain) | 121        | 1196     | 1.86×   | —      |
+| Dewey (agent) | 133        | 1357     | 2.11×   | 2.51×  |
+| **egui 0.31** | **85**     | **643**  | 1.00×   |        |
+| iced 0.13     | 110        | 788      | 1.23×   |        |
 
-**Dewey loses this half, and the gap widens with complexity** — from 1.55× to
-1.90× egui's tokens for a plain app, and from 1.81× to 2.51× for an
-agent-driveable one. For an agent that means more to generate and more surface
-to get wrong, and it gets worse as the app grows, which is the wrong direction.
+**Dewey still loses this half, but by less, and agent-driveability is now
+nearly free.** `Button::action` and `Checkbox::action` cut the agent-driveable
+counter 18% (487 → 400 tokens) and TodoMVC 16% (1612 → 1357). The premium an
+app pays to be agent-driveable at all fell from +36% to **+2%** on the counter
+and from +37% to **+13%** on TodoMVC — what remains is almost entirely the ids
+on read-only labels, which exist so an agent can read values back.
+
+A correction to earlier numbers in this file: the previous `*_dewey_plain`
+samples set no `agent_id`, and a Dewey widget with no id registers no hitbox —
+so those buttons did not work. They were measuring a program that could not be
+clicked. The plain samples now keep ids on interactive widgets, which is what a
+working Dewey app requires, and their token counts rose slightly as a result.
+That is also the reason the agent premium is now so small: **in Dewey, wiring a
+button so a person can click it is the same work as wiring it so an agent can.**
 
 `cargo check` latency measured 2.4–4.2 s for all four, with the ranking
 flipping between runs on a loaded machine; it does not discriminate at this
 size and is not reported.
 
-Where the extra goes:
+Where the remaining extra goes:
 
 - **The Elm architecture is not free to write.** A `Msg` enum plus an `update`
   arm per message is real code that egui's immediate mode does not need — it
   mutates `self.count` inline at the click site.
 - **Layout is explicit.** Dewey splits rectangles by constraint; egui and iced
   infer flow from widget order.
-- **Agent affordances are opt-in and hand-written**: +33% code in both apps —
-  `agent_id` calls, and an `execute_action` handler that in TodoMVC has to
-  string-match `toggle_0`, `delete_3` and parse the index back out.
-- **Lists are the worst case.** TodoMVC's item rows need manual rectangle
-  arithmetic (`let row = Rect::new(x, y, w, 28.0); y += 28.0;`) plus a manual
-  overflow break, where egui and iced simply push widgets into a flow. This is
-  most of why the gap grows from 1.55× to 1.90×.
+- **Agent affordances are now +2% / +13%**, down from +36% / +37%: just ids on
+  read-only labels, plus a four-line `execute_action` for the text field, which
+  carries state rather than a message.
+
+Two framework changes produced the drop:
+
+- **`Button::action(id, msg)` / `Checkbox::action(id, msg)`** — one call wires a
+  widget for a person *and* an agent. The runtime routes a mouse click through
+  the hit map to the message, and an agent's `execute_action(id, "click")`
+  dispatches the same one. This deleted TodoMVC's entire dispatch handler,
+  including the `toggle_0` / `delete_3` string-matching and index parsing.
+- **`Rect::rows(h)` / `Rect::columns(w)`** — an iterator of successive rows,
+  which removed the manual `y` cursor and overflow break from list rendering.
+
+It also closed a functional hole: `HitMap::hit_test` was never called anywhere
+in the codebase. Dewey built a hit map every frame and threw it away, so every
+application had to route clicks itself by storing rectangles and comparing
+coordinates in `handle_event`.
 
 ## 2. Closing the loop
 
@@ -97,6 +122,12 @@ full discover→act→verify loop                    11.9 µs
 
 **≈84,000 complete agent loops per second, single-threaded.**
 
+`action` is not free: it boxes the message, costing one allocation per
+interactive widget per frame (6.0 → 7.0 per row in the allocation benchmark,
+about 90 bytes). Avoiding the box would mean making `Frame` generic over the
+application's message type, which would change every widget signature in the
+library. The box buys dispatch that previously did not exist at all.
+
 On TodoMVC, a realistic nine-step task — add two items, complete one, switch
 filter, and read the result back (`cargo run --release --bin agent_task`):
 
@@ -113,10 +144,12 @@ filter active   (click filter_active)         4.4 µs
 re-read tree    (get_tree)                   14.7 µs
 verify counter  (get_state remaining)         4.3 µs
 ----------------------------------------------------
-full 9-step task                             51.9 µs
+full 9-step task                             44.7 µs
 ```
 
-**≈19,000 complete task runs per second.** Both harnesses assert the workflow
+**≈22,000 complete task runs per second**, up from 51.9 µs and ≈19,000 before
+the dispatch work — the same task now routes through widget messages rather
+than a hand-written handler. Both harnesses assert the workflow
 before timing it — the TodoMVC one checks that the completed item really has
 disappeared from the tree under the Active filter and that the footer reads
 `1 items left`, so it cannot degenerate into timing a no-op.

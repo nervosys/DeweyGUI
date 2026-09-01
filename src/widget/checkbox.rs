@@ -11,6 +11,7 @@ pub struct Checkbox {
     checked: bool,
     style: Style,
     agent_id: std::borrow::Cow<'static, str>,
+    on_toggle: Option<Box<dyn std::any::Any + Send>>,
 }
 
 impl Checkbox {
@@ -21,6 +22,7 @@ impl Checkbox {
             checked,
             style: Style::default(),
             agent_id: std::borrow::Cow::Borrowed(""),
+            on_toggle: None,
         }
     }
 
@@ -31,6 +33,21 @@ impl Checkbox {
 
     pub fn fg(mut self, color: Color) -> Self {
         self.style.foreground = Some(color);
+        self
+    }
+
+    /// Name this checkbox and give it the message to send when it is toggled.
+    ///
+    /// See [`Button::action`](crate::widget::Button::action) — one call wires
+    /// the widget for both a person and an agent.
+    #[must_use]
+    pub fn action<T: std::any::Any + Send>(
+        mut self,
+        id: impl Into<std::borrow::Cow<'static, str>>,
+        msg: T,
+    ) -> Self {
+        self.agent_id = id.into();
+        self.on_toggle = Some(Box::new(msg));
         self
     }
 
@@ -98,9 +115,12 @@ impl Discoverable for Checkbox {
 }
 
 impl Widget for Checkbox {
-    fn render(self, area: Rect, frame: &mut Frame<'_>) {
+    fn render(mut self, area: Rect, frame: &mut Frame<'_>) {
         if !self.agent_id.is_empty() {
             frame.register_hitbox(self.agent_id.clone(), area, 1);
+            if let Some(msg) = self.on_toggle.take() {
+                frame.register_message(self.agent_id.clone(), msg);
+            }
         }
 
         let box_size = 16.0;

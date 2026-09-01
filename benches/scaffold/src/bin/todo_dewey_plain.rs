@@ -1,14 +1,16 @@
 //! Canonical complex app — TodoMVC, Dewey, with no agent affordances.
 //!
-//! Identical on screen to `todo_dewey`; the difference between the two is what
-//! agent-driveability costs in a non-trivial application.
+//! Interactive widgets keep their ids, because a Dewey widget needs one to be
+//! hit-testable at all. What is removed is the ids on read-only labels and the
+//! `execute_action` handler for the text field — the parts that exist only so
+//! an agent can drive and read the app.
 
 use dewey::prelude::*;
 use dewey::widget::input::TextInputState;
 use dewey::widget::{Checkbox, StatefulWidget, TextInput};
 use std::cell::RefCell;
 
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Clone, Copy, PartialEq, Debug)]
 enum Filter {
     All,
     Active,
@@ -31,7 +33,7 @@ enum Msg {
     Add,
     Toggle(usize),
     Delete(usize),
-    SetFilter(u8),
+    SetFilter(Filter),
     ClearCompleted,
 }
 
@@ -73,13 +75,7 @@ impl Model for App {
                     self.todos.remove(i);
                 }
             }
-            Msg::SetFilter(f) => {
-                self.filter = match f {
-                    1 => Filter::Active,
-                    2 => Filter::Completed,
-                    _ => Filter::All,
-                }
-            }
+            Msg::SetFilter(f) => self.filter = f,
             Msg::ClearCompleted => self.todos.retain(|t| !t.done),
         }
         Command::None
@@ -94,32 +90,19 @@ impl Model for App {
         ])
         .split(frame.area);
 
-        // New-todo row: input + Add
-        let top = Layout::horizontal([Constraint::Fill(1.0), Constraint::Length(80.0)])
-            .split(rows[0]);
+        let top =
+            Layout::horizontal([Constraint::Fill(1.0), Constraint::Length(80.0)]).split(rows[0]);
         TextInput::new()
             .placeholder("What needs doing?")
             .render(top[0], frame, &mut self.input.borrow_mut());
-        Button::new("Add").agent_id("add").render(top[1], frame);
+        Button::new("Add").action("add", Msg::Add).render(top[1], frame);
 
-        // Filter row
-        let filters = Layout::horizontal([Constraint::Ratio(1, 3); 3]).split(rows[1]);
-        for (i, (label, id)) in [
-            ("All", "filter_all"),
-            ("Active", "filter_active"),
-            ("Completed", "filter_completed"),
-        ]
-        .iter()
-        .enumerate()
-        {
-            Button::new(*label).agent_id(*id).render(filters[i], frame);
-        }
+        let f = Layout::horizontal([Constraint::Ratio(1, 3); 3]).split(rows[1]);
+        Button::new("All").action("filter_all", Msg::SetFilter(Filter::All)).render(f[0], frame);
+        Button::new("Active").action("filter_active", Msg::SetFilter(Filter::Active)).render(f[1], frame);
+        Button::new("Completed").action("filter_completed", Msg::SetFilter(Filter::Completed)).render(f[2], frame);
 
-        // Todo list
-        let visible = self.visible();
-        let mut y = rows[2].y;
-        for idx in visible {
-            let row = Rect::new(rows[2].x, y, rows[2].width, 28.0);
+        for (idx, row) in self.visible().into_iter().zip(rows[2].rows(28.0)) {
             let cols = Layout::horizontal([
                 Constraint::Length(24.0),
                 Constraint::Fill(1.0),
@@ -127,23 +110,19 @@ impl Model for App {
             ])
             .split(row);
             Checkbox::new("", self.todos[idx].done)
+                .action(format!("toggle_{idx}"), Msg::Toggle(idx))
                 .render(cols[0], frame);
-            Label::new(self.todos[idx].title.clone())
-                .render(cols[1], frame);
+            Label::new(self.todos[idx].title.clone()).render(cols[1], frame);
             Button::new("x")
+                .action(format!("delete_{idx}"), Msg::Delete(idx))
                 .render(cols[2], frame);
-            y += 28.0;
-            if y > rows[2].bottom() - 28.0 {
-                break;
-            }
         }
 
-        // Footer
-        let foot = Layout::horizontal([Constraint::Fill(1.0), Constraint::Length(140.0)])
-            .split(rows[3]);
-        Label::new(format!("{} items left", self.remaining()))
-            .render(foot[0], frame);
+        let foot =
+            Layout::horizontal([Constraint::Fill(1.0), Constraint::Length(140.0)]).split(rows[3]);
+        Label::new(format!("{} items left", self.remaining())).render(foot[0], frame);
         Button::new("Clear completed")
+            .action("clear_completed", Msg::ClearCompleted)
             .render(foot[1], frame);
     }
 

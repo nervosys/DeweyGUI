@@ -34,7 +34,21 @@ fn read() -> (usize, usize) {
     (ALLOCS.load(Ordering::Relaxed), BYTES.load(Ordering::Relaxed))
 }
 
+#[derive(Debug)]
+enum BenchMsg {
+    Clicked(usize),
+}
+
 fn scene(n: usize, agentic: bool, ontology: bool) -> usize {
+    scene_inner(n, agentic, ontology, false)
+}
+
+/// Same scene, but buttons carry their message via `action`, which boxes it.
+fn scene_actions(n: usize, ontology: bool) -> usize {
+    scene_inner(n, true, ontology, true)
+}
+
+fn scene_inner(n: usize, agentic: bool, ontology: bool, actions: bool) -> usize {
     use dewey::backend::test::TestBackend;
     use dewey::core::Rect;
     use dewey::event::HitMap;
@@ -54,7 +68,9 @@ fn scene(n: usize, agentic: bool, ontology: bool) -> usize {
         let y = (i % 30) as f32 * 24.0;
         let l = Label::new(format!("Item {i}"));
         let b = Button::new(format!("Action {i}"));
-        let (l, b) = if agentic {
+        let (l, b) = if actions {
+            (l.agent_id("item"), b.action("action", BenchMsg::Clicked(i)))
+        } else if agentic {
             (l.agent_id("item"), b.agent_id("action"))
         } else {
             (l, b)
@@ -78,6 +94,19 @@ fn main() {
     for (label, agentic, ontology) in cases {
         reset();
         let nodes = scene(N, agentic, ontology);
+        let (allocs, bytes) = read();
+        println!(
+            "{label}  n={N:>5}  nodes={nodes:>5}  allocs={allocs:>7}  ({:>5.1}/row)  bytes={bytes:>9} ({:>6.0}/row)",
+            allocs as f64 / N as f64,
+            bytes as f64 / N as f64,
+        );
+    }
+
+    // What `Button::action` costs: one boxed message per interactive widget.
+    let _ = scene_actions(16, true);
+    for (label, ontology) in [("action(), ontology on ", true), ("action(), ontology off", false)] {
+        reset();
+        let nodes = scene_actions(N, ontology);
         let (allocs, bytes) = read();
         println!(
             "{label}  n={N:>5}  nodes={nodes:>5}  allocs={allocs:>7}  ({:>5.1}/row)  bytes={bytes:>9} ({:>6.0}/row)",

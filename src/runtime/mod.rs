@@ -184,6 +184,11 @@ pub struct Frame<'a> {
     painter: &'a mut dyn crate::paint::Painter,
     /// Whether anything is listening to the ontology this frame.
     ontology: bool,
+    /// Messages widgets want dispatched when they are activated.
+    messages: Vec<(
+        std::borrow::Cow<'static, str>,
+        Box<dyn std::any::Any + Send>,
+    )>,
 }
 
 impl<'a> Frame<'a> {
@@ -214,6 +219,7 @@ impl<'a> Frame<'a> {
             ui_nodes: Vec::new(),
             painter,
             ontology,
+            messages: Vec::new(),
         }
     }
 
@@ -247,6 +253,29 @@ impl<'a> Frame<'a> {
         z_order: u32,
     ) {
         self.hit_map.register(agent_id, bounds, z_order);
+    }
+
+    /// Register the message to dispatch when `agent_id` is activated.
+    ///
+    /// Widgets call this from [`Widget::action`](crate::widget::Button::action).
+    /// The message is type-erased because [`Frame`] is not generic over the
+    /// application's message type; the runtime downcasts it back.
+    pub fn register_message(
+        &mut self,
+        agent_id: impl Into<std::borrow::Cow<'static, str>>,
+        msg: Box<dyn std::any::Any + Send>,
+    ) {
+        self.messages.push((agent_id.into(), msg));
+    }
+
+    /// Take the messages widgets registered this frame.
+    pub fn take_messages(
+        &mut self,
+    ) -> Vec<(
+        std::borrow::Cow<'static, str>,
+        Box<dyn std::any::Any + Send>,
+    )> {
+        std::mem::take(&mut self.messages)
     }
 
     /// Take the collected UI nodes (consumed by the runtime after rendering).

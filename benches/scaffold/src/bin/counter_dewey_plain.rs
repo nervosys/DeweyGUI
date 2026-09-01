@@ -1,8 +1,8 @@
 //! Canonical counter — Dewey, with no agent affordances.
 //!
-//! Identical on screen to `counter_dewey`, but with the `agent_id` calls and
-//! the `execute_action` handler removed. The difference between the two is
-//! exactly what an agent-driveable Dewey app costs over a plain one.
+//! A Dewey button needs an id to be hit-testable at all, so the buttons here
+//! are identical to `counter_dewey`. The difference is only the id on the
+//! read-only label, which exists purely so an agent can read the value back.
 
 use dewey::prelude::*;
 
@@ -36,9 +36,9 @@ impl Model for App {
         Label::new(format!("Count: {}", self.count)).render(rows[0], frame);
 
         let cols = Layout::horizontal([Constraint::Ratio(1, 3); 3]).split(rows[1]);
-        Button::new("- Decrement").render(cols[0], frame);
-        Button::new("Reset").render(cols[1], frame);
-        Button::new("+ Increment").render(cols[2], frame);
+        Button::new("- Decrement").action("dec", Msg::Decrement).render(cols[0], frame);
+        Button::new("Reset").action("reset", Msg::Reset).render(cols[1], frame);
+        Button::new("+ Increment").action("inc", Msg::Increment).render(cols[2], frame);
     }
 }
 

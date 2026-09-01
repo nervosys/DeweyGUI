@@ -1355,3 +1355,151 @@ fn empty_accessibility_is_not_boxed() {
         UiNode::new("Label", SemanticRole::Display).with_accessibility(Accessibility::default());
     assert!(node.accessibility.is_none());
 }
+
+// ── Widget-carried messages ────────────────────────────────────────
+
+/// An app whose buttons carry their own messages and which writes no
+/// `execute_action` handler at all. Before `Button::action` existed, every
+/// application had to route clicks itself.
+struct ActionApp {
+    count: i32,
+    on: bool,
+}
+
+#[derive(Debug, PartialEq)]
+enum ActionMsg {
+    Inc,
+    Toggle,
+}
+
+impl Model for ActionApp {
+    type Msg = ActionMsg;
+
+    fn update(&mut self, msg: ActionMsg) -> Command<ActionMsg> {
+        match msg {
+            ActionMsg::Inc => self.count += 1,
+            ActionMsg::Toggle => self.on = !self.on,
+        }
+        Command::None
+    }
+
+    fn view(&self, frame: &mut Frame<'_>) {
+        let rows = dewey::layout::Layout::vertical([
+            dewey::layout::Constraint::Length(40.0),
+            dewey::layout::Constraint::Length(40.0),
+        ])
+        .split(frame.area);
+        Button::new("+")
+            .action("inc", ActionMsg::Inc)
+            .render(rows[0], frame);
+        dewey::widget::Checkbox::new("on", self.on)
+            .action("toggle", ActionMsg::Toggle)
+            .render(rows[1], frame);
+    }
+}
+
+/// An agent's `execute_action` must reach a widget that carries its own
+/// message, with no handler written by the application.
+#[test]
+fn agent_click_dispatches_widget_message() {
+    use dewey::agent::driver::HeadlessDriver;
+    use dewey::agent::protocol::AgentRequest;
+
+    let mut d = HeadlessDriver::new(
+        ActionApp {
+            count: 0,
+            on: false,
+        },
+        200.0,
+        200.0,
+    );
+    d.init();
+
+    let r = d.process_request(&AgentRequest::ExecuteAction {
+        agent_id: "inc".into(),
+        action: "click".into(),
+        params: serde_json::Value::Null,
+    });
+    assert!(r.success);
+    assert_eq!(d.model().count, 1, "click must reach the model");
+
+    let r = d.process_request(&AgentRequest::ExecuteAction {
+        agent_id: "toggle".into(),
+        action: "click".into(),
+        params: serde_json::Value::Null,
+    });
+    assert!(r.success);
+    assert!(d.model().on, "checkbox action must dispatch too");
+}
+
+/// A real mouse click must route through the hit map to the same message —
+/// the hit map used to be built every frame and never read.
+#[test]
+fn mouse_click_routes_through_hit_map() {
+    use dewey::agent::driver::HeadlessDriver;
+    use dewey::agent::protocol::{AgentRequest, InjectedEvent};
+
+    let mut d = HeadlessDriver::new(
+        ActionApp {
+            count: 0,
+            on: false,
+        },
+        200.0,
+        200.0,
+    );
+    d.init();
+    // Build the frame so the hit map and messages exist.
+    let _ = d.process_request(&AgentRequest::GetTree);
+
+    d.process_request(&AgentRequest::InjectEvent {
+        event: InjectedEvent::MouseClick {
+            x: 20.0,
+            y: 10.0,
+            button: "left".into(),
+        },
+    });
+    assert_eq!(d.model().count, 1, "a click inside the button must fire it");
+
+    d.process_request(&AgentRequest::InjectEvent {
+        event: InjectedEvent::MouseClick {
+            x: 20.0,
+            y: 150.0,
+            button: "left".into(),
+        },
+    });
+    assert_eq!(
+        d.model().count,
+        1,
+        "a click outside any widget must do nothing"
+    );
+}
+
+/// Messages are type-erased in the frame; a mismatched type must not panic in
+/// release or silently corrupt another widget's dispatch.
+#[test]
+fn widget_message_is_consumed_once() {
+    use dewey::agent::driver::HeadlessDriver;
+    use dewey::agent::protocol::AgentRequest;
+
+    let mut d = HeadlessDriver::new(
+        ActionApp {
+            count: 0,
+            on: false,
+        },
+        200.0,
+        200.0,
+    );
+    d.init();
+    for _ in 0..3 {
+        d.process_request(&AgentRequest::ExecuteAction {
+            agent_id: "inc".into(),
+            action: "click".into(),
+            params: serde_json::Value::Null,
+        });
+    }
+    assert_eq!(
+        d.model().count,
+        3,
+        "each request re-renders and re-arms the message"
+    );
+}
