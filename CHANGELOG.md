@@ -135,5 +135,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `agent_headless` — full TodoApp agent session simulation
 - `chat` — AI chat interface with simulated streaming responses
 
-[Unreleased]: https://github.com/nervosys/dewey/compare/v1.0.0...HEAD
-[1.0.0]: https://github.com/nervosys/dewey/releases/tag/v1.0.0
+[Unreleased]: https://github.com/nervosys/DeweyGUI/compare/v1.0.0...HEAD
+[1.0.0]: https://github.com/nervosys/DeweyGUI/releases/tag/v1.0.0

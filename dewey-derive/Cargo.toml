@@ -6,7 +6,7 @@ rust-version = "1.85"
 authors = ["NERVOSYS <admin@nervosys.ai>"]
 license = "AGPL-3.0-or-later"
 description = "Derive macros for the Dewey GUI framework"
-repository = "https://github.com/nervosys/dewey"
+repository = "https://github.com/nervosys/DeweyGUI"
 
 [lib]
 proc-macro = true
