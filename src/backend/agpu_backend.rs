@@ -472,7 +472,7 @@ struct RunningApp<M: Model> {
     text: agpu::TextEngine,
     hit_map: HitMap,
     /// Messages registered by widgets during the last rendered frame.
-    messages: std::collections::HashMap<String, Box<dyn std::any::Any + Send>>,
+    messages: std::collections::HashMap<String, (&'static str, Box<dyn std::any::Any + Send>)>,
     ontology: OntologyRegistry,
     /// When to build the ontology tree (see `ProgramOptions::ontology`).
     ontology_mode: crate::runtime::OntologyMode,
@@ -701,7 +701,7 @@ impl<M: Model + 'static> RunningApp<M> {
             self.messages = dewey_frame
                 .take_messages()
                 .into_iter()
-                .map(|(id, msg)| (id.into_owned(), msg))
+                .map(|(id, action, msg)| (id.into_owned(), (action, msg)))
                 .collect();
 
             let nodes = dewey_frame.take_nodes();
@@ -768,10 +768,16 @@ impl<M: Model + 'static> RunningApp<M> {
     }
 
     /// Dispatch the message a widget registered for `agent_id`, if any.
-    fn dispatch(&mut self, agent_id: &str) -> bool {
-        let Some(boxed) = self.messages.remove(agent_id) else {
+    fn dispatch(&mut self, agent_id: &str, action: &str, params: &serde_json::Value) -> bool {
+        let Some((registered, _)) = self.messages.get(agent_id) else {
             return false;
         };
+        // A widget answers for its own action only: `execute_action(id,
+        // "focus")` must not fire the handler bound to a click.
+        if *registered != action {
+            return false;
+        }
+        let (_, boxed) = self.messages.remove(agent_id).expect("just checked");
         match boxed.downcast::<M::Msg>() {
             Ok(msg) => {
                 let cmd = self.model.update(*msg);
@@ -783,13 +789,19 @@ impl<M: Model + 'static> RunningApp<M> {
                     (*change)(&mut self.model);
                     true
                 }
-                Err(_) => {
-                    debug_assert!(
-                        false,
-                        "widget for `{agent_id}` carried neither this model's Msg nor a Mutation"
-                    );
-                    false
-                }
+                Err(other) => match other.downcast::<crate::runtime::ValueMutation<M>>() {
+                    Ok(change) => {
+                        (*change)(&mut self.model, params);
+                        true
+                    }
+                    Err(_) => {
+                        debug_assert!(
+                            false,
+                            "widget for `{agent_id}` carried neither this model's Msg nor a Mutation"
+                        );
+                        false
+                    }
+                },
             },
         }
     }
@@ -821,7 +833,7 @@ impl<M: Model + 'static> RunningApp<M> {
                 params,
             } => {
                 // A widget carrying its own message needs no application handler.
-                if action == "click" && self.dispatch(&agent_id) {
+                if self.dispatch(&agent_id, &action, &params) {
                     return;
                 }
                 // On demand: refresh the tree just before it is read, so the
@@ -962,7 +974,7 @@ impl<M: Model + 'static> ApplicationHandler for AppHandler<M> {
                 if let crate::event::Event::Mouse(m) = &dewey_ev {
                     if m.is_click() {
                         if let Some(id) = app.hit_map.hit_test(m.position).map(str::to_owned) {
-                            app.dispatch(&id);
+                            app.dispatch(&id, "click", &serde_json::Value::Null);
                         }
                     }
                 }

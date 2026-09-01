@@ -187,6 +187,7 @@ pub struct Frame<'a> {
     /// Messages widgets want dispatched when they are activated.
     messages: Vec<(
         std::borrow::Cow<'static, str>,
+        &'static str,
         Box<dyn std::any::Any + Send>,
     )>,
     /// Interactive widgets that rendered without an id, and so cannot be
@@ -268,9 +269,10 @@ impl<'a> Frame<'a> {
     pub fn register_message(
         &mut self,
         agent_id: impl Into<std::borrow::Cow<'static, str>>,
+        action: &'static str,
         msg: Box<dyn std::any::Any + Send>,
     ) {
-        self.messages.push((agent_id.into(), msg));
+        self.messages.push((agent_id.into(), action, msg));
     }
 
     /// Record that an interactive widget rendered with no id.
@@ -291,6 +293,7 @@ impl<'a> Frame<'a> {
         &mut self,
     ) -> Vec<(
         std::borrow::Cow<'static, str>,
+        &'static str,
         Box<dyn std::any::Any + Send>,
     )> {
         std::mem::take(&mut self.messages)
@@ -311,6 +314,13 @@ impl<'a> Frame<'a> {
 /// `update` arm, no `execute_action` handler, and it is driven by an agent
 /// exactly like a message is.
 pub type Mutation<M> = Box<dyn FnOnce(&mut M) + Send>;
+
+/// A change that takes the widget's new value, as JSON.
+///
+/// What [`Mutation`] is for a button, this is for a text field or a slider:
+/// the value arrives from a person typing or an agent's
+/// `execute_action(id, "set_text", {"text": ...})`, by the same path.
+pub type ValueMutation<M> = Box<dyn FnOnce(&mut M, &serde_json::Value) + Send>;
 
 /// When the runtime builds the agent ontology tree.
 ///

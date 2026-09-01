@@ -20,7 +20,7 @@ pub struct HeadlessDriver<M: Model> {
     window_size: crate::core::Size,
     hit_map: crate::event::HitMap,
     /// Messages registered by widgets during the last render, keyed by agent id.
-    messages: std::collections::HashMap<String, Box<dyn std::any::Any + Send>>,
+    messages: std::collections::HashMap<String, (&'static str, Box<dyn std::any::Any + Send>)>,
     /// Interactive widgets that rendered without an id in the last frame.
     unaddressable: Vec<&'static str>,
     /// Bumped whenever a request could have changed the model. An agent that
@@ -104,7 +104,7 @@ impl<M: Model + 'static> HeadlessDriver<M> {
         {
             // A widget that carries its own message needs no handler in the
             // application at all; fall back to `execute_action` for the rest.
-            let handled = action == "click" && self.dispatch(agent_id);
+            let handled = self.dispatch(agent_id, action, params);
             let result = if handled {
                 serde_json::Value::Null
             } else {
@@ -170,7 +170,7 @@ impl<M: Model + 'static> HeadlessDriver<M> {
                 if let crate::event::Event::Mouse(m) = &ev {
                     if m.is_click() {
                         if let Some(id) = self.hit_map.hit_test(m.position).map(str::to_owned) {
-                            self.dispatch(&id);
+                            self.dispatch(&id, "click", &serde_json::Value::Null);
                         }
                     }
                 }
@@ -258,7 +258,7 @@ impl<M: Model + 'static> HeadlessDriver<M> {
         self.messages = frame
             .take_messages()
             .into_iter()
-            .map(|(id, msg)| (id.into_owned(), msg))
+            .map(|(id, action, msg)| (id.into_owned(), (action, msg)))
             .collect();
 
         let nodes = frame.take_nodes();
@@ -321,10 +321,16 @@ impl<M: Model + 'static> HeadlessDriver<M> {
     /// Returns whether a message was found and applied. This is what lets a
     /// button be driven without the application writing an `execute_action`
     /// arm for it.
-    fn dispatch(&mut self, agent_id: &str) -> bool {
-        let Some(boxed) = self.messages.remove(agent_id) else {
+    fn dispatch(&mut self, agent_id: &str, action: &str, params: &serde_json::Value) -> bool {
+        let Some((registered, _)) = self.messages.get(agent_id) else {
             return false;
         };
+        // A widget answers for its own action only: `execute_action(id,
+        // "focus")` must not fire the handler bound to a click.
+        if *registered != action {
+            return false;
+        }
+        let (_, boxed) = self.messages.remove(agent_id).expect("just checked");
         match boxed.downcast::<M::Msg>() {
             Ok(msg) => {
                 let cmd = self.model.update(*msg);
@@ -336,13 +342,19 @@ impl<M: Model + 'static> HeadlessDriver<M> {
                     (*change)(&mut self.model);
                     true
                 }
-                Err(_) => {
-                    debug_assert!(
-                        false,
-                        "widget for `{agent_id}` carried neither this model's Msg nor a Mutation"
-                    );
-                    false
-                }
+                Err(other) => match other.downcast::<crate::runtime::ValueMutation<M>>() {
+                    Ok(change) => {
+                        (*change)(&mut self.model, params);
+                        true
+                    }
+                    Err(_) => {
+                        debug_assert!(
+                            false,
+                            "widget for `{agent_id}` carried neither this model's Msg nor a Mutation"
+                        );
+                        false
+                    }
+                },
             },
         }
     }

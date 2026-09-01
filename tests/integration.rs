@@ -1855,3 +1855,101 @@ fn message_free_app_validates_clean() {
     d.init();
     assert!(d.validate().is_empty());
 }
+
+// ── Value-carrying widgets ─────────────────────────────────────────
+
+/// A form with no `execute_action` handler and no message type: the text field
+/// and slider carry the change they make, including the new value.
+struct FormApp {
+    name: String,
+    volume: f64,
+    input: std::cell::RefCell<dewey::widget::input::TextInputState>,
+    slider: std::cell::RefCell<dewey::widget::slider::SliderState>,
+}
+
+impl Model for FormApp {
+    type Msg = ();
+    fn update(&mut self, _m: ()) -> Command<()> {
+        Command::None
+    }
+    fn view(&self, frame: &mut Frame<'_>) {
+        use dewey::widget::{Slider, StatefulWidget, TextInput};
+        let rows = frame.area.rows_of(&[40.0, 40.0]);
+        TextInput::new()
+            .on_input("name", |a: &mut FormApp, t: &str| a.name = t.to_string())
+            .render(rows[0], frame, &mut self.input.borrow_mut());
+        Slider::new(0.0, 1.0)
+            .on_change("vol", |a: &mut FormApp, v: f64| a.volume = v)
+            .render(rows[1], frame, &mut self.slider.borrow_mut());
+    }
+}
+
+fn form_app() -> FormApp {
+    FormApp {
+        name: String::new(),
+        volume: 0.0,
+        input: Default::default(),
+        slider: Default::default(),
+    }
+}
+
+#[test]
+fn value_widgets_apply_the_agents_value() {
+    use dewey::agent::driver::HeadlessDriver;
+    use dewey::agent::protocol::AgentRequest;
+
+    let mut d = HeadlessDriver::new(form_app(), 200.0, 200.0);
+    d.init();
+
+    let r = d.process_request(&AgentRequest::ExecuteAction {
+        agent_id: "name".into(),
+        action: "set_text".into(),
+        params: serde_json::json!({ "text": "Ada" }),
+    });
+    assert!(r.success);
+    assert_eq!(d.model().name, "Ada", "the agent's text reached the model");
+
+    let r = d.process_request(&AgentRequest::ExecuteAction {
+        agent_id: "vol".into(),
+        action: "set_value".into(),
+        params: serde_json::json!({ "value": 0.75 }),
+    });
+    assert!(r.success);
+    assert!((d.model().volume - 0.75).abs() < 1e-9);
+}
+
+/// A handler answers for its own action only. Firing a text field's handler
+/// from an unrelated action would apply an empty value and silently wipe it.
+#[test]
+fn a_handler_answers_only_its_own_action() {
+    use dewey::agent::driver::HeadlessDriver;
+    use dewey::agent::protocol::AgentRequest;
+
+    let mut d = HeadlessDriver::new(form_app(), 200.0, 200.0);
+    d.init();
+    d.process_request(&AgentRequest::ExecuteAction {
+        agent_id: "name".into(),
+        action: "set_text".into(),
+        params: serde_json::json!({ "text": "Ada" }),
+    });
+    assert_eq!(d.model().name, "Ada");
+
+    // A click on the text field must not run its set_text handler.
+    d.process_request(&AgentRequest::ExecuteAction {
+        agent_id: "name".into(),
+        action: "click".into(),
+        params: serde_json::Value::Null,
+    });
+    assert_eq!(d.model().name, "Ada", "click must not clear the field");
+}
+
+/// And such a form must validate clean — carrying a value handler names the
+/// widget exactly as carrying a message does.
+#[test]
+fn value_widget_app_validates_clean() {
+    use dewey::agent::driver::HeadlessDriver;
+
+    let mut d = HeadlessDriver::new(form_app(), 200.0, 200.0);
+    d.init();
+    assert!(d.validate().is_empty());
+}

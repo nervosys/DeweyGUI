@@ -70,7 +70,9 @@ impl Model for App {
         let top = rows[0].cols_of(&[rows[0].width - 80.0, 80.0]);
         TextInput::new()
             .placeholder("What needs doing?")
-            .agent_id("new_todo")
+            .on_input("new_todo", |a: &mut App, t: &str| {
+                *a.input.borrow_mut() = TextInputState::new().with_text(t)
+            })
             .render(top[0], frame, &mut self.input.borrow_mut());
         Button::new("Add").on("add", App::add).render(top[1], frame);
 
@@ -111,15 +113,6 @@ impl Model for App {
             .render(foot[1], frame);
     }
 
-    /// Only the text field still needs a handler: a `TextInput` carries state,
-    /// not a change.
-    fn execute_action(&mut self, id: &str, action: &str, p: &serde_json::Value) -> serde_json::Value {
-        if (id, action) == ("new_todo", "set_text") {
-            let text = p.get("text").and_then(|v| v.as_str()).unwrap_or("");
-            *self.input.borrow_mut() = TextInputState::new().with_text(text);
-        }
-        serde_json::json!({ "todos": self.todos.len(), "remaining": self.remaining() })
-    }
 }
 
 fn set_text(id: &str, text: &str) -> AgentRequest {

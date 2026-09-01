@@ -147,7 +147,7 @@ impl Widget for Checkbox {
         } else {
             frame.register_hitbox(self.agent_id.clone(), area, 1);
             if let Some(msg) = self.on_toggle.take() {
-                frame.register_message(self.agent_id.clone(), msg);
+                frame.register_message(self.agent_id.clone(), "click", msg);
             }
         }
 

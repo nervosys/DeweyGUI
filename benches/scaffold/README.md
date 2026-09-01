@@ -51,7 +51,7 @@ higher than the one it was derived from.
 | Framework     | Code lines | ~Tokens  | vs egui | Was   |
 | ------------- | ---------- | -------- | ------- | ----- |
 | Dewey (plain) | 97         | 1047     | 1.63×   | 1.86× |
-| Dewey (agent) | 109        | 1208     | 1.88×   | 2.51× |
+| Dewey (agent) | 104        | 1110     | 1.73×   | 2.51× |
 | **egui 0.31** | **85**     | **643**  | 1.00×   |       |
 | iced 0.13     | 110        | 788      | 1.23×   |       |
 
@@ -85,9 +85,9 @@ Where the remaining extra goes:
   mutates `self.count` inline at the click site.
 - **Layout is explicit.** Dewey splits rectangles by constraint; egui and iced
   infer flow from widget order.
-- **Agent affordances are now +2% / +13%**, down from +36% / +37%: just ids on
-  read-only labels, plus a four-line `execute_action` for the text field, which
-  carries state rather than a message.
+- **Agent affordances are now +2% / +6%**, down from +36% / +37%: nothing but
+  ids on read-only labels, so an agent can read values back. Neither sample
+  writes an `execute_action` handler any more.
 
 Two framework changes produced the drop:
 
@@ -96,8 +96,14 @@ Two framework changes produced the drop:
   the hit map to the message, and an agent's `execute_action(id, "click")`
   dispatches the same one. This deleted TodoMVC's entire dispatch handler,
   including the `toggle_0` / `delete_3` string-matching and index parsing.
-- **`Rect::rows(h)` / `Rect::columns(w)`** — an iterator of successive rows,
-  which removed the manual `y` cursor and overflow break from list rendering.
+- **`Rect::rows(h)` and `rows_of` / `split_columns`** — successive rows and
+  simple splits, which removed the manual `y` cursor and the named `Constraint`
+  per band.
+- **`Button::on(id, |model| ...)`** — a widget carries the change it makes
+  rather than a message, so an application needs no `Msg` variants at all.
+- **`TextInput::on_input` / `Slider::on_change`** — the same for widgets
+  carrying a value, which arrives identically from a person typing or an
+  agent's `execute_action`.
 
 It also closed a functional hole: `HitMap::hit_test` was never called anywhere
 in the codebase. Dewey built a hit map every frame and threw it away, so every

@@ -271,7 +271,7 @@ case (input, filters, dynamic list, per-item toggle and delete, live count):
 | Framework     | counter ~tokens | todomvc ~tokens | todomvc vs egui |
 | ------------- | --------------- | --------------- | --------------- |
 | Dewey (plain) | 328             | 1047            | 1.63×           |
-| Dewey (agent) | 335             | 1208            | 1.88×           |
+| Dewey (agent) | 335             | 1110            | 1.73×           |
 | **egui 0.31** | **264**         | **643**         | 1.00×           |
 | iced 0.13     | 268             | 788             | 1.23×           |
 
@@ -291,6 +291,9 @@ agent-driveability is nearly free.** Three changes did it:
   `Command`.
 - `Rect::rows_of` / `split_columns` replace a `Layout` and a named `Constraint`
   per band.
+- `TextInput::on_input` and `Slider::on_change` do the same for widgets that
+  carry a value, so the TodoMVC sample now has no `execute_action` handler at
+  all and the premium for being agent-driveable there is **+6%**.
 
 Together those took the counter from 1.49× to **1.24×** egui's tokens and
 TodoMVC from 1.86× to **1.63×**.

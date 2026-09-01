@@ -61,6 +61,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `TextInput::on_input(id, |model, text| ...)` and
+  `Slider::on_change(id, |model, value| ...)` carry the change a value widget
+  makes, including the new value. It arrives the same way whether a person
+  edited the widget or an agent sent
+  `execute_action(id, "set_text", {"text": ...})`, so an application writes no
+  handler for it. The TodoMVC benchmark now has no `execute_action` at all.
+- `runtime::ValueMutation<M>`, the type those widgets carry.
+
 - `Button::on(id, |model| ...)` and `Checkbox::on(id, ...)` let a widget carry
   the change it makes instead of a message. The Elm loop asks for a message
   type and an `update` arm per message, which is the right shape for real state
@@ -126,6 +134,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   identical whether or not the ontology is built.
 
 ### Fixed
+
+- A widget handler answers for its own action only. Dispatch previously fired
+  on any `click`, so once value widgets existed an unrelated action could have
+  run a text field's `set_text` handler with no value and silently cleared it.
+  Handlers are now registered with their action name and matched against it.
 
 - Mouse clicks now route to widgets. `HitMap::hit_test` was never called
   anywhere: Dewey built a hit map every frame and discarded it, so every

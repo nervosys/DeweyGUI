@@ -32,6 +32,7 @@ pub struct Slider {
     label: String,
     style: Style,
     agent_id: std::borrow::Cow<'static, str>,
+    on_value: Option<Box<dyn std::any::Any + Send>>,
 }
 
 impl Slider {
@@ -44,6 +45,7 @@ impl Slider {
             label: String::new(),
             style: Style::default(),
             agent_id: std::borrow::Cow::Borrowed(""),
+            on_value: None,
         }
     }
 
@@ -69,6 +71,37 @@ impl Slider {
 
     pub fn bg(mut self, color: Color) -> Self {
         self.style.background = Some(color);
+        self
+    }
+
+    /// Name this widget and give it the change to apply when its value moves.
+    ///
+    /// The value arrives the same way whether a person edited the widget or an
+    /// agent sent `execute_action(id, "set_value", {"value": ...})`, so the
+    /// application writes no `execute_action` handler for it.
+    ///
+    /// ```no_run
+    /// # use dewey::prelude::*;
+    /// # use dewey::widget::Slider;
+    /// # struct App { volume: f64 }
+    /// Slider::new(0.0, 1.0).on_change("vol", |app: &mut App, v: f64| app.volume = v);
+    /// ```
+    #[must_use]
+    pub fn on_change<M: 'static>(
+        mut self,
+        id: impl Into<std::borrow::Cow<'static, str>>,
+        f: impl FnOnce(&mut M, f64) + Send + 'static,
+    ) -> Self {
+        let wrapped: crate::runtime::ValueMutation<M> =
+            Box::new(move |m: &mut M, v: &serde_json::Value| {
+                let value = v
+                    .get("value")
+                    .and_then(serde_json::Value::as_f64)
+                    .unwrap_or(0.0);
+                f(m, value)
+            });
+        self.agent_id = id.into();
+        self.on_value = Some(Box::new(wrapped));
         self
     }
 
@@ -147,7 +180,7 @@ impl Discoverable for Slider {
 impl StatefulWidget for Slider {
     type State = SliderState;
 
-    fn render(self, area: Rect, frame: &mut Frame<'_>, state: &mut SliderState) {
+    fn render(mut self, area: Rect, frame: &mut Frame<'_>, state: &mut SliderState) {
         if !self.agent_id.is_empty() {
             if frame.ontology_enabled() {
                 let node = UiNode::new("Slider", SemanticRole::Input)
@@ -159,6 +192,9 @@ impl StatefulWidget for Slider {
                 frame.register_widget(node);
             }
             frame.register_hitbox(self.agent_id.clone(), area, 1);
+            if let Some(handler) = self.on_value.take() {
+                frame.register_message(self.agent_id.clone(), "set_value", handler);
+            }
         }
 
         // Track

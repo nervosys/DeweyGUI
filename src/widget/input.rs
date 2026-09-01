@@ -51,6 +51,7 @@ pub struct TextInput {
     placeholder: String,
     style: Style,
     agent_id: std::borrow::Cow<'static, str>,
+    on_value: Option<Box<dyn std::any::Any + Send>>,
 }
 
 impl TextInput {
@@ -60,6 +61,7 @@ impl TextInput {
             placeholder: String::new(),
             style: Style::default(),
             agent_id: std::borrow::Cow::Borrowed(""),
+            on_value: None,
         }
     }
 
@@ -85,6 +87,34 @@ impl TextInput {
 
     pub fn rounded(mut self, radius: f32) -> Self {
         self.style.border_radius = Some(radius);
+        self
+    }
+
+    /// Name this widget and give it the change to apply when its value moves.
+    ///
+    /// The value arrives the same way whether a person edited the widget or an
+    /// agent sent `execute_action(id, "set_text", {"text": ...})`, so the
+    /// application writes no `execute_action` handler for it.
+    ///
+    /// ```no_run
+    /// # use dewey::prelude::*;
+    /// # use dewey::widget::TextInput;
+    /// # struct App { name: String }
+    /// TextInput::new().on_input("name", |app: &mut App, text: &str| app.name = text.into());
+    /// ```
+    #[must_use]
+    pub fn on_input<M: 'static>(
+        mut self,
+        id: impl Into<std::borrow::Cow<'static, str>>,
+        f: impl FnOnce(&mut M, &str) + Send + 'static,
+    ) -> Self {
+        let wrapped: crate::runtime::ValueMutation<M> =
+            Box::new(move |m: &mut M, v: &serde_json::Value| {
+                let text = v.get("text").and_then(|t| t.as_str()).unwrap_or("");
+                f(m, text)
+            });
+        self.agent_id = id.into();
+        self.on_value = Some(Box::new(wrapped));
         self
     }
 
@@ -171,9 +201,12 @@ impl Discoverable for TextInput {
 impl StatefulWidget for TextInput {
     type State = TextInputState;
 
-    fn render(self, area: Rect, frame: &mut Frame<'_>, state: &mut TextInputState) {
+    fn render(mut self, area: Rect, frame: &mut Frame<'_>, state: &mut TextInputState) {
         if !self.agent_id.is_empty() {
             frame.register_hitbox(self.agent_id.clone(), area, 1);
+            if let Some(handler) = self.on_value.take() {
+                frame.register_message(self.agent_id.clone(), "set_text", handler);
+            }
         }
 
         // Background fill
