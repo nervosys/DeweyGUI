@@ -19,7 +19,21 @@ pub const SERVER_CAPABILITIES: &[&str] = &[
     "screenshot",
     "ws_transport",
     "protocol_v2",
+    // Added as they were built. A handshake that does not mention a feature
+    // is a feature an agent has no reason to try.
+    "validate",
+    "strict_validate",
+    "tree_viewport",
+    "conditional_tree",
+    "accesskit",
 ];
+
+/// The events a subscription can actually deliver.
+///
+/// [`AgentEvent`] has six variants and two of them are ever sent. Accepting a
+/// subscription to the other four would leave an agent waiting for something
+/// that was never going to arrive, so they are refused by name instead.
+pub const DELIVERABLE_EVENTS: &[&str] = &["state_changed", "app_quit"];
 
 /// A request from an AI agent to the Dewey application.
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -30,6 +30,8 @@ pub struct HeadlessDriver<M: Model> {
     /// The version the last state diff was taken at, so a subscribed session
     /// re-renders once per change rather than once per request.
     diffed_version: u64,
+    /// Whether the quit has already been announced, so it is sent once.
+    announced_quit: bool,
     /// What the last render actually drew.
     ///
     /// Structure cannot show that a label is painted white on white; the draw
@@ -55,6 +57,7 @@ impl<M: Model + 'static> HeadlessDriver<M> {
             unaddressable: Vec::new(),
             version: 0,
             diffed_version: 0,
+            announced_quit: false,
             painted: Vec::new(),
         }
     }
@@ -344,8 +347,21 @@ impl<M: Model + 'static> HeadlessDriver<M> {
     /// when nothing is subscribed, so an unsubscribed session pays a set
     /// lookup and no diff.
     pub fn drain_events_json(&mut self) -> Vec<String> {
+        let mut out = Vec::new();
+
+        // The application asked to stop. An agent watching the stream should
+        // hear that from the stream rather than from the socket closing.
+        if !self.running && !self.announced_quit {
+            self.announced_quit = true;
+            if self.session.is_subscribed("app_quit") {
+                if let Ok(json) = serde_json::to_string(&super::protocol::AgentEvent::AppQuit) {
+                    out.push(json);
+                }
+            }
+        }
+
         if !self.session.is_subscribed("state_changed") {
-            return Vec::new();
+            return out;
         }
         // A mutating request renders *before* it dispatches, so the tree in
         // the registry describes the screen as it was a moment before the
@@ -360,10 +376,12 @@ impl<M: Model + 'static> HeadlessDriver<M> {
             self.render();
             self.diffed_version = self.version;
         }
-        self.compute_state_diffs()
-            .iter()
-            .filter_map(|event| serde_json::to_string(event).ok())
-            .collect()
+        out.extend(
+            self.compute_state_diffs()
+                .iter()
+                .filter_map(|event| serde_json::to_string(event).ok()),
+        );
+        out
     }
 
     /// Render the model view to build/refresh the UI tree in the ontology.

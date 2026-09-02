@@ -328,6 +328,11 @@ Only widgets whose state actually differs are reported, and a subscribed
 session re-renders once per change rather than once per request. Nothing is
 computed at all when nothing is subscribed.
 
+Two events are deliverable: `state_changed` and `app_quit`. `subscribe` refuses
+any other name rather than accepting it and leaving you waiting — `AgentEvent`
+declares six variants and four of them are never sent. `*` subscribes to the
+two that are.
+
 When subscribed, the server pushes `AgentEvent` objects:
 
 ```json

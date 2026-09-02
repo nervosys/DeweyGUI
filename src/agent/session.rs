@@ -186,6 +186,25 @@ impl AgentSession {
             ),
 
             AgentRequest::Subscribe { events } => {
+                // Refuse an event that will never be sent rather than accept
+                // it and leave the agent waiting. `*` means everything that is
+                // deliverable, not everything that is nameable.
+                let unknown: Vec<&str> = events
+                    .iter()
+                    .map(String::as_str)
+                    .filter(|e| *e != "*" && !super::protocol::DELIVERABLE_EVENTS.contains(e))
+                    .collect();
+                if !unknown.is_empty() {
+                    return (
+                        AgentResponse::err(format!(
+                            "no such event: {}. This delivers {}",
+                            unknown.join(", "),
+                            super::protocol::DELIVERABLE_EVENTS.join(", ")
+                        )),
+                        false,
+                    );
+                }
+
                 let remaining = MAX_SUBSCRIPTIONS.saturating_sub(self.subscriptions.len());
                 let to_add: Vec<_> = events.iter().take(remaining).cloned().collect();
                 self.subscriptions.extend(to_add);

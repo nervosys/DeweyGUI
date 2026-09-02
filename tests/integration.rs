@@ -4282,3 +4282,138 @@ fn screenshot_refuses_a_format_it_cannot_produce() {
         assert!(ok.success, "{format} must work");
     }
 }
+
+/// Subscribing to an event that will never arrive is refused.
+///
+/// `AgentEvent` has six variants and two are ever sent. `subscribe` accepted
+/// any name at all, so an agent could subscribe to `render_update` and wait
+/// for something nothing was ever going to emit — with a success in hand.
+#[test]
+fn subscribing_to_an_undeliverable_event_is_refused() {
+    use dewey::agent::driver::HeadlessDriver;
+    use dewey::agent::protocol::{AgentRequest, DELIVERABLE_EVENTS};
+
+    struct App;
+    impl Model for App {
+        type Msg = ();
+        fn update(&mut self, _m: ()) -> Command<()> {
+            Command::None
+        }
+        fn view(&self, _f: &mut Frame<'_>) {}
+    }
+
+    let mut d = HeadlessDriver::new(App, 100.0, 100.0);
+    d.init();
+
+    let refused = d.process_request(&AgentRequest::Subscribe {
+        events: vec!["render_update".into()],
+    });
+    assert!(!refused.success, "nothing emits render_update");
+    let why = refused.error.expect("a refusal names what is available");
+    for deliverable in DELIVERABLE_EVENTS {
+        assert!(why.contains(deliverable), "{why}");
+    }
+
+    for name in DELIVERABLE_EVENTS {
+        assert!(
+            d.process_request(&AgentRequest::Subscribe {
+                events: vec![(*name).into()],
+            })
+            .success,
+            "{name} must be subscribable"
+        );
+    }
+
+    // `*` still means everything, and everything is what is deliverable.
+    assert!(
+        d.process_request(&AgentRequest::Subscribe {
+            events: vec!["*".into()],
+        })
+        .success
+    );
+}
+
+/// A quit reaches a subscribed agent on the stream it is already reading.
+#[test]
+fn a_quit_is_announced_once_to_a_subscriber() {
+    use dewey::agent::driver::HeadlessDriver;
+    use dewey::agent::protocol::AgentRequest;
+
+    struct App;
+    impl Model for App {
+        type Msg = ();
+        fn update(&mut self, _m: ()) -> Command<()> {
+            Command::None
+        }
+        fn view(&self, _f: &mut Frame<'_>) {}
+    }
+
+    let mut d = HeadlessDriver::new(App, 100.0, 100.0);
+    d.init();
+    d.process_request(&AgentRequest::Subscribe {
+        events: vec!["app_quit".into()],
+    });
+    assert!(d.drain_events_json().is_empty(), "nothing has happened yet");
+
+    d.process_request(&AgentRequest::Quit);
+    let events = d.drain_events_json();
+    assert_eq!(events.len(), 1, "{events:?}");
+    let parsed: serde_json::Value = serde_json::from_str(&events[0]).expect("JSON");
+    assert_eq!(parsed["type"], serde_json::json!("app_quit"));
+
+    assert!(
+        d.drain_events_json().is_empty(),
+        "and it is announced once, not on every drain after"
+    );
+}
+
+/// The handshake advertises what the server can actually do.
+///
+/// `SERVER_CAPABILITIES` had not moved since before `validate`, the tree
+/// viewport, conditional reads and the AccessKit bridge existed. An agent
+/// negotiating capabilities was not told about any of them, so it had no
+/// reason to try them.
+#[test]
+fn the_handshake_mentions_the_features_that_exist() {
+    use dewey::agent::driver::HeadlessDriver;
+    use dewey::agent::protocol::AgentRequest;
+
+    struct App;
+    impl Model for App {
+        type Msg = ();
+        fn update(&mut self, _m: ()) -> Command<()> {
+            Command::None
+        }
+        fn view(&self, _f: &mut Frame<'_>) {}
+    }
+
+    let mut d = HeadlessDriver::new(App, 100.0, 100.0);
+    d.init();
+
+    let data = d
+        .process_request(&AgentRequest::Negotiate {
+            client_version: 2,
+            capabilities: vec!["validate".into(), "tree_viewport".into()],
+        })
+        .data
+        .expect("negotiation");
+
+    assert_eq!(data["compatible"], serde_json::json!(true));
+    let advertised = serde_json::to_string(&data["server_capabilities"]).expect("json");
+    for feature in [
+        "validate",
+        "strict_validate",
+        "tree_viewport",
+        "conditional_tree",
+        "accesskit",
+    ] {
+        assert!(
+            advertised.contains(feature),
+            "the handshake should mention `{feature}`: {advertised}"
+        );
+    }
+
+    // And a capability the client asked for is confirmed, not merely listed.
+    let agreed = serde_json::to_string(&data["supported_capabilities"]).expect("json");
+    assert!(agreed.contains("validate") && agreed.contains("tree_viewport"));
+}
