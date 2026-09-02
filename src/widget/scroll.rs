@@ -27,6 +27,8 @@ pub struct ScrollArea {
     horizontal: bool,
     vertical: bool,
     agent_id: std::borrow::Cow<'static, str>,
+    /// The change to apply when an agent scrolls this widget.
+    on_scroll: Option<Box<dyn std::any::Any + Send>>,
 }
 
 impl ScrollArea {
@@ -36,6 +38,7 @@ impl ScrollArea {
             horizontal: false,
             vertical: true,
             agent_id: std::borrow::Cow::Borrowed(""),
+            on_scroll: None,
         }
     }
 
@@ -45,6 +48,7 @@ impl ScrollArea {
             horizontal: true,
             vertical: false,
             agent_id: std::borrow::Cow::Borrowed(""),
+            on_scroll: None,
         }
     }
 
@@ -54,7 +58,33 @@ impl ScrollArea {
             horizontal: true,
             vertical: true,
             agent_id: std::borrow::Cow::Borrowed(""),
+            on_scroll: None,
         }
+    }
+
+    /// Name this area and give it the change to apply on `scroll_to`.
+    ///
+    /// Both offsets are optional in the protocol, and they arrive that way:
+    /// an agent that scrolls only vertically passes `None` for `x`, and
+    /// clamping that to zero would silently reset horizontal position.
+    #[must_use]
+    pub fn on_scroll<M: 'static>(
+        mut self,
+        id: impl Into<std::borrow::Cow<'static, str>>,
+        f: impl FnOnce(&mut M, Option<f32>, Option<f32>) + Send + 'static,
+    ) -> Self {
+        self.agent_id = id.into();
+        let handler: crate::runtime::ValueMutation<M> =
+            Box::new(move |m: &mut M, v: &serde_json::Value| {
+                let num = |k: &str| {
+                    v.get(k)
+                        .and_then(serde_json::Value::as_f64)
+                        .map(|n| n as f32)
+                };
+                f(m, num("x"), num("y"));
+            });
+        self.on_scroll = Some(Box::new(handler));
+        self
     }
 
     pub fn agent_id(mut self, id: impl Into<std::borrow::Cow<'static, str>>) -> Self {
@@ -132,7 +162,13 @@ impl Discoverable for ScrollArea {
 impl StatefulWidget for ScrollArea {
     type State = ScrollState;
 
-    fn render(self, area: Rect, frame: &mut Frame<'_>, state: &mut ScrollState) {
+    fn render(mut self, area: Rect, frame: &mut Frame<'_>, state: &mut ScrollState) {
+        if !self.agent_id.is_empty() {
+            if let Some(handler) = self.on_scroll.take() {
+                frame.register_message(self.agent_id.clone(), "scroll_to", handler);
+            }
+        }
+
         if frame.ontology_enabled() && !self.agent_id.is_empty() {
             let node = UiNode::new("ScrollArea", SemanticRole::Scrollable)
                 .with_id(self.agent_id.clone())

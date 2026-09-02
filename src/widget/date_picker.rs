@@ -147,10 +147,25 @@ impl Default for DatePickerState {
 }
 
 /// A date picker widget showing a calendar grid.
+/// What an agent asked a [`DatePicker`] to do.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DateChange {
+    /// Select this year/month/day.
+    Set { year: i32, month: u32, day: u32 },
+    /// Show the previous month.
+    PrevMonth,
+    /// Show the next month.
+    NextMonth,
+    /// Open or close the calendar.
+    Toggle,
+}
+
 pub struct DatePicker {
     style: Style,
     agent_id: std::borrow::Cow<'static, str>,
     label: String,
+    /// Changes to apply, one per action this widget advertises.
+    handlers: Vec<(&'static str, Box<dyn std::any::Any + Send>)>,
 }
 
 impl DatePicker {
@@ -159,6 +174,7 @@ impl DatePicker {
             style: Style::default(),
             agent_id: std::borrow::Cow::Borrowed(""),
             label: "Select date".to_string(),
+            handlers: Vec::new(),
         }
     }
 
@@ -179,6 +195,41 @@ impl DatePicker {
 
     pub fn bg(mut self, color: Color) -> Self {
         self.style.background = Some(color);
+        self
+    }
+
+    /// Name this picker and give it the change to apply for every action it
+    /// advertises: `set_date`, `prev_month`, `next_month` and `toggle`.
+    ///
+    /// The selected date lives in [`DatePickerState`], outside the widget, so
+    /// without a handler the picker rejects every action an agent sends it.
+    #[must_use]
+    pub fn on_change<M: 'static>(
+        mut self,
+        id: impl Into<std::borrow::Cow<'static, str>>,
+        f: impl Fn(&mut M, DateChange) + Send + Sync + 'static,
+    ) -> Self {
+        self.agent_id = id.into();
+        let f = std::sync::Arc::new(f);
+        for action in ["set_date", "prev_month", "next_month", "toggle"] {
+            let f = f.clone();
+            let handler: crate::runtime::ValueMutation<M> =
+                Box::new(move |m: &mut M, v: &serde_json::Value| {
+                    let int = |k: &str| v.get(k).and_then(serde_json::Value::as_i64);
+                    let change = match action {
+                        "set_date" => DateChange::Set {
+                            year: int("year").unwrap_or(1970) as i32,
+                            month: int("month").unwrap_or(1) as u32,
+                            day: int("day").unwrap_or(1) as u32,
+                        },
+                        "prev_month" => DateChange::PrevMonth,
+                        "next_month" => DateChange::NextMonth,
+                        _ => DateChange::Toggle,
+                    };
+                    f(m, change);
+                });
+            self.handlers.push((action, Box::new(handler)));
+        }
         self
     }
 
@@ -349,7 +400,13 @@ impl Discoverable for DatePickerState {
 impl StatefulWidget for DatePicker {
     type State = DatePickerState;
 
-    fn render(self, area: Rect, frame: &mut Frame<'_>, state: &mut DatePickerState) {
+    fn render(mut self, area: Rect, frame: &mut Frame<'_>, state: &mut DatePickerState) {
+        if !self.agent_id.is_empty() {
+            for (action, handler) in self.handlers.drain(..) {
+                frame.register_message(self.agent_id.clone(), action, handler);
+            }
+        }
+
         let ts = self.style.resolved_text();
 
         if !self.agent_id.is_empty() {

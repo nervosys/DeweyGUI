@@ -322,6 +322,123 @@ pub type Mutation<M> = Box<dyn FnOnce(&mut M) + Send>;
 /// `execute_action(id, "set_text", {"text": ...})`, by the same path.
 pub type ValueMutation<M> = Box<dyn FnOnce(&mut M, &serde_json::Value) + Send>;
 
+/// The changes the widgets of one frame registered, keyed by widget *and*
+/// action.
+///
+/// A widget may register more than one: a `Tree` advertises `expand`,
+/// `collapse`, `expand_all` and `collapse_all`, and an agent reading the
+/// ontology may call any of them. Keying by id alone would silently keep only
+/// the last.
+///
+/// Both the headless driver and the windowed backend dispatch through this one
+/// type. They previously kept a map each and drifted apart, which is how a
+/// handler bound to the wrong action name survived: fixing one copy did not
+/// fix the other.
+pub struct Handlers<M> {
+    entries: Vec<(String, &'static str, Box<dyn std::any::Any + Send>)>,
+    model: std::marker::PhantomData<fn(&mut M)>,
+}
+
+impl<M> Default for Handlers<M> {
+    fn default() -> Self {
+        Self {
+            entries: Vec::new(),
+            model: std::marker::PhantomData,
+        }
+    }
+}
+
+impl<M: Model + 'static> std::fmt::Debug for Handlers<M> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Handlers")
+            .field("registered", &self.list())
+            .finish()
+    }
+}
+
+impl<M: Model + 'static> Handlers<M> {
+    /// Take everything the widgets registered while rendering `frame`.
+    pub fn take_from(frame: &mut Frame<'_>) -> Self {
+        Self {
+            entries: frame
+                .take_messages()
+                .into_iter()
+                .map(|(id, action, msg)| (id.into_owned(), action, msg))
+                .collect(),
+            model: std::marker::PhantomData,
+        }
+    }
+
+    /// Forget everything registered.
+    pub fn clear(&mut self) {
+        self.entries.clear();
+    }
+
+    /// The `(widget, action)` pairs that have a handler, in registration order.
+    #[must_use]
+    pub fn list(&self) -> Vec<(String, &'static str)> {
+        self.entries
+            .iter()
+            .map(|(id, action, _)| (id.clone(), *action))
+            .collect()
+    }
+
+    /// The action a click on `agent_id` should fire: the first one registered.
+    ///
+    /// A click is physical — it means "activate this widget", not any
+    /// particular action name. A `Checkbox` advertises `toggle` and a `Button`
+    /// advertises `click`; pressing either must work.
+    #[must_use]
+    pub fn primary_action(&self, agent_id: &str) -> Option<&'static str> {
+        self.entries
+            .iter()
+            .find(|(id, _, _)| id == agent_id)
+            .map(|(_, action, _)| *action)
+    }
+
+    /// Apply the handler registered for `agent_id`/`action`, if there is one.
+    ///
+    /// Returns the command it produced, or `None` when nothing was registered
+    /// under that exact pair — a widget answers for its own actions only, so
+    /// `execute_action(id, "focus")` must not fire the handler bound to a
+    /// click.
+    pub fn apply(
+        &mut self,
+        agent_id: &str,
+        action: &str,
+        params: &serde_json::Value,
+        model: &mut M,
+    ) -> Option<Command<M::Msg>> {
+        let at = self
+            .entries
+            .iter()
+            .position(|(id, registered, _)| id == agent_id && *registered == action)?;
+        let (_, _, boxed) = self.entries.remove(at);
+        match boxed.downcast::<M::Msg>() {
+            Ok(msg) => Some(Command::Message(*msg)),
+            Err(other) => match other.downcast::<Mutation<M>>() {
+                Ok(change) => {
+                    (*change)(model);
+                    Some(Command::None)
+                }
+                Err(other) => match other.downcast::<ValueMutation<M>>() {
+                    Ok(change) => {
+                        (*change)(model, params);
+                        Some(Command::None)
+                    }
+                    Err(_) => {
+                        debug_assert!(
+                            false,
+                            "widget `{agent_id}` carried neither this model's Msg nor a Mutation"
+                        );
+                        None
+                    }
+                },
+            },
+        }
+    }
+}
+
 /// When the runtime builds the agent ontology tree.
 ///
 /// Building it allocates a [`UiNode`](crate::ontology::UiNode) per widget. A

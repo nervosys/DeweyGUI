@@ -471,8 +471,8 @@ struct RunningApp<M: Model> {
     shapes: agpu::ShapeRenderer,
     text: agpu::TextEngine,
     hit_map: HitMap,
-    /// Messages registered by widgets during the last rendered frame.
-    messages: std::collections::HashMap<String, (&'static str, Box<dyn std::any::Any + Send>)>,
+    /// Changes registered by widgets during the last rendered frame.
+    handlers: crate::runtime::Handlers<M>,
     ontology: OntologyRegistry,
     /// When to build the ontology tree (see `ProgramOptions::ontology`).
     ontology_mode: crate::runtime::OntologyMode,
@@ -596,7 +596,7 @@ impl<M: Model + 'static> RunningApp<M> {
             shapes,
             text,
             hit_map: HitMap::new(),
-            messages: std::collections::HashMap::new(),
+            handlers: crate::runtime::Handlers::default(),
             ontology,
             ontology_mode: options.ontology,
             plugins,
@@ -698,11 +698,7 @@ impl<M: Model + 'static> RunningApp<M> {
             );
             self.model.view(&mut dewey_frame);
 
-            self.messages = dewey_frame
-                .take_messages()
-                .into_iter()
-                .map(|(id, action, msg)| (id.into_owned(), (action, msg)))
-                .collect();
+            self.handlers = crate::runtime::Handlers::take_from(&mut dewey_frame);
 
             let nodes = dewey_frame.take_nodes();
             if !nodes.is_empty() {
@@ -767,56 +763,27 @@ impl<M: Model + 'static> RunningApp<M> {
         }
     }
 
-    /// Dispatch the message a widget registered for `agent_id`, if any.
     /// Fire whatever action the widget registered, as a mouse click does.
     ///
     /// A click is physical: it means "activate this widget", not any
     /// particular action name. A `Checkbox` advertises `toggle`, a `Button`
     /// advertises `click`, and pressing either must work.
     fn dispatch_primary(&mut self, agent_id: &str) -> bool {
-        let Some((action, _)) = self.messages.get(agent_id) else {
+        let Some(action) = self.handlers.primary_action(agent_id) else {
             return false;
         };
-        let action = *action;
         self.dispatch(agent_id, action, &serde_json::Value::Null)
     }
 
     fn dispatch(&mut self, agent_id: &str, action: &str, params: &serde_json::Value) -> bool {
-        let Some((registered, _)) = self.messages.get(agent_id) else {
+        let Some(cmd) = self
+            .handlers
+            .apply(agent_id, action, params, &mut self.model)
+        else {
             return false;
         };
-        // A widget answers for its own action only: `execute_action(id,
-        // "focus")` must not fire the handler bound to a click.
-        if *registered != action {
-            return false;
-        }
-        let (_, boxed) = self.messages.remove(agent_id).expect("just checked");
-        match boxed.downcast::<M::Msg>() {
-            Ok(msg) => {
-                let cmd = self.model.update(*msg);
-                self.process_command(cmd);
-                true
-            }
-            Err(other) => match other.downcast::<crate::runtime::Mutation<M>>() {
-                Ok(change) => {
-                    (*change)(&mut self.model);
-                    true
-                }
-                Err(other) => match other.downcast::<crate::runtime::ValueMutation<M>>() {
-                    Ok(change) => {
-                        (*change)(&mut self.model, params);
-                        true
-                    }
-                    Err(_) => {
-                        debug_assert!(
-                            false,
-                            "widget for `{agent_id}` carried neither this model's Msg nor a Mutation"
-                        );
-                        false
-                    }
-                },
-            },
-        }
+        self.process_command(cmd);
+        true
     }
 
     fn process_command(&mut self, cmd: Command<M::Msg>) {

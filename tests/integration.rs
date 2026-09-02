@@ -2119,3 +2119,148 @@ fn every_extended_widget_dispatches_under_its_advertised_action() {
     // handler is bound to an action its widget advertises.
     assert!(d.validate().is_empty(), "{:?}", d.validate());
 }
+
+/// A widget that advertises several actions must answer to each of them.
+///
+/// Registration used to be keyed by widget id alone, so a `Tree` registering
+/// four handlers kept only the last: an agent could call `collapse_all` and
+/// nothing else. Every action here is exercised through the protocol against
+/// one widget instance.
+#[test]
+fn multi_action_widgets_answer_to_every_action_they_advertise() {
+    use dewey::agent::driver::HeadlessDriver;
+    use dewey::agent::protocol::AgentRequest;
+    use dewey::widget::{
+        ColorChange, ColorPicker, ColorPickerState, CommandPalette, CommandPaletteState, DateChange,
+        DatePicker, DatePickerState, PaletteChange, ScrollArea, ScrollState, StatefulWidget, Tree,
+        TreeChange, TreeNode, Widget,
+    };
+
+    #[derive(Default)]
+    struct Log {
+        tree: Vec<String>,
+        date: Vec<String>,
+        palette: Vec<String>,
+        color: Option<dewey::core::Color>,
+        scroll: Option<(Option<f32>, Option<f32>)>,
+    }
+
+    struct W {
+        log: Log,
+        date_s: std::cell::RefCell<DatePickerState>,
+        pal_s: std::cell::RefCell<CommandPaletteState>,
+        col_s: std::cell::RefCell<ColorPickerState>,
+        scr_s: std::cell::RefCell<ScrollState>,
+    }
+
+    impl Model for W {
+        type Msg = ();
+        fn update(&mut self, _m: ()) -> Command<()> {
+            Command::None
+        }
+        fn view(&self, frame: &mut Frame<'_>) {
+            let r = frame.area.rows_of(&[40.0, 40.0, 40.0, 40.0, 40.0]);
+            Tree::new(TreeNode::branch("root", vec![TreeNode::leaf("a")]))
+                .on_change("tree", |w: &mut W, c: TreeChange<'_>| {
+                    w.log.tree.push(format!("{c:?}"));
+                })
+                .render(r[0], frame);
+            DatePicker::new()
+                .on_change("date", |w: &mut W, c: DateChange| {
+                    w.log.date.push(format!("{c:?}"));
+                })
+                .render(r[1], frame, &mut self.date_s.borrow_mut());
+            CommandPalette::new(vec![])
+                .on_change("palette", |w: &mut W, c: PaletteChange<'_>| {
+                    w.log.palette.push(format!("{c:?}"));
+                })
+                .render(r[2], frame, &mut self.pal_s.borrow_mut());
+            ColorPicker::new("Colour")
+                .on_color("color", |w: &mut W, c: ColorChange| {
+                    w.log.color = Some(c.applied_to(dewey::core::Color::BLACK));
+                })
+                .render(r[3], frame, &mut self.col_s.borrow_mut());
+            ScrollArea::vertical()
+                .on_scroll("scroll", |w: &mut W, x, y| w.log.scroll = Some((x, y)))
+                .render(r[4], frame, &mut self.scr_s.borrow_mut());
+        }
+    }
+
+    let mut d = HeadlessDriver::new(
+        W {
+            log: Log::default(),
+            date_s: Default::default(),
+            pal_s: Default::default(),
+            col_s: Default::default(),
+            scr_s: Default::default(),
+        },
+        300.0,
+        400.0,
+    );
+    d.init();
+
+    let calls = [
+        ("tree", "expand", serde_json::json!({"path": "root/a"})),
+        ("tree", "collapse", serde_json::json!({"path": "root/a"})),
+        ("tree", "expand_all", serde_json::Value::Null),
+        ("tree", "collapse_all", serde_json::Value::Null),
+        (
+            "date",
+            "set_date",
+            serde_json::json!({"year": 2026, "month": 9, "day": 1}),
+        ),
+        ("date", "prev_month", serde_json::Value::Null),
+        ("date", "next_month", serde_json::Value::Null),
+        ("date", "toggle", serde_json::Value::Null),
+        ("palette", "open", serde_json::Value::Null),
+        ("palette", "search", serde_json::json!({"query": "op"})),
+        (
+            "palette",
+            "execute",
+            serde_json::json!({"command_id": "open_file"}),
+        ),
+        ("palette", "close", serde_json::Value::Null),
+        ("color", "set_color", serde_json::json!({"g": 255})),
+        ("scroll", "scroll_to", serde_json::json!({"y": 120.0})),
+    ];
+    for (id, action, params) in calls {
+        let r = d.process_request(&AgentRequest::ExecuteAction {
+            agent_id: id.into(),
+            action: action.into(),
+            params,
+        });
+        assert!(r.success, "{id}.{action} was refused");
+    }
+
+    let log = &d.model().log;
+    assert_eq!(
+        log.tree,
+        ["Expand(\"root/a\")", "Collapse(\"root/a\")", "ExpandAll", "CollapseAll"],
+        "every Tree action must reach the handler, in the order called"
+    );
+    assert_eq!(
+        log.date,
+        [
+            "Set { year: 2026, month: 9, day: 1 }",
+            "PrevMonth",
+            "NextMonth",
+            "Toggle"
+        ]
+    );
+    assert_eq!(
+        log.palette,
+        ["Open", "Search(\"op\")", "Execute(\"open_file\")", "Close"]
+    );
+
+    // A change that names one component leaves the others alone: setting the
+    // green channel of black must not also clear the alpha.
+    let color = log.color.expect("ColorPicker::on_color");
+    assert!((color.g - 1.0).abs() < 1e-6, "green set");
+    assert!((color.r).abs() < 1e-6, "red kept");
+    assert!((color.a - 1.0).abs() < 1e-6, "alpha kept, not zeroed");
+
+    // An omitted offset stays omitted rather than arriving as zero.
+    assert_eq!(log.scroll, Some((None, Some(120.0))));
+
+    assert!(d.validate().is_empty(), "{:?}", d.validate());
+}

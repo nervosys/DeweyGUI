@@ -54,6 +54,8 @@ pub struct VirtualList<F> {
     /// Number of extra items to render above/below the viewport.
     overscan: usize,
     agent_id: std::borrow::Cow<'static, str>,
+    /// The change to apply when an agent scrolls this widget.
+    on_scroll: Option<Box<dyn std::any::Any + Send>>,
 }
 
 impl<F> VirtualList<F>
@@ -66,11 +68,37 @@ where
             render_item,
             overscan: 2,
             agent_id: std::borrow::Cow::Borrowed(""),
+            on_scroll: None,
         }
     }
 
     pub fn overscan(mut self, overscan: usize) -> Self {
         self.overscan = overscan;
+        self
+    }
+
+    /// Name this list and give it the change to apply on `scroll_to`.
+    ///
+    /// The scroll offset lives in [`VirtualListState`], so without a handler
+    /// an agent cannot bring an item into view — which for a list that only
+    /// renders its visible window means it cannot see the item at all.
+    #[must_use]
+    pub fn on_scroll<M: 'static>(
+        mut self,
+        id: impl Into<std::borrow::Cow<'static, str>>,
+        f: impl FnOnce(&mut M, usize) + Send + 'static,
+    ) -> Self {
+        self.agent_id = id.into();
+        let handler: crate::runtime::ValueMutation<M> =
+            Box::new(move |m: &mut M, v: &serde_json::Value| {
+                f(
+                    m,
+                    v.get("index")
+                        .and_then(serde_json::Value::as_u64)
+                        .unwrap_or(0) as usize,
+                );
+            });
+        self.on_scroll = Some(Box::new(handler));
         self
     }
 
@@ -183,7 +211,13 @@ where
 {
     type State = VirtualListState;
 
-    fn render(self, area: Rect, frame: &mut Frame<'_>, state: &mut VirtualListState) {
+    fn render(mut self, area: Rect, frame: &mut Frame<'_>, state: &mut VirtualListState) {
+        if !self.agent_id.is_empty() {
+            if let Some(handler) = self.on_scroll.take() {
+                frame.register_message(self.agent_id.clone(), "scroll_to", handler);
+            }
+        }
+
         let total_content_height = state.total_items as f32 * self.item_height;
         let max_scroll = (total_content_height - area.height).max(0.0);
         state.scroll_offset = state.scroll_offset.clamp(0.0, max_scroll);

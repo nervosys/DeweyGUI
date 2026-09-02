@@ -59,11 +59,30 @@ impl TreeNode {
     }
 }
 
+/// What an agent asked a [`Tree`] to do.
+///
+/// A tree advertises four actions rather than one, so a single `on_click`-style
+/// builder would misreport it. One handler covers them all, and the match arms
+/// name the same strings the ontology publishes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TreeChange<'a> {
+    /// Expand the node at this slash-separated path.
+    Expand(&'a str),
+    /// Collapse the node at this slash-separated path.
+    Collapse(&'a str),
+    /// Expand every node.
+    ExpandAll,
+    /// Collapse every node.
+    CollapseAll,
+}
+
 /// A hierarchical tree view.
 pub struct Tree {
     root: TreeNode,
     style: Style,
     agent_id: std::borrow::Cow<'static, str>,
+    /// Changes to apply, one per action this widget advertises.
+    handlers: Vec<(&'static str, Box<dyn std::any::Any + Send>)>,
 }
 
 impl Tree {
@@ -73,6 +92,7 @@ impl Tree {
             root,
             style: Style::default(),
             agent_id: std::borrow::Cow::Borrowed(""),
+            handlers: Vec::new(),
         }
     }
 
@@ -88,6 +108,43 @@ impl Tree {
 
     pub fn agent_id(mut self, id: impl Into<std::borrow::Cow<'static, str>>) -> Self {
         self.agent_id = id.into();
+        self
+    }
+
+    /// Name this tree and give it the change to apply for every action it
+    /// advertises.
+    ///
+    /// The closure runs for `expand`, `collapse`, `expand_all` and
+    /// `collapse_all` alike, so an agent reading the ontology reaches the
+    /// application whichever it calls. Without this, a `Tree` rejects every
+    /// action: its state lives outside the widget, so `execute_action` on the
+    /// widget itself has nothing to change.
+    #[must_use]
+    pub fn on_change<M: 'static>(
+        mut self,
+        id: impl Into<std::borrow::Cow<'static, str>>,
+        f: impl Fn(&mut M, TreeChange<'_>) + Send + Sync + 'static,
+    ) -> Self {
+        self.agent_id = id.into();
+        let f = std::sync::Arc::new(f);
+        for action in ["expand", "collapse", "expand_all", "collapse_all"] {
+            let f = f.clone();
+            let handler: crate::runtime::ValueMutation<M> =
+                Box::new(move |m: &mut M, v: &serde_json::Value| {
+                    let path = v
+                        .get("path")
+                        .and_then(serde_json::Value::as_str)
+                        .unwrap_or_default();
+                    let change = match action {
+                        "expand" => TreeChange::Expand(path),
+                        "collapse" => TreeChange::Collapse(path),
+                        "expand_all" => TreeChange::ExpandAll,
+                        _ => TreeChange::CollapseAll,
+                    };
+                    f(m, change);
+                });
+            self.handlers.push((action, Box::new(handler)));
+        }
         self
     }
 }
@@ -223,7 +280,12 @@ impl Discoverable for Tree {
 }
 
 impl Widget for Tree {
-    fn render(self, area: Rect, frame: &mut Frame<'_>) {
+    fn render(mut self, area: Rect, frame: &mut Frame<'_>) {
+        if !self.agent_id.is_empty() {
+            for (action, handler) in self.handlers.drain(..) {
+                frame.register_message(self.agent_id.clone(), action, handler);
+            }
+        }
         if frame.ontology_enabled() && !self.agent_id.is_empty() {
             let node = UiNode::new("Tree", SemanticRole::TreeNode)
                 .with_id(self.agent_id.clone())

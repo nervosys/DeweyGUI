@@ -82,11 +82,26 @@ impl Default for CommandPaletteState {
 /// ```
 ///
 /// Agents can list commands, search, and execute them.
+/// What an agent asked a [`CommandPalette`] to do.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PaletteChange<'a> {
+    /// Run the command with this id.
+    Execute(&'a str),
+    /// Filter the command list by this query.
+    Search(&'a str),
+    /// Open the palette.
+    Open,
+    /// Close the palette.
+    Close,
+}
+
 pub struct CommandPalette {
     commands: Vec<PaletteCommand>,
     placeholder: String,
     style: Style,
     agent_id: std::borrow::Cow<'static, str>,
+    /// Changes to apply, one per action this widget advertises.
+    handlers: Vec<(&'static str, Box<dyn std::any::Any + Send>)>,
 }
 
 impl CommandPalette {
@@ -97,6 +112,7 @@ impl CommandPalette {
             placeholder: "Type a command...".into(),
             style: Style::default(),
             agent_id: std::borrow::Cow::Borrowed(""),
+            handlers: Vec::new(),
         }
     }
 
@@ -117,6 +133,43 @@ impl CommandPalette {
 
     pub fn fg(mut self, color: Color) -> Self {
         self.style.foreground = Some(color);
+        self
+    }
+
+    /// Name this palette and give it the change to apply for every action it
+    /// advertises: `execute`, `search`, `open` and `close`.
+    ///
+    /// A command palette is the shape of interface an agent most wants to
+    /// drive — one name per capability — and without a handler it accepts
+    /// none of them, because its query and open state live in
+    /// [`CommandPaletteState`].
+    #[must_use]
+    pub fn on_change<M: 'static>(
+        mut self,
+        id: impl Into<std::borrow::Cow<'static, str>>,
+        f: impl Fn(&mut M, PaletteChange<'_>) + Send + Sync + 'static,
+    ) -> Self {
+        self.agent_id = id.into();
+        let f = std::sync::Arc::new(f);
+        for action in ["execute", "search", "open", "close"] {
+            let f = f.clone();
+            let handler: crate::runtime::ValueMutation<M> =
+                Box::new(move |m: &mut M, v: &serde_json::Value| {
+                    let text = |k: &str| {
+                        v.get(k)
+                            .and_then(serde_json::Value::as_str)
+                            .unwrap_or_default()
+                    };
+                    let change = match action {
+                        "execute" => PaletteChange::Execute(text("command_id")),
+                        "search" => PaletteChange::Search(text("query")),
+                        "open" => PaletteChange::Open,
+                        _ => PaletteChange::Close,
+                    };
+                    f(m, change);
+                });
+            self.handlers.push((action, Box::new(handler)));
+        }
         self
     }
 
@@ -281,7 +334,13 @@ impl Discoverable for CommandPalette {
 impl StatefulWidget for CommandPalette {
     type State = CommandPaletteState;
 
-    fn render(self, area: Rect, frame: &mut Frame<'_>, state: &mut CommandPaletteState) {
+    fn render(mut self, area: Rect, frame: &mut Frame<'_>, state: &mut CommandPaletteState) {
+        if !self.agent_id.is_empty() {
+            for (action, handler) in self.handlers.drain(..) {
+                frame.register_message(self.agent_id.clone(), action, handler);
+            }
+        }
+
         if !state.open {
             return;
         }

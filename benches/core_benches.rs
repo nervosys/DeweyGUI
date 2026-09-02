@@ -51,8 +51,8 @@ fn bench_ontology_registry_build(c: &mut Criterion) {
             let mut root = UiNode::new("root", SemanticRole::Container);
             for i in 0..100 {
                 let id = format!("widget_{i}");
-                let node = UiNode::new(&id, SemanticRole::Display)
-                    .with_id(&id)
+                let node = UiNode::new(id.clone(), SemanticRole::Display)
+                    .with_id(id)
                     .with_property("index", serde_json::json!(i));
                 root.children.push(node);
             }
@@ -66,8 +66,8 @@ fn bench_ontology_serialize(c: &mut Criterion) {
     let mut root = UiNode::new("root", SemanticRole::Container);
     for i in 0..50 {
         let id = format!("widget_{i}");
-        let node = UiNode::new(&id, SemanticRole::Display)
-            .with_id(&id)
+        let node = UiNode::new(id.clone(), SemanticRole::Display)
+            .with_id(id)
             .with_property("value", serde_json::json!(i));
         root.children.push(node);
     }

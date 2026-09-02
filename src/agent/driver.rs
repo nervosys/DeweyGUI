@@ -19,8 +19,8 @@ pub struct HeadlessDriver<M: Model> {
     running: bool,
     window_size: crate::core::Size,
     hit_map: crate::event::HitMap,
-    /// Messages registered by widgets during the last render, keyed by agent id.
-    messages: std::collections::HashMap<String, (&'static str, Box<dyn std::any::Any + Send>)>,
+    /// Changes registered by widgets during the last render.
+    handlers: crate::runtime::Handlers<M>,
     /// Interactive widgets that rendered without an id in the last frame.
     unaddressable: Vec<&'static str>,
     /// Bumped whenever a request could have changed the model. An agent that
@@ -42,7 +42,7 @@ impl<M: Model + 'static> HeadlessDriver<M> {
             running: true,
             window_size: crate::core::Size::new(width, height),
             hit_map: crate::event::HitMap::new(),
-            messages: std::collections::HashMap::new(),
+            handlers: crate::runtime::Handlers::default(),
             unaddressable: Vec::new(),
             version: 0,
         }
@@ -106,6 +106,12 @@ impl<M: Model + 'static> HeadlessDriver<M> {
             // application at all; fall back to `execute_action` for the rest.
             let handled = self.dispatch(agent_id, action, params);
             let result = if handled {
+                // The session answers from the UI tree, and a widget can carry
+                // a handler without appearing in it: a closed `CommandPalette`
+                // renders nothing but still advertises `open`. The change
+                // reached the model, so the call succeeded.
+                response.success = true;
+                response.error = None;
                 serde_json::Value::Null
             } else {
                 self.model.execute_action(agent_id, action, params)
@@ -255,11 +261,7 @@ impl<M: Model + 'static> HeadlessDriver<M> {
         self.model.view(&mut frame);
 
         self.unaddressable = frame.take_unaddressable();
-        self.messages = frame
-            .take_messages()
-            .into_iter()
-            .map(|(id, action, msg)| (id.into_owned(), (action, msg)))
-            .collect();
+        self.handlers = crate::runtime::Handlers::take_from(&mut frame);
 
         let nodes = frame.take_nodes();
         if !nodes.is_empty() {
@@ -284,11 +286,7 @@ impl<M: Model + 'static> HeadlessDriver<M> {
                 crate::ontology::SemanticRole::Container,
             ))
         });
-        let handlers: Vec<(String, &'static str)> = self
-            .messages
-            .iter()
-            .map(|(id, (action, _))| (id.clone(), *action))
-            .collect();
+        let handlers = self.handlers.list();
         crate::ontology::diagnostics::check(
             &tree,
             &self.unaddressable,
@@ -338,49 +336,21 @@ impl<M: Model + 'static> HeadlessDriver<M> {
     /// particular action name. A `Checkbox` advertises `toggle`, a `Button`
     /// advertises `click`, and pressing either must work.
     fn dispatch_primary(&mut self, agent_id: &str) -> bool {
-        let Some((action, _)) = self.messages.get(agent_id) else {
+        let Some(action) = self.handlers.primary_action(agent_id) else {
             return false;
         };
-        let action = *action;
         self.dispatch(agent_id, action, &serde_json::Value::Null)
     }
 
     fn dispatch(&mut self, agent_id: &str, action: &str, params: &serde_json::Value) -> bool {
-        let Some((registered, _)) = self.messages.get(agent_id) else {
+        let Some(cmd) = self
+            .handlers
+            .apply(agent_id, action, params, &mut self.model)
+        else {
             return false;
         };
-        // A widget answers for its own action only: `execute_action(id,
-        // "focus")` must not fire the handler bound to a click.
-        if *registered != action {
-            return false;
-        }
-        let (_, boxed) = self.messages.remove(agent_id).expect("just checked");
-        match boxed.downcast::<M::Msg>() {
-            Ok(msg) => {
-                let cmd = self.model.update(*msg);
-                self.process_command(cmd);
-                true
-            }
-            Err(other) => match other.downcast::<crate::runtime::Mutation<M>>() {
-                Ok(change) => {
-                    (*change)(&mut self.model);
-                    true
-                }
-                Err(other) => match other.downcast::<crate::runtime::ValueMutation<M>>() {
-                    Ok(change) => {
-                        (*change)(&mut self.model, params);
-                        true
-                    }
-                    Err(_) => {
-                        debug_assert!(
-                            false,
-                            "widget for `{agent_id}` carried neither this model's Msg nor a Mutation"
-                        );
-                        false
-                    }
-                },
-            },
-        }
+        self.process_command(cmd);
+        true
     }
 
     fn process_command(&mut self, cmd: Command<M::Msg>) {
