@@ -224,9 +224,23 @@ impl AgentSession {
             ),
 
             AgentRequest::Screenshot { format } => {
-                // In headless mode, return the UI tree as a structured JSON "screenshot".
-                // A real GPU-backed screenshot would require eframe's
-                // `Frame::screenshot()`, which is only available in the egui backend.
+                // Every format was answered with the UI tree, labelled with
+                // whatever was asked for — so `format: "png"` came back as
+                // `{"format": "png", "kind": "ui_tree"}`, which is a tree
+                // wearing the wrong label. Rasterising for an agent is a
+                // feature this crate does not have; saying so is better than
+                // appearing to have it.
+                if !matches!(format.as_str(), "json" | "text") {
+                    return (
+                        AgentResponse::err(format!(
+                            "`{format}` is not a screenshot format here; this \
+                             returns `json` for the UI tree or `text` for a \
+                             stable rendering. Nothing rasterises pixels for an \
+                             agent"
+                        )),
+                        false,
+                    );
+                }
                 let tree = registry.export_tree();
                 (
                     AgentResponse::ok(serde_json::json!({

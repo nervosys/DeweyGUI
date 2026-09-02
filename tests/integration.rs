@@ -4111,3 +4111,174 @@ fn resizing_through_the_protocol_relays_out_the_interface() {
         d.validate()
     );
 }
+
+/// A batch drives the same widgets a single action does.
+///
+/// `batch_actions` called `Model::execute_action` directly, so it never
+/// reached the handler a widget registered — the path every widget builder in
+/// this framework produces. A batch against a handler-wired interface reported
+/// success and changed nothing.
+#[test]
+fn a_batch_reaches_the_same_handlers_a_single_action_does() {
+    use dewey::agent::driver::HeadlessDriver;
+    use dewey::agent::protocol::{AgentRequest, BatchActionEntry};
+
+    #[derive(Default)]
+    struct App {
+        count: i32,
+        text: String,
+    }
+
+    impl Model for App {
+        type Msg = ();
+        fn update(&mut self, _m: ()) -> Command<()> {
+            Command::None
+        }
+        fn view(&self, frame: &mut Frame<'_>) {
+            use dewey::widget::{StatefulWidget, TextInput};
+            let rows = frame.area.split_rows(2);
+            Button::new("inc")
+                .on("inc", |a: &mut App| a.count += 1)
+                .render(rows[0], frame);
+            let mut state = dewey::widget::input::TextInputState::new();
+            TextInput::new()
+                .on_input("name", |a: &mut App, t: &str| a.text = t.to_string())
+                .render(rows[1], frame, &mut state);
+        }
+    }
+
+    let mut d = HeadlessDriver::new(App::default(), 200.0, 100.0);
+    d.init();
+
+    let response = d.process_request(&AgentRequest::BatchActions {
+        actions: vec![
+            BatchActionEntry {
+                agent_id: "inc".into(),
+                action: "click".into(),
+                params: serde_json::Value::Null,
+            },
+            BatchActionEntry {
+                agent_id: "name".into(),
+                action: "set_text".into(),
+                params: serde_json::json!({ "text": "batched" }),
+            },
+        ],
+    });
+
+    assert!(response.success, "{response:?}");
+    assert_eq!(d.model().count, 1, "the button handler must have run");
+    assert_eq!(d.model().text, "batched", "and so must the input's");
+}
+
+/// A batch stops at the first failure and says where it stopped.
+///
+/// The protocol called batches "atomic". Nothing rolled anything back, and a
+/// failing entry did not even stop the ones after it — so an agent got a
+/// success and a half-applied change with no way to tell which half.
+#[test]
+fn a_failing_batch_stops_and_reports_where() {
+    use dewey::agent::driver::HeadlessDriver;
+    use dewey::agent::protocol::{AgentRequest, BatchActionEntry};
+
+    #[derive(Default)]
+    struct App {
+        count: i32,
+    }
+
+    impl Model for App {
+        type Msg = ();
+        fn update(&mut self, _m: ()) -> Command<()> {
+            Command::None
+        }
+        fn view(&self, frame: &mut Frame<'_>) {
+            Button::new("inc")
+                .on("inc", |a: &mut App| a.count += 1)
+                .render(frame.area, frame);
+        }
+    }
+
+    let mut d = HeadlessDriver::new(App::default(), 200.0, 100.0);
+    d.init();
+
+    let response = d.process_request(&AgentRequest::BatchActions {
+        actions: vec![
+            BatchActionEntry {
+                agent_id: "inc".into(),
+                action: "click".into(),
+                params: serde_json::Value::Null,
+            },
+            BatchActionEntry {
+                agent_id: "nonexistent".into(),
+                action: "click".into(),
+                params: serde_json::Value::Null,
+            },
+            BatchActionEntry {
+                agent_id: "inc".into(),
+                action: "click".into(),
+                params: serde_json::Value::Null,
+            },
+        ],
+    });
+
+    assert!(
+        !response.success,
+        "a batch with a failing entry is a failure"
+    );
+    let data = response.data.expect("a report of what happened");
+    assert_eq!(
+        data["applied"],
+        serde_json::json!(1),
+        "the agent must be told how far it got: {data}"
+    );
+    assert_eq!(data["failed_at"], serde_json::json!(1));
+    assert_eq!(
+        d.model().count,
+        1,
+        "and the entry after the failure must not have run"
+    );
+}
+
+/// A format this crate does not produce is refused, not mislabelled.
+///
+/// Every `screenshot` request was answered with the UI tree carrying whatever
+/// format was asked for, so `format: "png"` came back as
+/// `{"format": "png", "kind": "ui_tree"}` — a tree wearing the wrong label.
+/// Rasterising for an agent is a feature this crate does not have.
+#[test]
+fn screenshot_refuses_a_format_it_cannot_produce() {
+    use dewey::agent::driver::HeadlessDriver;
+    use dewey::agent::protocol::AgentRequest;
+
+    struct App;
+    impl Model for App {
+        type Msg = ();
+        fn update(&mut self, _m: ()) -> Command<()> {
+            Command::None
+        }
+        fn view(&self, frame: &mut Frame<'_>) {
+            Label::new("hello")
+                .agent_id("greeting")
+                .render(frame.area, frame);
+        }
+    }
+
+    let mut d = HeadlessDriver::new(App, 200.0, 100.0);
+    d.init();
+
+    let refused = d.process_request(&AgentRequest::Screenshot {
+        format: "png".into(),
+    });
+    assert!(!refused.success, "png is not produced here");
+    let why = refused.error.expect("a refusal must say why");
+    assert!(
+        why.contains("json") && why.contains("text"),
+        "and must name what is available: {why}"
+    );
+
+    for format in ["json", "text"] {
+        let ok = d.process_request(&AgentRequest::Screenshot {
+            format: format.into(),
+        });
+        assert!(ok.success, "{format} must work");
+    }
+}

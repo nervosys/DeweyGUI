@@ -191,15 +191,58 @@ impl<M: Model + 'static> HeadlessDriver<M> {
 
         // Handle batch actions.
         if let AgentRequest::BatchActions { actions } = request {
-            let results: Vec<serde_json::Value> = actions
-                .iter()
-                .map(|entry| {
+            // Each entry takes the same path a single `execute_action` does:
+            // the handler a widget registered first, then the application's
+            // own `execute_action`. Calling only the latter meant a batch
+            // never reached a handler-wired widget at all, which is every
+            // widget this framework's builders produce.
+            let mut results = Vec::with_capacity(actions.len());
+            let mut failed_at = None;
+            for (index, entry) in actions.iter().enumerate() {
+                if self.dispatch(&entry.agent_id, &entry.action, &entry.params) {
+                    results.push(serde_json::Value::Null);
+                    continue;
+                }
+                if let Some(err) = self.unknown_action(&entry.agent_id, &entry.action) {
+                    failed_at = Some((index, err));
+                    break;
+                }
+                // A single `execute_action` naming a widget that is not there
+                // is refused by the session; a batch entry was skipped in
+                // silence, so the two disagreed about the same mistake.
+                let known = self
+                    .ontology
+                    .tree()
+                    .is_some_and(|tree| tree.find(&entry.agent_id).is_some());
+                if !known {
+                    failed_at = Some((index, format!("no widget named `{}`", entry.agent_id)));
+                    break;
+                }
+                let result =
                     self.model
-                        .execute_action(&entry.agent_id, &entry.action, &entry.params)
-                })
-                .collect();
-            if results.iter().any(|value| !value.is_null()) {
-                response.data = Some(serde_json::Value::Array(results));
+                        .execute_action(&entry.agent_id, &entry.action, &entry.params);
+                results.push(result);
+            }
+
+            // Stopping at the first failure is what this can honestly offer.
+            // Rolling back would mean snapshotting an arbitrary application
+            // model, which nothing here can do — so an agent is told how far
+            // the batch got instead of being told it was atomic.
+            let applied = results.len();
+            match failed_at {
+                Some((index, err)) => {
+                    response.success = false;
+                    response.error = Some(err);
+                    response.data = Some(serde_json::json!({
+                        "applied": applied,
+                        "failed_at": index,
+                        "results": results,
+                    }));
+                }
+                None if results.iter().any(|value| !value.is_null()) => {
+                    response.data = Some(serde_json::Value::Array(results));
+                }
+                None => {}
             }
         }
 

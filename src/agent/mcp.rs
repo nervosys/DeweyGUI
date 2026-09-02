@@ -239,7 +239,7 @@ fn tool_definitions() -> serde_json::Value {
                         "type": "string",
                         "description": "Output format. 'text' returns a stable \
     tree rendering suitable for golden comparison between runs.",
-                        "default": "png"
+                        "default": "json"
                     }
                 }
             }
@@ -368,7 +368,7 @@ fn parse_tool_call(name: &str, args: &serde_json::Value) -> Result<AgentRequest,
             let format = args
                 .get("format")
                 .and_then(|v| v.as_str())
-                .unwrap_or("png")
+                .unwrap_or("json")
                 .to_string();
             Ok(AgentRequest::Screenshot { format })
         }

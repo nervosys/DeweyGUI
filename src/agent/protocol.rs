@@ -108,10 +108,15 @@ pub enum AgentRequest {
     #[serde(rename = "quit")]
     Quit,
 
-    /// Take a screenshot of the current frame.
+    /// Describe the current frame.
+    ///
+    /// `json` returns the UI tree; `text` returns a stable rendering suitable
+    /// for golden comparison between runs. There is no pixel format: this
+    /// crate does not rasterise for an agent, and a request for one is refused
+    /// rather than answered with a tree wearing the wrong label.
     #[serde(rename = "screenshot")]
     Screenshot {
-        /// Output format: "png", "raw", etc.
+        /// Output format: `json` or `text`.
         #[serde(default = "default_format")]
         format: String,
     },
@@ -141,7 +146,7 @@ pub struct BatchActionEntry {
 }
 
 fn default_format() -> String {
-    "png".into()
+    "json".into()
 }
 
 /// An event injected by an agent into the application.

@@ -261,6 +261,18 @@ JSON format.
 
 ### batch_actions
 
+Entries run in order and each takes the same path a single `execute_action`
+does — the widget's handler first, then `Model::execute_action`. The batch
+stops at the first failure and reports how far it got:
+
+```json
+{"applied": 1, "failed_at": 1, "results": [null]}
+```
+
+It is **not** atomic and nothing is rolled back: undoing a partial batch would
+mean snapshotting an arbitrary application model, which nothing here can do.
+An agent is told where the batch stopped instead.
+
 Execute multiple actions in a single request:
 
 ```json
