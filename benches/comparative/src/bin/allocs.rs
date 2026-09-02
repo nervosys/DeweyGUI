@@ -34,7 +34,10 @@ fn read() -> (usize, usize) {
     (ALLOCS.load(Ordering::Relaxed), BYTES.load(Ordering::Relaxed))
 }
 
+/// Carries the index a real application would act on. Never read here —
+/// this benchmark counts allocations, it does not run `update`.
 #[derive(Debug)]
+#[allow(dead_code)]
 enum BenchMsg {
     Clicked(usize),
 }

@@ -122,3 +122,16 @@ proptest = "1"
 [[bench]]
 name = "core_benches"
 harness = false
+
+# On Linux, winit needs to be told which display server to talk to. `eframe`
+# is pulled in with `default-features = false` to keep glow and the default
+# http loaders out, and that takes `x11` and `wayland` with it — so the crate
+# did not build on Linux at all. Cargo unions these with the features above.
+[target.'cfg(all(unix, not(target_os = "macos")))'.dependencies]
+eframe = { version = "0.31", optional = true, default-features = false, features = [
+    "default_fonts",
+    "wgpu",
+    "x11",
+    "wayland",
+] }
+winit = { version = "0.30", optional = true, features = ["x11", "wayland"] }

@@ -24,7 +24,10 @@ struct App {
     count: i32,
 }
 
+/// A realistic application message type: the benchmark drives the app
+/// through widget handlers, so nothing here is constructed by name.
 #[derive(Debug)]
+#[allow(dead_code)]
 enum Msg {
     Increment,
     Decrement,
