@@ -1,7 +1,17 @@
 //! Bridge between Dewey's ontology and [AccessKit](https://accesskit.dev/).
 //!
-//! Enable with `features = ["accesskit"]`. Provides conversion from Dewey's
-//! `SemanticRole` and `UiNode` types to AccessKit `Role` and `Node`.
+//! Enable with `features = ["accesskit"]`. Every widget an agent can address
+//! is also published to the platform's accessibility API, so a screen reader
+//! sees the same interface the agent does — and a test harness that already
+//! speaks AccessKit can drive a Dewey application without learning this
+//! project's protocol.
+//!
+//! Dewey paints its widgets itself rather than building them out of egui
+//! widgets, so egui's own accessibility tree would otherwise be empty: a
+//! Dewey application was silently unusable with a screen reader. [`publish`]
+//! fixes that by claiming an invisible egui rectangle per addressable widget
+//! and stamping the ontology node onto it, which leaves egui to own node ids
+//! and parenting.
 
 use crate::ontology::{SemanticRole, UiNode};
 
@@ -40,9 +50,19 @@ pub fn to_accesskit_node(ui_node: &UiNode) -> accesskit::Node {
     let role = to_accesskit_role(ui_node.role);
     let mut node = accesskit::Node::new(role);
 
-    // Label
-    if let Some(label) = &ui_node.label {
-        node.set_label(label.as_str());
+    // Label. Widgets carry their text as a property rather than in the node's
+    // `label` field — `Button` and `Checkbox` under "label", `Label` under
+    // "text" — so a bridge that read only `label` announced every one of them
+    // as unnamed, which is the difference between a usable screen reader and
+    // a list of anonymous buttons.
+    let announced = ui_node.label.as_deref().or_else(|| {
+        ["label", "text", "title", "placeholder"]
+            .iter()
+            .find_map(|key| ui_node.state.get(key).and_then(serde_json::Value::as_str))
+            .filter(|text| !text.is_empty())
+    });
+    if let Some(label) = announced {
+        node.set_label(label);
     }
 
     // Description from accessibility
@@ -91,6 +111,45 @@ pub fn to_accesskit_node(ui_node: &UiNode) -> accesskit::Node {
     }
 
     node
+}
+
+/// Publish every addressable widget in `tree` to the platform accessibility
+/// API, through egui.
+///
+/// Does nothing when no assistive technology is attached: egui only builds an
+/// AccessKit tree when the platform has asked for one, and
+/// `accesskit_node_builder` returns `None` until then, so the per-widget cost
+/// is a rectangle allocation that is skipped in the ordinary case.
+#[cfg(feature = "egui-backend")]
+pub fn publish(ui: &mut egui::Ui, tree: &crate::ontology::UiTree) {
+    fn walk(ui: &mut egui::Ui, node: &UiNode) {
+        if let (Some(id), Some(bounds)) = (node.agent_id.as_deref(), node.bounds.as_ref()) {
+            let rect = egui::Rect::from_min_size(
+                egui::pos2(bounds.x, bounds.y),
+                egui::vec2(bounds.width.max(1.0), bounds.height.max(1.0)),
+            );
+            let response = ui.allocate_rect(rect, egui::Sense::click());
+            let built = to_accesskit_node(node);
+            ui.ctx().accesskit_node_builder(response.id, |target| {
+                *target = built;
+            });
+            let _ = id;
+        }
+        for child in &node.children {
+            walk(ui, child);
+        }
+    }
+
+    // One probe: if egui is not collecting accessibility this frame, every
+    // call below would be a no-op with an allocation each, so skip the walk.
+    if ui
+        .ctx()
+        .accesskit_node_builder(egui::Id::new("dewey_a11y_probe"), |_| ())
+        .is_none()
+    {
+        return;
+    }
+    walk(ui, &tree.root);
 }
 
 #[cfg(test)]

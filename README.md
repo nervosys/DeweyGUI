@@ -414,6 +414,13 @@ into `SetValue` with a string whose format is undocumented.
 iced 0.13 has no accessibility feature, so there an agent really does have only
 pixels.
 
+Since that comparison was written, DeweyGUI publishes an AccessKit tree of its
+own: `features = ["accesskit"]` mirrors every addressable widget into the
+platform accessibility API, so a screen reader — and any harness that already
+speaks AccessKit — sees the same interface an agent does, without learning this
+protocol. The bridge had existed for some time and nothing called it, which
+meant a Dewey application was unusable with a screen reader.
+
 So: Dewey is worse at being *written* by an agent, and uniquely good at being
 *verified* by one. Verification cost is paid on every iteration, and an agent
 that cannot check its work reliably does more iterations.

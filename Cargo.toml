@@ -31,7 +31,10 @@ default = ["egui-backend"]
 egui-backend = ["dep:egui", "dep:eframe"]
 agpu-backend = ["dep:agpu", "dep:winit", "dep:pollster"]
 ws-transport = ["dep:tungstenite"]
-accesskit = ["dep:accesskit"]
+# eframe must also collect an AccessKit tree, or `publish` has nothing to
+# attach nodes to. Going through eframe rather than egui directly keeps
+# egui-winit's own accesskit feature in step; enabling only egui's breaks it.
+accesskit = ["dep:accesskit", "eframe?/accesskit"]
 derive = ["dep:dewey-derive"]
 
 [[example]]
@@ -110,7 +113,9 @@ env_logger = "0.11"
 tungstenite = { version = "0.24", optional = true }
 
 # Accessibility
-accesskit = { version = "0.24", optional = true }
+# Must match the version egui 0.31 uses, or the bridge builds nodes of a
+# type egui will not accept.
+accesskit = { version = "0.17", optional = true }
 
 # Derive macros
 dewey-derive = { version = "1.0.0", path = "dewey-derive", optional = true }

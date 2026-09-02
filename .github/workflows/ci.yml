@@ -28,6 +28,9 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - run: cargo test
+      # Accessibility is off by default and must not rot; it also pulls a
+      # different egui feature set, which is where the version skew lives.
+      - run: cargo test --features accesskit
 
   clippy:
     name: Clippy

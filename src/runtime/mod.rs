@@ -648,6 +648,10 @@ struct DeweyApp<M: Model> {
     options: ProgramOptions,
     running: bool,
     last_tick: std::time::Instant,
+    /// Whether the ontology tree is also published to the platform
+    /// accessibility API. Set once at startup; the tree must then be built
+    /// every frame, because a screen reader reads it between agent requests.
+    accessibility: bool,
     /// Window operations waiting for a frame to send them on.
     ///
     /// `Model::update` runs without an `egui::Context` — deliberately, so that
@@ -671,6 +675,7 @@ impl<M: Model> DeweyApp<M> {
             options,
             running: true,
             last_tick: std::time::Instant::now(),
+            accessibility: cfg!(feature = "accesskit"),
             pending_viewport: Vec::new(),
         };
         app.process_command(init_cmd);
@@ -820,9 +825,17 @@ impl<M: Model + 'static> eframe::App for DeweyApp<M> {
             available.height(),
         );
 
-        egui::CentralPanel::default().show(ctx, |_ui| {
+        // `Frame::new` builds the ontology unconditionally, so this backend
+        // was paying for a tree on every frame regardless of `OntologyMode` —
+        // the option is documented as defaulting to `OnDemand` and the agpu
+        // backend honours it. Screen-reader support needs the tree every
+        // frame, so accessibility forces it back on.
+        let build_tree = self.options.ontology == OntologyMode::EveryFrame || self.accessibility;
+
+        egui::CentralPanel::default().show(ctx, |ui| {
             let mut egui_painter = crate::backend::egui_backend::EguiPainter::new(ctx);
-            let mut frame = Frame::new(area, &mut self.hit_map, &mut egui_painter);
+            let mut frame =
+                Frame::with_ontology(area, &mut self.hit_map, &mut egui_painter, build_tree);
             self.model.view(&mut frame);
 
             // Collect UI tree
@@ -834,6 +847,14 @@ impl<M: Model + 'static> eframe::App for DeweyApp<M> {
                 root.children = nodes;
                 self.ontology.set_tree(crate::ontology::UiTree::new(root));
             }
+
+            #[cfg(feature = "accesskit")]
+            if self.accessibility {
+                if let Some(tree) = self.ontology.tree() {
+                    crate::accesskit_bridge::publish(ui, tree);
+                }
+            }
+            let _ = ui;
         });
 
         // Schedule next repaint at the tick rate to avoid overwhelming the swapchain

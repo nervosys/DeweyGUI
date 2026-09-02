@@ -3381,3 +3381,112 @@ fn strict_validation_is_available_to_agents() {
     assert_eq!(data["ok"], serde_json::json!(false));
     assert!(data["errors"].as_u64().unwrap_or(0) >= 1, "{data}");
 }
+
+/// A rendered interface converts into AccessKit nodes a screen reader can use.
+///
+/// The bridge existed and nothing called it, so a Dewey application published
+/// no accessibility tree at all — egui's own tree is empty here because Dewey
+/// paints its widgets rather than building them from egui widgets.
+#[cfg(feature = "accesskit")]
+#[test]
+fn the_ontology_converts_to_accesskit_nodes() {
+    use dewey::accesskit_bridge::{to_accesskit_node, to_accesskit_role};
+    use dewey::ontology::SemanticRole;
+    use dewey::widget::{Checkbox, Widget};
+
+    struct App;
+    impl Model for App {
+        type Msg = ();
+        fn update(&mut self, _m: ()) -> Command<()> {
+            Command::None
+        }
+        fn view(&self, frame: &mut Frame<'_>) {
+            let r = frame.area.split_rows(2);
+            Button::new("Save")
+                .on("save", |_: &mut App| {})
+                .render(r[0], frame);
+            Checkbox::new("Ready", true)
+                .on("ready", |_: &mut App| {})
+                .render(r[1], frame);
+        }
+    }
+
+    let tree = dewey::runtime::build_ontology_tree(&App, Rect::from_size(300.0, 120.0));
+    let nodes: Vec<_> = tree
+        .root
+        .children
+        .iter()
+        .map(dewey::accesskit_bridge::to_accesskit_node)
+        .collect();
+
+    assert_eq!(nodes.len(), 2, "both widgets must reach the tree");
+    assert!(
+        nodes.iter().any(|n| n.role() == accesskit::Role::Button),
+        "the button must be announced as a button"
+    );
+    assert_eq!(
+        to_accesskit_role(SemanticRole::Action),
+        accesskit::Role::Button
+    );
+
+    // A label must survive the conversion, or a screen reader reads nothing.
+    let button = tree
+        .root
+        .children
+        .iter()
+        .find(|n| n.agent_id.as_deref() == Some("save"))
+        .expect("save button");
+    let ak = to_accesskit_node(button);
+    assert!(
+        ak.label().is_some() || ak.value().is_some(),
+        "the button must carry text a screen reader can announce"
+    );
+}
+
+/// The default backend must honour `OntologyMode`, as the other one does.
+///
+/// `Frame::new` builds the ontology unconditionally, and the egui path used
+/// it — so the documented `OnDemand` default was not the behaviour, and the
+/// default backend paid roughly twice the frame cost for a tree nothing had
+/// asked for.
+#[test]
+fn on_demand_is_the_default_and_means_what_it_says() {
+    use dewey::runtime::{OntologyMode, ProgramOptions};
+
+    assert_eq!(
+        ProgramOptions::default().ontology,
+        OntologyMode::OnDemand,
+        "the documented default"
+    );
+
+    struct App;
+    impl Model for App {
+        type Msg = ();
+        fn update(&mut self, _m: ()) -> Command<()> {
+            Command::None
+        }
+        fn view(&self, frame: &mut Frame<'_>) {
+            Button::new("x")
+                .on("x", |_: &mut App| {})
+                .render(frame.area, frame);
+        }
+    }
+
+    // A frame that is not collecting the ontology must produce no nodes, which
+    // is what makes skipping the work observable rather than a claim.
+    let mut hit_map = dewey::event::HitMap::new();
+    let mut painter = dewey::paint::NullPainter;
+    let area = Rect::from_size(200.0, 100.0);
+
+    let mut off = Frame::with_ontology(area, &mut hit_map, &mut painter, false);
+    App.view(&mut off);
+    assert!(off.take_nodes().is_empty(), "no tree when nobody asked");
+    assert!(
+        !off.ontology_enabled(),
+        "widgets check this before building a node at all"
+    );
+
+    let mut on = Frame::with_ontology(area, &mut hit_map, &mut painter, true);
+    App.view(&mut on);
+    assert_eq!(on.take_nodes().len(), 1);
+}
