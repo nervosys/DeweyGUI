@@ -1,7 +1,11 @@
-//! Multi-window support — manage multiple windows from a single application.
+//! Window bookkeeping.
 //!
-//! Provides [`WindowId`], [`WindowConfig`], and [`WindowManager`] for
-//! creating and tracking multiple windows.
+//! **This tracks windows; it does not open them.** There is no `winit`
+//! reference in this module: `create` allocates an id and pushes a record,
+//! and `close` removes one. An embedder that wants a second real window
+//! creates it itself and uses this to keep track.
+//!
+//! Nothing in this crate drives it.
 
 use crate::core::{Rect, Size};
 

@@ -1,7 +1,8 @@
-//! Plugin system — loadable extensions for widgets and renderers.
+//! A plugin registry.
 //!
-//! Provides [`Plugin`] trait, [`PluginManager`], and [`PluginMetadata`]
-//! for discovering and managing runtime plugin extensions.
+//! **Nothing in this crate calls it.** [`PluginRegistry::dispatch`] works,
+//! and no runtime, app or event loop here invokes a lifecycle hook — an
+//! embedder holding the registry has to dispatch to it itself.
 
 use std::collections::HashMap;
 

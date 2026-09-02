@@ -1,8 +1,11 @@
-//! Accessibility — platform accessibility integration.
+//! An accessibility tree, in this crate's own vocabulary.
 //!
-//! Provides [`AccessibilityNode`], [`Role`], and [`AccessibilityTree`]
-//! for building the accessibility tree exposed to platform APIs
-//! (Windows UI Automation, macOS Accessibility, AT-SPI on Linux).
+//! **Not AccessKit.** [`Role`] and [`AccessibilityNode`] are defined here
+//! rather than mapped onto the platform APIs, so nothing built from this
+//! module reaches a screen reader without a conversion an embedder writes.
+//! `deweygui` publishes to AccessKit through its own bridge instead.
+//!
+//! Nothing in this crate drives it.
 
 use serde::{Deserialize, Serialize};
 

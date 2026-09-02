@@ -19,14 +19,45 @@
 //!
 //! ## Quick Start
 //!
-//! ```rust,ignore
+//! `no_run` rather than `ignore`: this opens a window, so it is compiled but
+//! not executed. An ignored example is checked by nothing, and the two in this
+//! workspace that were ignored both described APIs that did not exist.
+//!
+//! ```no_run
 //! use agpu::prelude::*;
 //!
-//! struct MyApp;
-//! // impl Model for MyApp { ... }
+//! struct Counter {
+//!     count: i32,
+//! }
+//!
+//! enum Msg {
+//!     Increment,
+//! }
+//!
+//! impl Model for Counter {
+//!     type Msg = Msg;
+//!
+//!     fn update(&mut self, msg: Msg) -> Command<Msg> {
+//!         match msg {
+//!             Msg::Increment => self.count += 1,
+//!         }
+//!         Command::None
+//!     }
+//!
+//!     fn view(&self, frame: &mut Frame<'_>) {
+//!         let area = frame.area;
+//!         frame
+//!             .painter()
+//!             .fill_rect(area, Color::rgba(0.1, 0.1, 0.12, 1.0), 0.0);
+//!     }
+//!
+//!     fn handle_event(&self, _event: Event) -> Option<Msg> {
+//!         None
+//!     }
+//! }
 //!
 //! fn main() {
-//!     AgpuApp::new(MyApp).run().unwrap();
+//!     AgpuApp::new(Counter { count: 0 }).run().unwrap();
 //! }
 //! ```
 

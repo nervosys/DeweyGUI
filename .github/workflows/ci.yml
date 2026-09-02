@@ -109,6 +109,9 @@ jobs:
       # `cargo check` never sees them, and both had silently stopped compiling
       # — one when node ids became `Cow<'static, str>`, the other when
       # `get_tree` gained `since`.
+      # The sibling GPU crate has its own tests, doctests and reachability
+      # checks, and the main `cargo test` does not reach them.
+      - run: cargo test --manifest-path agpu/Cargo.toml
       - run: cargo check --all-targets --manifest-path benches/comparative/Cargo.toml
       - run: cargo check --all-targets --manifest-path benches/scaffold/Cargo.toml
 
