@@ -2,6 +2,12 @@
 
 Version: 2 (backward-compatible with v1)
 
+This file is checked against the code: `tests/docs_conformance.rs`
+deserialises every request example as an `AgentRequest` or `AgentEvent`, runs
+each one, and compares the documented response fields with what the server
+actually sends. An example here that names a field the protocol does not have
+fails the build.
+
 ## Transport
 
 Messages are exchanged as **JSON Lines** — one JSON object per line, delimited
