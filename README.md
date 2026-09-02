@@ -106,11 +106,16 @@ impl Model for App {
     }
 
     fn view(&self, frame: &mut Frame<'_>) {
-        let area = frame.area;
-        Label::new(format!("Count: {}", self.count)).render(area, frame);
+        let rows = frame.area.rows_of(&[40.0, 40.0, 40.0]);
+        Label::new(format!("Count: {}", self.count))
+            .agent_id("count")
+            .render(rows[0], frame);
+        // `action` names the widget and gives it the message to send, so a
+        // person clicking it and an agent calling `execute_action("inc",
+        // "click")` take the same path.
+        Button::new("+").action("inc", Msg::Increment).render(rows[1], frame);
+        Button::new("-").action("dec", Msg::Decrement).render(rows[2], frame);
     }
-
-    fn handle_event(&self, _event: Event) -> Option<Msg> { None }
 }
 
 fn main() -> std::result::Result<(), eframe::Error> {

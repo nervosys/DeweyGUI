@@ -288,8 +288,14 @@ fn every_complete_readme_sample_compiles() {
         let path = root.join("examples").join(format!("{name}.rs"));
         std::fs::write(&path, sample).expect("write sample");
 
+        // CI builds with `-Dwarnings`, so a sample that merely warns fails
+        // there and passes here. Holding the sample to the stricter of the two
+        // keeps the two honest — and a sample that warns is teaching the
+        // warning: the first version of the quick start declared two message
+        // variants and sent neither.
         let output = std::process::Command::new("cargo")
             .args(["check", "--quiet", "--example", &name])
+            .env("RUSTFLAGS", "-Dwarnings")
             .current_dir(root)
             .output();
         let _ = std::fs::remove_file(&path);
