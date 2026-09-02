@@ -260,16 +260,16 @@ it. Both paths exist in this crate, so both run.
 | Rows | tree, all | | screenshot, one viewport | | **tree, one viewport** | | unchanged |
 | ---- | ------- | ------- | ------- | ------- | ------- | ------- | ------ |
 |      | time | bytes | time | bytes | time | bytes | bytes |
-| 10   | 28.1 us | 4.5 kB | 979.5 us | 12.7 kB | **9.9 us** | 4.5 kB | 30 B |
-| 100  | 368.7 us | 40.2 kB | 1.65 ms | 16.7 kB | **46.6 us** | 11.7 kB | 30 B |
-| 1000 | 7.48 ms | 401.5 kB | 1.50 ms | 16.7 kB | **288.5 us** | 11.7 kB | 30 B |
+| 10   | 41.9 us | 4.5 kB | 1.24 ms | 12.7 kB | **13.8 us** | 4.5 kB | 30 B |
+| 100  | 426.8 us | 40.2 kB | 1.59 ms | 16.7 kB | **47.8 us** | 11.7 kB | 30 B |
+| 1000 | 7.94 ms | 401.5 kB | 1.71 ms | 16.7 kB | **488.3 us** | 11.7 kB | 30 B |
 
 The middle pair grows the window until every row is drawn, which flatters the
 tree. A real screenshot is the third pair: one viewport, near constant however
 long the list, because it shows only what is on screen. The tree describes
 every widget including the ones nobody can see.
 
-Given the same viewport the screenshot gets, the tree is **5x faster and 30%
+Given the same viewport the screenshot gets, the tree is **3.5x faster and 30%
 smaller** at 1000 rows. It was not always: the unclipped tree describes every
 widget including the ones nobody can see, and at 1000 rows that was 3.7x slower
 and 24x bigger than a picture. The viewport now decides *before* a `UiNode` is

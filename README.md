@@ -336,15 +336,17 @@ switch filter, read the result back):
 
 | Task                                            | Time        | Rate      |
 | ----------------------------------------------- | ----------- | --------- |
-| counter: discover → act → verify → validate     | **12.3 µs** | 81,000/s  |
-| polling an unchanged screen (`get_tree since=`) | **100 ns**  | 49× less  |
-| todomvc: 9-step add/complete/filter/verify      | **42.3 µs** | 24,000/s  |
-| session setup: `query_ontology`, 29 widget types | **0.4 µs**  | once      |
+| counter: discover → act → verify → validate     | **12.6 µs** | 79,000/s  |
+| polling an unchanged screen (`get_tree since=`) | **100 ns**  | 50× less  |
+| todomvc: 9-step add/complete/filter/verify      | **45.2 µs** | 22,000/s  |
+| session setup: `query_ontology`, 29 widget types | **500 ns**  | once      |
+| one screen of a 1000-row list (`viewport`)      | **488 µs**  | 11.7 kB   |
 
 `query_ontology` reads the whole widget catalogue, which never changes, so a
-transport now serves it from bytes serialised once for the process rather than
+transport serves it from bytes serialised once for the process rather than
 deep-cloning and re-serialising a `serde_json::Value` per caller — 36.7 µs to
-0.4 µs. The counter figure previously read 8.2 µs and included a
+500 ns. An in-process caller that asks for a `Value` still pays 54 µs to have
+one built, which is the cost of what it asked for rather than waste. The counter figure previously read 8.2 µs and included a
 `query_ontology` step. That step was returning an empty catalogue — schemas were registered
 only by an application that chose to, so for an ordinary program there was
 nothing to return and the call cost nothing. Reading the catalogue is now
@@ -361,7 +363,7 @@ ontology buys there is correctness rather than speed. And the tree used to
 describe every widget including the ones nobody could see, which at 1000 rows
 made it 3.7× slower and 24× larger than a screenshot — `get_tree` now takes a
 `viewport`, and decides before building a node rather than clipping a finished
-tree, so the same read is **5× faster and 30% smaller** than the picture. What
+tree, so the same read is **3.5× faster and 30% smaller** than the picture. What
 it still does not do is stop laying out and painting the widgets it declines to
 describe, so the time grows with the list even though the reply does not.
 

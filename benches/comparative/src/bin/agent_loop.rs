@@ -182,12 +182,22 @@ fn main() {
             .and_then(|v| v.as_array().map(Vec::len))
             .unwrap_or(0);
         let mut once = Duration::MAX;
+        let mut wire = Duration::MAX;
         for _ in 0..ROUNDS {
             let t = Instant::now();
             black_box(d.process_request(&req));
             once = once.min(t.elapsed());
+
+            let t = Instant::now();
+            black_box(d.process_request_json(&req));
+            wire = wire.min(t.elapsed());
         }
-        println!("session setup: query_ontology returned {types} widget types in {}
+        // The catalogue never changes, so a transport serves it from bytes
+        // serialised once for the process. An in-process caller asked for a
+        // `serde_json::Value` and pays to have one built.
+        println!("session setup: query_ontology, {types} widget types");
+        println!("  over a transport            {:>10}", fmt(wire));
+        println!("  in process, as a Value      {:>10}
 ", fmt(once));
     }
 
