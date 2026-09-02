@@ -4026,11 +4026,12 @@ fn a_dropped_file_is_one_event_on_both_backends() {
 
     // The hover and its cancellation are the other two thirds of the gesture,
     // and both were missing from the default backend entirely.
-    assert!(matches!(
-        app.handle_event(Event::FileHover(vec!["/tmp/report.csv".into()])),
-        None
-    ));
-    assert!(matches!(app.handle_event(Event::FileHoverCancelled), None));
+    assert!(
+        app.handle_event(Event::FileHover(vec!["/tmp/report.csv".into()]))
+            .is_none(),
+        "a hover is not a drop"
+    );
+    assert!(app.handle_event(Event::FileHoverCancelled).is_none());
 
     // `DragPayload` describes widget-to-widget dragging, which an application
     // drives itself. It deliberately has no file variant: a drop from the
