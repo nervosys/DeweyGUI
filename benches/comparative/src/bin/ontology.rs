@@ -461,11 +461,15 @@ fn verifying() {
             .render(frame.area, frame, &mut state);
     }
     fn white_on_white(frame: &mut Frame<'_>) {
-        // Structurally perfect and completely unreadable.
+        // Structurally perfect and completely unreadable. The panel is painted
+        // because that is what "on white" means: text over a window background
+        // the framework never drew has no recorded ground to be compared with.
+        let area = frame.area;
+        frame.painter().fill_rect(area, Color::WHITE, 0.0);
         Label::new("Balance: $4,201.55")
             .agent_id("balance")
             .fg(Color::WHITE)
-            .render(frame.area, frame);
+            .render(area, frame);
     }
 
     let cases = [
@@ -538,10 +542,19 @@ fn verifying() {
         cases.len()
     );
     println!(
-        "\n  The last row is the one that matters. White text on white is\n  \
-         structurally perfect: correct id, real bounds, on screen, fully wired.\n  \
-         `validate` passes it. Only the pixels show it is unreadable, and the\n  \
-         ontology cannot substitute for looking."
+        "\n  The last row used to be blank. White on white is structurally\n  \
+               perfect — correct id, real bounds, on screen, fully wired — so no\n  \
+               check of the tree could see it, and it sat here as a failure for as\n  \
+               long as this benchmark has existed.\n  \
+             \n  \
+               `validate` now also reads what was painted: for each piece of text,\n  \
+               the last fill underneath it is the ground, and a WCAG contrast below\n  \
+               1.6 is reported. No vision model, no window, still microseconds.\n  \
+             \n  \
+               What it still cannot see: text over a background the framework never\n  \
+               drew, contrast against a gradient or an image, anything overlapping,\n  \
+               and every question of whether the layout is any good. The ontology is\n  \
+               not a substitute for looking."
     );
 }
 
@@ -617,7 +630,8 @@ fn main() {
     println!("    3 structural faults out of 6 that no screenshot would show");
     println!(" ");
     println!("  does not");
-    println!("    say anything about appearance: the white-on-white label passes");
+    println!("    replace looking at it: contrast against a flat fill is checked,");
+    println!("    but a gradient, an overlap, or a bad layout is not");
     println!("    make an observation constant-time: a viewport keeps the bytes");
     println!("    flat but the frame behind it is still built in full");
     println!("    make an action cheaper: by id and by coordinate cost the same");

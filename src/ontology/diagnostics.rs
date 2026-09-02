@@ -56,6 +56,105 @@ impl Diagnostic {
     }
 }
 
+/// Relative luminance, per WCAG 2.1.
+///
+/// The sRGB channels are linearised before weighting, which is why this is not
+/// a plain average: a mid grey and a mid green look nothing alike to an eye.
+fn luminance(color: crate::core::Color) -> f32 {
+    fn channel(c: f32) -> f32 {
+        let c = c.clamp(0.0, 1.0);
+        if c <= 0.039_28 {
+            c / 12.92
+        } else {
+            ((c + 0.055) / 1.055).powf(2.4)
+        }
+    }
+    0.2126 * channel(color.r) + 0.7152 * channel(color.g) + 0.0722 * channel(color.b)
+}
+
+/// WCAG contrast ratio between two colours, from 1.0 (identical) to 21.0.
+#[must_use]
+pub fn contrast_ratio(a: crate::core::Color, b: crate::core::Color) -> f32 {
+    let (la, lb) = (luminance(a), luminance(b));
+    let (hi, lo) = if la > lb { (la, lb) } else { (lb, la) };
+    (hi + 0.05) / (lo + 0.05)
+}
+
+/// The threshold below which text is treated as unreadable.
+///
+/// WCAG AA asks for 4.5 for body text and 3.0 for large text. This reports
+/// well below either, because the point is to catch text that cannot be read
+/// at all rather than to grade a palette — a framework that argued with every
+/// deliberate design choice would be turned off.
+const UNREADABLE_BELOW: f32 = 1.6;
+
+/// Check what was painted for text nobody can read.
+///
+/// The one seeded fault `check` misses is a label painted white on white:
+/// correct id, real bounds, on screen, fully wired, and invisible. Structure
+/// cannot show it, so this reads the draw commands instead — for each piece of
+/// text, the last filled rectangle underneath it is the ground it sits on.
+///
+/// This is not a substitute for looking at the interface. It catches text
+/// against a flat fill, which is the case that happens by accident.
+#[must_use]
+pub fn check_contrast(ops: &[crate::backend::test::RenderOp]) -> Vec<Diagnostic> {
+    use crate::backend::test::RenderOp;
+
+    let mut out = Vec::new();
+    for (index, op) in ops.iter().enumerate() {
+        let RenderOp::Text {
+            position,
+            text,
+            color,
+            ..
+        } = op
+        else {
+            continue;
+        };
+        if text.trim().is_empty() {
+            continue;
+        }
+
+        // The ground is the last fill drawn before this text that covers it.
+        let ground = ops[..index].iter().rev().find_map(|earlier| match earlier {
+            RenderOp::FillRect { rect, color, .. }
+                if rect.x <= position.x
+                    && position.x <= rect.x + rect.width
+                    && rect.y <= position.y
+                    && position.y <= rect.y + rect.height =>
+            {
+                Some(*color)
+            }
+            _ => None,
+        });
+        let Some(ground) = ground else {
+            continue;
+        };
+        // Text drawn over something translucent is not a flat comparison.
+        if ground.a < 0.99 || color.a < 0.99 {
+            continue;
+        }
+
+        let ratio = contrast_ratio(*color, ground);
+        if ratio < UNREADABLE_BELOW {
+            out.push(
+                Diagnostic::new(
+                    Severity::Error,
+                    "unreadable_text",
+                    format!(
+                        "\"{}\" is drawn at contrast {ratio:.2} against what is behind it; \
+                         below {UNREADABLE_BELOW:.1} it cannot be read at all",
+                        text.chars().take(40).collect::<String>()
+                    ),
+                )
+                .with_type("Text"),
+            );
+        }
+    }
+    out
+}
+
 /// Check a rendered tree for structural faults.
 ///
 /// `unaddressable` lists widget types that rendered while declaring actions but

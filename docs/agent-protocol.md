@@ -142,6 +142,7 @@ Codes:
 | `offscreen_widget` | warning | bounds outside the window |
 | `unadvertised_action` | error | a handler is bound to an action its widget does not publish, so an agent following the ontology would call a name that does nothing |
 | `unhandled_action` | warning | a widget wired for some of its actions accepts the rest and silently ignores them |
+| `unreadable_text` | error | text drawn at a WCAG contrast below 1.6 against the fill behind it |
 
 Pass `strict` when the application is meant to be driven unattended:
 
@@ -160,8 +161,10 @@ That is legitimate by default — an application may answer through
 `Model::execute_action` instead — and it is also exactly how `Canvas`, `Chart`
 and `RichText` came to accept `clear` and do nothing.
 
-`validate` reports structure, not appearance. A label painted white on white
-passes it.
+`validate` reports structure, and one thing about appearance: text drawn
+against a flat fill it cannot be read against. It does not check contrast
+against a gradient or an image, overlapping widgets, or whether the layout is
+any good — it is not a substitute for looking at the interface.
 
 ### get_state
 

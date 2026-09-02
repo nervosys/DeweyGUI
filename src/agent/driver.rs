@@ -30,6 +30,12 @@ pub struct HeadlessDriver<M: Model> {
     /// The version the last state diff was taken at, so a subscribed session
     /// re-renders once per change rather than once per request.
     diffed_version: u64,
+    /// What the last render actually drew.
+    ///
+    /// Structure cannot show that a label is painted white on white; the draw
+    /// commands can. Kept from the render `validate` already performs, so the
+    /// contrast check costs a pass over a list rather than a second frame.
+    painted: Vec<crate::backend::test::RenderOp>,
 }
 
 impl<M: Model + 'static> HeadlessDriver<M> {
@@ -49,6 +55,7 @@ impl<M: Model + 'static> HeadlessDriver<M> {
             unaddressable: Vec::new(),
             version: 0,
             diffed_version: 0,
+            painted: Vec::new(),
         }
     }
 
@@ -345,6 +352,8 @@ impl<M: Model + 'static> HeadlessDriver<M> {
 
         let skipped = frame.skipped();
         let nodes = frame.take_nodes();
+        drop(frame);
+        self.painted = backend.ops().to_vec();
         let shown = nodes.len();
         if !nodes.is_empty() || viewport.is_some() {
             let mut root =
@@ -388,14 +397,16 @@ impl<M: Model + 'static> HeadlessDriver<M> {
             ))
         });
         let handlers = self.handlers.list();
-        crate::ontology::diagnostics::check(
+        let mut found = crate::ontology::diagnostics::check(
             &tree,
             &self.unaddressable,
             self.window_size,
             &handlers,
             &self.ontology,
             strict,
-        )
+        );
+        found.extend(crate::ontology::diagnostics::check_contrast(&self.painted));
+        found
     }
 
     /// Answer a request as the JSON bytes a transport will send.

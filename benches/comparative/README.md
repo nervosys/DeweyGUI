@@ -302,12 +302,19 @@ Six interfaces, each broken in a way that compiles and renders.
 | widget laid out at zero size | `zero_size_widget` | visible |
 | widget laid out off screen | `offscreen_widget` | visible |
 | wired for `select_row`, not `sort` | `unhandled_action` | — |
-| white text on white ground | — | visible |
+| white text on white ground | `unreadable_text` | visible |
 
-5 of 6 against 3 of 6. The last row is the one worth dwelling on: white on
-white is structurally perfect — correct id, real bounds, on screen, fully
-wired — and `validate` passes it. The ontology says nothing about appearance
-and cannot substitute for looking.
+6 of 6 against 3 of 6. The last row read `—` for as long as this benchmark has
+existed: white on white is structurally perfect — correct id, real bounds, on
+screen, fully wired — so no check of the tree could ever see it.
+
+`validate` now reads the draw commands as well. For each piece of text the last
+fill underneath it is the ground, and a WCAG contrast below 1.6 is reported. No
+vision model, no window, still microseconds.
+
+It still cannot see text over a background the framework never drew, contrast
+against a gradient or an image, anything overlapping, or whether the layout is
+any good. It is not a substitute for looking.
 
 ### 4. Paying
 

@@ -3710,3 +3710,79 @@ fn subscribing_delivers_the_events_it_promises() {
         "and the event must carry the new value, not just the fact of a change"
     );
 }
+
+/// Text nobody can read is a fault, and structure cannot show it.
+///
+/// The white-on-white label is the one seeded fault `validate` missed: correct
+/// id, real bounds, on screen, fully wired, and invisible. It has been in the
+/// benchmark as a failure since the ontology was measured against a
+/// screenshot. This reads the draw commands instead of the tree.
+#[test]
+fn validate_reports_text_that_cannot_be_read() {
+    use dewey::agent::driver::HeadlessDriver;
+
+    struct Probe {
+        ink: Color,
+    }
+
+    impl Model for Probe {
+        type Msg = ();
+        fn update(&mut self, _m: ()) -> Command<()> {
+            Command::None
+        }
+        fn view(&self, frame: &mut Frame<'_>) {
+            // A panel of flat colour, then a label on top of it.
+            let area = frame.area;
+            frame.painter().fill_rect(area, Color::WHITE, 0.0);
+            Label::new("Balance: $4,201.55")
+                .agent_id("balance")
+                .fg(self.ink)
+                .render(frame.area, frame);
+        }
+    }
+
+    let mut invisible = HeadlessDriver::new(Probe { ink: Color::WHITE }, 300.0, 60.0);
+    invisible.init();
+    let found = invisible.validate();
+    let unreadable = found
+        .iter()
+        .find(|d| d.code == "unreadable_text")
+        .unwrap_or_else(|| panic!("white on white must be reported: {found:?}"));
+    assert!(
+        unreadable.message.contains("Balance"),
+        "the report should quote the text nobody can read: {}",
+        unreadable.message
+    );
+
+    // The same interface in a colour that can be read must pass, or the check
+    // would argue with every deliberate design choice and be turned off.
+    let mut readable = HeadlessDriver::new(Probe { ink: Color::BLACK }, 300.0, 60.0);
+    readable.init();
+    assert!(
+        !readable
+            .validate()
+            .iter()
+            .any(|d| d.code == "unreadable_text"),
+        "black on white must pass: {:?}",
+        readable.validate()
+    );
+}
+
+/// The contrast ratio is the WCAG one, not an average of channels.
+#[test]
+fn contrast_ratio_matches_the_published_formula() {
+    use dewey::ontology::diagnostics::contrast_ratio;
+
+    // The two extremes of the scale, which WCAG defines as 21:1 and 1:1.
+    assert!((contrast_ratio(Color::BLACK, Color::WHITE) - 21.0).abs() < 0.01);
+    assert!((contrast_ratio(Color::WHITE, Color::WHITE) - 1.0).abs() < 0.01);
+
+    // Green is far brighter than blue at the same channel value, which a mean
+    // of the channels would miss entirely.
+    let green = contrast_ratio(Color::rgba(0.0, 1.0, 0.0, 1.0), Color::BLACK);
+    let blue = contrast_ratio(Color::rgba(0.0, 0.0, 1.0, 1.0), Color::BLACK);
+    assert!(
+        green > blue * 3.0,
+        "luminance must be weighted per channel: green {green:.2}, blue {blue:.2}"
+    );
+}
