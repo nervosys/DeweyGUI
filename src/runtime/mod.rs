@@ -699,6 +699,9 @@ struct DeweyApp<M: Model> {
     options: ProgramOptions,
     running: bool,
     last_tick: std::time::Instant,
+    /// Whether the window had keyboard focus last frame, so that a change can
+    /// be reported as an event. egui exposes focus as state, not an event.
+    focused: bool,
     /// Whether the ontology tree is also published to the platform
     /// accessibility API. Set once at startup; the tree must then be built
     /// every frame, because a screen reader reads it between agent requests.
@@ -727,6 +730,7 @@ impl<M: Model> DeweyApp<M> {
             running: true,
             last_tick: std::time::Instant::now(),
             accessibility: cfg!(feature = "accesskit"),
+            focused: true,
             pending_viewport: Vec::new(),
         };
         app.process_command(init_cmd);
@@ -848,23 +852,19 @@ impl<M: Model + 'static> eframe::App for DeweyApp<M> {
 
         // Convert egui input events to Dewey events and dispatch
         let mut events = convert_egui_events(ctx);
-        // A drop names the widget it landed on, resolved the same way a click
-        // is. Without this the application would be told a file arrived and
-        // not where.
-        for event in &mut events {
-            if let crate::event::Event::DragDrop(drag) = event {
-                if let Some(id) = self.hit_map.hit_test(drag.position).map(str::to_owned) {
-                    match &mut drag.kind {
-                        crate::event::DragDropKind::Drop { target_id, .. }
-                        | crate::event::DragDropKind::DragOver { target_id }
-                        | crate::event::DragDropKind::DragLeave { target_id } => {
-                            *target_id = id;
-                        }
-                        _ => {}
-                    }
-                }
-            }
+
+        // Focus is state rather than an event: egui reports where it is, and
+        // the change is what an application wants to hear about.
+        let focused = ctx.input(|i| i.viewport().focused.unwrap_or(true));
+        if focused != self.focused {
+            self.focused = focused;
+            events.push(if focused {
+                crate::event::Event::FocusGained
+            } else {
+                crate::event::Event::FocusLost
+            });
         }
+
         for event in events {
             if let Some(msg) = self.model.handle_event(event) {
                 let cmd = self.model.update(msg);
@@ -940,42 +940,49 @@ fn convert_egui_events(ctx: &egui::Context) -> Vec<crate::event::Event> {
 
     // Files dragged onto the window. egui collects these outside its event
     // stream, so a backend that only walks `input.events` never sees them —
-    // which is why the default backend delivered no drag-and-drop at all while
-    // the agpu one did, and the README claimed the feature for both.
-    let pointer = input
-        .pointer
-        .latest_pos()
-        .map_or(crate::core::Position::ZERO, |p| {
-            crate::core::Position::new(p.x, p.y)
-        });
+    // which is why the default backend delivered none of this while the agpu
+    // one delivered all of it.
+    //
+    // These are the same three events agpu emits, not a second way of saying
+    // the same thing: an application must not have to ask which backend it is
+    // running on to know which event a dropped file arrives as.
+    let paths = |files: &[egui::DroppedFile]| -> Vec<String> {
+        files
+            .iter()
+            .filter_map(|f| f.path.as_ref())
+            .map(|p| p.to_string_lossy().into_owned())
+            .collect()
+    };
 
     if !input.raw.hovered_files.is_empty() {
-        events.push(crate::event::Event::DragDrop(crate::event::DragDropEvent {
-            kind: crate::event::DragDropKind::DragOver {
-                target_id: String::new(),
-            },
-            position: pointer,
-        }));
+        let hovering: Vec<String> = input
+            .raw
+            .hovered_files
+            .iter()
+            .filter_map(|f| f.path.as_ref())
+            .map(|p| p.to_string_lossy().into_owned())
+            .collect();
+        events.push(crate::event::Event::FileHover(hovering));
+    } else if !input.raw.dropped_files.is_empty() {
+        // egui clears `hovered_files` when the drop lands; the cancellation is
+        // the hover ending without a drop, which the next frame reports.
+        events.push(crate::event::Event::FileHoverCancelled);
     }
 
     if !input.raw.dropped_files.is_empty() {
-        let paths: Vec<std::path::PathBuf> = input
-            .raw
-            .dropped_files
-            .iter()
-            .filter_map(|f| f.path.clone())
-            .collect();
-        if !paths.is_empty() {
-            events.push(crate::event::Event::DragDrop(crate::event::DragDropEvent {
-                // No source widget: the drag started outside the application.
-                kind: crate::event::DragDropKind::Drop {
-                    source_id: String::new(),
-                    target_id: String::new(),
-                    payload: crate::event::DragPayload::Files(paths),
-                },
-                position: pointer,
-            }));
+        let dropped = paths(&input.raw.dropped_files);
+        if !dropped.is_empty() {
+            events.push(crate::event::Event::FileDrop(dropped));
         }
+    }
+
+    // Window state. `screen_rect` moving is a resize; egui reports focus in
+    // `viewport().focused`, neither of which appears in `input.events`.
+    if let Some(rect) = input.raw.screen_rect {
+        events.push(crate::event::Event::Resize(crate::core::Size::new(
+            rect.width(),
+            rect.height(),
+        )));
     }
 
     for event in &input.events {

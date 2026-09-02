@@ -3976,60 +3976,35 @@ fn widget_action_logic_survives_as_an_inherent_method() {
     );
 }
 
-/// A file dropped on the window reaches the model, and says where it landed.
+/// A dropped file arrives as the same event on both backends.
 ///
-/// The README listed drag-and-drop beside the tray and the native dialogs,
-/// and it was true of the agpu backend only: the default backend walks
-/// `input.events`, and egui collects dropped files outside that stream, so it
-/// delivered nothing. The same shape as `fullscreen` and `OntologyMode` —
-/// honoured by one backend, silently absent from the default one.
+/// `Event::FileDrop` already existed and the agpu backend emitted it. The
+/// first attempt at this made the egui backend emit `DragDrop` carrying a
+/// `DragPayload::Files` variant invented for the purpose — so the two
+/// backends delivered *different events for the same gesture*, which is a
+/// worse asymmetry than the one being fixed. An application must not have to
+/// ask which backend it is running on.
 #[test]
-fn a_dropped_file_carries_its_paths_and_its_target() {
-    use dewey::event::{DragDropEvent, DragDropKind, DragPayload, Event};
-
-    // `DragPayload` had no variant for the commonest drop there is: one from
-    // the desktop, which has no source widget and carries paths.
-    let payload = DragPayload::Files(vec![
-        std::path::PathBuf::from("/tmp/report.csv"),
-        std::path::PathBuf::from("/tmp/notes.md"),
-    ]);
+fn a_dropped_file_is_one_event_on_both_backends() {
+    use dewey::event::{DragPayload, Event};
 
     struct App {
-        dropped: Vec<String>,
-        onto: String,
+        seen: Vec<String>,
     }
 
     impl Model for App {
-        type Msg = (Vec<String>, String);
+        type Msg = Vec<String>;
 
-        fn update(&mut self, (files, onto): Self::Msg) -> Command<Self::Msg> {
-            self.dropped = files;
-            self.onto = onto;
+        fn update(&mut self, files: Vec<String>) -> Command<Vec<String>> {
+            self.seen = files;
             Command::None
         }
 
-        fn handle_event(&self, event: Event) -> Option<Self::Msg> {
-            let Event::DragDrop(DragDropEvent {
-                kind:
-                    DragDropKind::Drop {
-                        target_id, payload, ..
-                    },
-                ..
-            }) = event
-            else {
-                return None;
-            };
-            let DragPayload::Files(paths) = payload else {
-                return None;
-            };
-            Some((
-                paths
-                    .iter()
-                    .filter_map(|p| p.file_name())
-                    .map(|n| n.to_string_lossy().into_owned())
-                    .collect(),
-                target_id,
-            ))
+        fn handle_event(&self, event: Event) -> Option<Vec<String>> {
+            match event {
+                Event::FileDrop(paths) => Some(paths),
+                _ => None,
+            }
         }
 
         fn view(&self, frame: &mut Frame<'_>) {
@@ -4039,27 +4014,26 @@ fn a_dropped_file_carries_its_paths_and_its_target() {
         }
     }
 
-    let mut app = App {
-        dropped: Vec::new(),
-        onto: String::new(),
-    };
-
-    let event = Event::DragDrop(DragDropEvent {
-        kind: DragDropKind::Drop {
-            source_id: String::new(),
-            target_id: "inbox".into(),
-            payload,
-        },
-        position: dewey::core::Position::new(10.0, 10.0),
-    });
-
-    let msg = app.handle_event(event).expect("a file drop is a drop");
+    let mut app = App { seen: Vec::new() };
+    let msg = app
+        .handle_event(Event::FileDrop(vec![
+            "/tmp/report.csv".into(),
+            "/tmp/notes.md".into(),
+        ]))
+        .expect("a file drop is a FileDrop");
     app.update(msg);
+    assert_eq!(app.seen, ["/tmp/report.csv", "/tmp/notes.md"]);
 
-    assert_eq!(app.dropped, ["report.csv", "notes.md"]);
-    assert_eq!(
-        app.onto, "inbox",
-        "and the application must be told which widget it landed on, not just \
-         that something arrived"
-    );
+    // The hover and its cancellation are the other two thirds of the gesture,
+    // and both were missing from the default backend entirely.
+    assert!(matches!(
+        app.handle_event(Event::FileHover(vec!["/tmp/report.csv".into()])),
+        None
+    ));
+    assert!(matches!(app.handle_event(Event::FileHoverCancelled), None));
+
+    // `DragPayload` describes widget-to-widget dragging, which an application
+    // drives itself. It deliberately has no file variant: a drop from the
+    // desktop is a `FileDrop`, not a drag with an unusual payload.
+    let _ = DragPayload::Text("dragging between two widgets".into());
 }

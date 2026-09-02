@@ -46,9 +46,10 @@
   implement; no platform backend ships
 - **Multi-Window** — `WindowManager` tracks windows in memory. It does not
   create or raise real ones; use the window commands above for that
-- **Drag & Drop** — Files dropped onto the window reach `handle_event` on both
-  backends, naming the widget they landed on. Widget-to-widget dragging is a
-  typed pipeline (`DragPayload`) that an application drives itself
+- **Drag & Drop** — Files dropped on the window arrive as `Event::FileDrop` on
+  both backends, with `FileHover` and `FileHoverCancelled` alongside.
+  Widget-to-widget dragging is a typed pipeline (`DragPayload`) an application
+  drives itself from `handle_event`
 
 ### Theming & Styling
 

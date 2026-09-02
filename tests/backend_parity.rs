@@ -111,3 +111,55 @@ fn both_backends_handle_every_command() {
         }
     }
 }
+
+/// Both backends must be able to produce every event the application can see.
+///
+/// The egui backend emitted 6 of the 12 `Event` kinds and the agpu backend all
+/// 12: no resize, no focus change, and none of the three file events. An
+/// application written against one backend and run on the other simply never
+/// heard about half of what happened to it.
+#[test]
+fn both_backends_can_emit_every_event_kind() {
+    let events = source("src/event/mod.rs");
+    let start = events.find("pub enum Event {").expect("Event");
+    let end = events[start..].find("\n}").expect("end") + start;
+    let variants: Vec<String> = events[start..end]
+        .lines()
+        .map(str::trim)
+        .filter(|l| l.chars().next().is_some_and(char::is_uppercase))
+        .map(|l| {
+            l.trim_end_matches(',')
+                .split(['(', ' ', '{'])
+                .next()
+                .unwrap_or_default()
+                .to_string()
+        })
+        .filter(|l| !l.is_empty())
+        .collect();
+    assert!(variants.len() >= 12, "{variants:?}");
+
+    let runtime = source("src/runtime/mod.rs");
+    let agpu = source("src/backend/agpu_backend.rs");
+
+    // `DragDrop` describes one widget being dragged onto another, and it needs
+    // to know what is being dragged. The agpu event layer carries a payload
+    // registered by the application; egui has no equivalent, so the egui
+    // backend cannot synthesise one without the framework inventing a payload
+    // it was never told about. A real asymmetry, named here rather than hidden
+    // by a check that quietly skips it — and the reason a Dewey application
+    // that needs widget-to-widget dragging drives it from `handle_event`.
+    let application_driven = ["DragDrop"];
+
+    for (name, text) in [("egui backend", &runtime), ("agpu backend", &agpu)] {
+        let missing: Vec<&String> = variants
+            .iter()
+            .filter(|v| !application_driven.contains(&v.as_str()))
+            .filter(|v| !text.contains(&format!("Event::{v}")))
+            .collect();
+        assert!(
+            missing.is_empty(),
+            "{name} can never produce: {missing:?} — an application running on \
+             it would never hear about those at all"
+        );
+    }
+}
