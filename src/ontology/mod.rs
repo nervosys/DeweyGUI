@@ -47,13 +47,20 @@ pub trait Discoverable {
     /// [`Model::execute_action`](crate::runtime::Model::execute_action),
     /// both of which change the application's own state.
     ///
-    /// It remains useful for widgets that own durable state, and for testing
-    /// a widget's action semantics in isolation.
+    /// It is right for an implementor that owns durable state — `Theme`,
+    /// `I18n`, `WindowManager` — which is why it is still on the trait. It
+    /// defaults to refusing, so a widget need not implement it at all, and
+    /// most no longer do: a widget whose action logic is worth testing keeps
+    /// it as an inherent method instead.
     fn execute_action(
         &mut self,
         action: &str,
-        params: &serde_json::Value,
-    ) -> Result<serde_json::Value, String>;
+        _params: &serde_json::Value,
+    ) -> Result<serde_json::Value, String> {
+        Err(format!(
+            "`{action}` is not answered here; wire a handler on the widget, or              implement `Model::execute_action`"
+        ))
+    }
 
     /// An optional unique identifier for this widget instance in the UI tree.
     fn agent_id(&self) -> Option<&str> {

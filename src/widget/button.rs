@@ -128,6 +128,27 @@ impl Button {
     }
 }
 
+/// Actions on the widget value itself.
+///
+/// Not the path an agent takes: a widget is rebuilt inside `view` on
+/// every frame, so a change made here lasts until the next redraw.
+/// An agent's `execute_action` reaches a handler and then
+/// [`Model::execute_action`](crate::runtime::Model::execute_action).
+/// This stays because the logic is worth testing on its own.
+impl Button {
+    pub fn execute_action(
+        &mut self,
+        action: &str,
+        _params: &serde_json::Value,
+    ) -> Result<serde_json::Value, String> {
+        match action {
+            "click" if self.enabled => Ok(serde_json::json!({ "clicked": true })),
+            "click" => Err("Button is disabled".to_string()),
+            _ => Err(format!("Unknown action: {action}")),
+        }
+    }
+}
+
 impl Discoverable for Button {
     fn schema(&self) -> WidgetSchema {
         let mut schema = WidgetSchema::new("Button", "A clickable button", SemanticRole::Action);
@@ -150,18 +171,6 @@ impl Discoverable for Button {
 
     fn agent_state(&self) -> serde_json::Value {
         serde_json::json!({ "label": self.label, "enabled": self.enabled })
-    }
-
-    fn execute_action(
-        &mut self,
-        action: &str,
-        _params: &serde_json::Value,
-    ) -> Result<serde_json::Value, String> {
-        match action {
-            "click" if self.enabled => Ok(serde_json::json!({ "clicked": true })),
-            "click" => Err("Button is disabled".to_string()),
-            _ => Err(format!("Unknown action: {action}")),
-        }
     }
 
     fn agent_id(&self) -> Option<&str> {

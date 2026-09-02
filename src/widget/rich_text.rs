@@ -251,25 +251,6 @@ impl Discoverable for RichText {
         })
     }
 
-    fn execute_action(
-        &mut self,
-        action: &str,
-        params: &serde_json::Value,
-    ) -> Result<serde_json::Value, String> {
-        match action {
-            "set_markdown" => {
-                let content = params["content"].as_str().ok_or("missing content")?;
-                self.spans = parse_markdown(content);
-                Ok(serde_json::json!({ "span_count": self.spans.len() }))
-            }
-            "clear" => {
-                self.spans.clear();
-                Ok(serde_json::json!({ "span_count": 0 }))
-            }
-            _ => Err(format!("Unknown action: {action}")),
-        }
-    }
-
     fn agent_id(&self) -> Option<&str> {
         if self.agent_id.is_empty() {
             None

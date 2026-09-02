@@ -98,14 +98,6 @@ impl Discoverable for Label {
         serde_json::json!({ "text": self.text })
     }
 
-    fn execute_action(
-        &mut self,
-        _action: &str,
-        _params: &serde_json::Value,
-    ) -> Result<serde_json::Value, String> {
-        Err("Label has no actions".to_string())
-    }
-
     fn agent_id(&self) -> Option<&str> {
         if self.agent_id.is_empty() {
             None

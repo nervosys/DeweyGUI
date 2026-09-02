@@ -95,14 +95,6 @@ impl Discoverable for Panel {
         serde_json::json!({ "side": format!("{:?}", self.side), "title": self.title })
     }
 
-    fn execute_action(
-        &mut self,
-        _action: &str,
-        _params: &serde_json::Value,
-    ) -> Result<serde_json::Value, String> {
-        Err("Panel has no actions".to_string())
-    }
-
     fn agent_id(&self) -> Option<&str> {
         if self.agent_id.is_empty() {
             None

@@ -247,40 +247,6 @@ impl Discoverable for Chart {
         })
     }
 
-    fn execute_action(
-        &mut self,
-        action: &str,
-        params: &serde_json::Value,
-    ) -> Result<serde_json::Value, String> {
-        match action {
-            "add_series" => {
-                let label = params["label"].as_str().ok_or("missing label")?.to_string();
-                let values: Vec<f64> = params["values"]
-                    .as_array()
-                    .ok_or("missing values array")?
-                    .iter()
-                    .filter_map(|v| v.as_f64())
-                    .collect();
-                let color = PALETTE[self.series.len() % PALETTE.len()];
-                self.series.push(Series::new(label, values, color));
-                Ok(serde_json::json!({ "series_count": self.series.len() }))
-            }
-            "remove_series" => {
-                let idx = params["index"].as_u64().ok_or("missing index")? as usize;
-                if idx >= self.series.len() {
-                    return Err(format!("index {idx} out of range ({})", self.series.len()));
-                }
-                self.series.remove(idx);
-                Ok(serde_json::json!({ "series_count": self.series.len() }))
-            }
-            "clear" => {
-                self.series.clear();
-                Ok(serde_json::json!({ "series_count": 0 }))
-            }
-            _ => Err(format!("Unknown action: {action}")),
-        }
-    }
-
     fn agent_id(&self) -> Option<&str> {
         if self.agent_id.is_empty() {
             None

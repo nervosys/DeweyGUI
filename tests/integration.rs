@@ -3910,3 +3910,68 @@ fn the_projects_own_todo_sample_is_flagged() {
         "the checkbox ids are the ones an agent acts on: {positional:?}"
     );
 }
+
+/// A widget does not answer agent actions, and now says so.
+///
+/// `Discoverable::execute_action` mutates the widget value, which is rebuilt
+/// inside `view` on every frame — so the change lasts until the next redraw —
+/// and nothing in the protocol calls it. It looked like the answer, which is
+/// how `Canvas`, `Chart` and `RichText` came to accept `clear` and do nothing.
+/// The trait now refuses by default, and the widgets that used to implement it
+/// misleadingly no longer do.
+#[test]
+fn a_widget_refuses_agent_actions_it_cannot_perform() {
+    use dewey::ontology::Discoverable;
+    use dewey::widget::{Chart, RichText, Slider};
+
+    let mut chart = Chart::line("readings");
+    let refused = chart.execute_action("clear", &serde_json::json!({}));
+    assert!(
+        refused.is_err(),
+        "a widget rebuilt every frame must not claim to have cleared itself"
+    );
+    let message = refused.unwrap_err();
+    assert!(
+        message.contains("handler") && message.contains("Model::execute_action"),
+        "the refusal should say where the action does belong: {message}"
+    );
+
+    assert!(
+        RichText::new(Vec::new())
+            .execute_action("set_markdown", &serde_json::json!({"content": "x"}))
+            .is_err()
+    );
+    assert!(
+        Slider::new(0.0, 1.0)
+            .execute_action("set_value", &serde_json::json!({"value": 0.5}))
+            .is_err()
+    );
+}
+
+/// The widgets whose action logic is worth testing keep it, off the trait.
+///
+/// `Tree`'s path walking and `Canvas`'s clear are real logic with real edge
+/// cases. They stay as inherent methods, so the tests keep their coverage and
+/// the trait stops advertising something it does not deliver.
+#[test]
+fn widget_action_logic_survives_as_an_inherent_method() {
+    use dewey::widget::{Tree, TreeNode};
+
+    let mut tree = Tree::new(TreeNode::branch(
+        "root",
+        vec![TreeNode::branch("a", vec![TreeNode::leaf("a1")])],
+    ));
+
+    // No `use Discoverable` here: this resolves as an inherent method, which
+    // is the whole point.
+    let collapsed = tree
+        .execute_action("collapse", &serde_json::json!({"path": "root/a"}))
+        .expect("a real path");
+    assert_eq!(collapsed["expanded"], serde_json::json!(false));
+
+    assert!(
+        tree.execute_action("expand", &serde_json::json!({"path": "nope"}))
+            .is_err(),
+        "and the edge case that logic exists for still holds"
+    );
+}

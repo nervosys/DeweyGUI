@@ -149,6 +149,69 @@ impl Tree {
     }
 }
 
+/// Actions on the widget value itself.
+///
+/// Not the path an agent takes: a widget is rebuilt inside `view` on
+/// every frame, so a change made here lasts until the next redraw.
+/// An agent's `execute_action` reaches a handler and then
+/// [`Model::execute_action`](crate::runtime::Model::execute_action).
+/// This stays because the logic is worth testing on its own.
+impl Tree {
+    pub fn execute_action(
+        &mut self,
+        action: &str,
+        params: &serde_json::Value,
+    ) -> Result<serde_json::Value, String> {
+        match action {
+            "expand" => {
+                let path = params
+                    .get("path")
+                    .and_then(|v| v.as_str())
+                    .ok_or("Missing 'path' parameter")?;
+                let node = self
+                    .root
+                    .find_by_path_mut(path)
+                    .ok_or_else(|| format!("Node not found: {path}"))?;
+                node.expanded = true;
+                Ok(serde_json::json!({ "expanded": true, "path": path }))
+            }
+            "collapse" => {
+                let path = params
+                    .get("path")
+                    .and_then(|v| v.as_str())
+                    .ok_or("Missing 'path' parameter")?;
+                let node = self
+                    .root
+                    .find_by_path_mut(path)
+                    .ok_or_else(|| format!("Node not found: {path}"))?;
+                node.expanded = false;
+                Ok(serde_json::json!({ "expanded": false, "path": path }))
+            }
+            "expand_all" => {
+                fn expand_all(node: &mut TreeNode) {
+                    node.expanded = true;
+                    for child in &mut node.children {
+                        expand_all(child);
+                    }
+                }
+                expand_all(&mut self.root);
+                Ok(serde_json::json!({ "expanded_all": true }))
+            }
+            "collapse_all" => {
+                fn collapse_all(node: &mut TreeNode) {
+                    node.expanded = false;
+                    for child in &mut node.children {
+                        collapse_all(child);
+                    }
+                }
+                collapse_all(&mut self.root);
+                Ok(serde_json::json!({ "collapsed_all": true }))
+            }
+            _ => Err(format!("Unknown action: {action}")),
+        }
+    }
+}
+
 impl Discoverable for Tree {
     fn schema(&self) -> WidgetSchema {
         let mut schema =
@@ -210,60 +273,6 @@ impl Discoverable for Tree {
 
     fn agent_state(&self) -> serde_json::Value {
         self.root.to_json()
-    }
-
-    fn execute_action(
-        &mut self,
-        action: &str,
-        params: &serde_json::Value,
-    ) -> Result<serde_json::Value, String> {
-        match action {
-            "expand" => {
-                let path = params
-                    .get("path")
-                    .and_then(|v| v.as_str())
-                    .ok_or("Missing 'path' parameter")?;
-                let node = self
-                    .root
-                    .find_by_path_mut(path)
-                    .ok_or_else(|| format!("Node not found: {path}"))?;
-                node.expanded = true;
-                Ok(serde_json::json!({ "expanded": true, "path": path }))
-            }
-            "collapse" => {
-                let path = params
-                    .get("path")
-                    .and_then(|v| v.as_str())
-                    .ok_or("Missing 'path' parameter")?;
-                let node = self
-                    .root
-                    .find_by_path_mut(path)
-                    .ok_or_else(|| format!("Node not found: {path}"))?;
-                node.expanded = false;
-                Ok(serde_json::json!({ "expanded": false, "path": path }))
-            }
-            "expand_all" => {
-                fn expand_all(node: &mut TreeNode) {
-                    node.expanded = true;
-                    for child in &mut node.children {
-                        expand_all(child);
-                    }
-                }
-                expand_all(&mut self.root);
-                Ok(serde_json::json!({ "expanded_all": true }))
-            }
-            "collapse_all" => {
-                fn collapse_all(node: &mut TreeNode) {
-                    node.expanded = false;
-                    for child in &mut node.children {
-                        collapse_all(child);
-                    }
-                }
-                collapse_all(&mut self.root);
-                Ok(serde_json::json!({ "collapsed_all": true }))
-            }
-            _ => Err(format!("Unknown action: {action}")),
-        }
     }
 
     fn agent_id(&self) -> Option<&str> {

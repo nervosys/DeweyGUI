@@ -84,14 +84,6 @@ impl Discoverable for ProgressBar {
         serde_json::json!({ "progress": self.progress })
     }
 
-    fn execute_action(
-        &mut self,
-        _action: &str,
-        _params: &serde_json::Value,
-    ) -> Result<serde_json::Value, String> {
-        Err("ProgressBar has no actions".to_string())
-    }
-
     fn agent_id(&self) -> Option<&str> {
         if self.agent_id.is_empty() {
             None

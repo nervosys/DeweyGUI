@@ -275,45 +275,6 @@ impl Discoverable for CommandPalette {
         serde_json::json!({ "commands": cmds })
     }
 
-    fn execute_action(
-        &mut self,
-        action: &str,
-        params: &serde_json::Value,
-    ) -> Result<serde_json::Value, String> {
-        match action {
-            "execute" => {
-                let cmd_id = params
-                    .get("command_id")
-                    .and_then(|v| v.as_str())
-                    .ok_or("Missing command_id")?;
-                match self.commands.iter().find(|c| c.id == cmd_id) {
-                    Some(cmd) => Ok(serde_json::json!({
-                        "executed": cmd.id,
-                        "label": cmd.label,
-                    })),
-                    None => Err(format!("Unknown command: {cmd_id}")),
-                }
-            }
-            "search" => {
-                let query = params.get("query").and_then(|v| v.as_str()).unwrap_or("");
-                let results: Vec<_> = self
-                    .filtered_commands(query)
-                    .iter()
-                    .map(|c| {
-                        serde_json::json!({
-                            "id": c.id,
-                            "label": c.label,
-                        })
-                    })
-                    .collect();
-                Ok(serde_json::json!({ "results": results }))
-            }
-            "list" => Ok(self.agent_state()),
-            "open" | "close" => Ok(serde_json::json!({ "status": action })),
-            _ => Err(format!("Unknown action: {action}")),
-        }
-    }
-
     fn agent_id(&self) -> Option<&str> {
         if self.agent_id.is_empty() {
             None

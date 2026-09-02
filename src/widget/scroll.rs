@@ -142,14 +142,6 @@ impl Discoverable for ScrollArea {
         serde_json::json!({ "horizontal": self.horizontal, "vertical": self.vertical })
     }
 
-    fn execute_action(
-        &mut self,
-        _action: &str,
-        _params: &serde_json::Value,
-    ) -> Result<serde_json::Value, String> {
-        Err("Use StatefulWidget for scroll state mutations".to_string())
-    }
-
     fn agent_id(&self) -> Option<&str> {
         if self.agent_id.is_empty() {
             None

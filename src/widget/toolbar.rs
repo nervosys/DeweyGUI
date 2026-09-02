@@ -161,28 +161,6 @@ impl Discoverable for Toolbar {
         serde_json::json!({ "items": items })
     }
 
-    fn execute_action(
-        &mut self,
-        action: &str,
-        params: &serde_json::Value,
-    ) -> Result<serde_json::Value, String> {
-        match action {
-            "click_item" => {
-                let item_id = params
-                    .get("item_id")
-                    .and_then(|v| v.as_str())
-                    .ok_or("Missing item_id")?;
-                match self.items.iter().find(|i| i.id == item_id) {
-                    Some(item) if item.enabled => Ok(serde_json::json!({ "clicked": item_id })),
-                    Some(_) => Err(format!("Item '{item_id}' is disabled")),
-                    None => Err(format!("Unknown item: {item_id}")),
-                }
-            }
-            "list_items" => Ok(self.agent_state()),
-            _ => Err(format!("Unknown action: {action}")),
-        }
-    }
-
     fn agent_id(&self) -> Option<&str> {
         if self.agent_id.is_empty() {
             None

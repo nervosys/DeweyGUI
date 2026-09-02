@@ -60,6 +60,29 @@ impl Radio {
     }
 }
 
+/// Actions on the widget value itself.
+///
+/// Not the path an agent takes: a widget is rebuilt inside `view` on
+/// every frame, so a change made here lasts until the next redraw.
+/// An agent's `execute_action` reaches a handler and then
+/// [`Model::execute_action`](crate::runtime::Model::execute_action).
+/// This stays because the logic is worth testing on its own.
+impl Radio {
+    pub fn execute_action(
+        &mut self,
+        action: &str,
+        _params: &serde_json::Value,
+    ) -> Result<serde_json::Value, String> {
+        match action {
+            "select" => {
+                self.selected = true;
+                Ok(serde_json::json!({ "selected": true }))
+            }
+            _ => Err(format!("Unknown action: {action}")),
+        }
+    }
+}
+
 impl Discoverable for Radio {
     fn schema(&self) -> WidgetSchema {
         let mut schema = WidgetSchema::new("Radio", "A radio button", SemanticRole::Input);
@@ -92,20 +115,6 @@ impl Discoverable for Radio {
 
     fn agent_state(&self) -> serde_json::Value {
         serde_json::json!({ "selected": self.selected, "label": self.label })
-    }
-
-    fn execute_action(
-        &mut self,
-        action: &str,
-        _params: &serde_json::Value,
-    ) -> Result<serde_json::Value, String> {
-        match action {
-            "select" => {
-                self.selected = true;
-                Ok(serde_json::json!({ "selected": true }))
-            }
-            _ => Err(format!("Unknown action: {action}")),
-        }
     }
 
     fn agent_id(&self) -> Option<&str> {

@@ -195,6 +195,30 @@ impl Default for Canvas {
     }
 }
 
+/// Actions on the widget value itself.
+///
+/// Not the path an agent takes: a widget is rebuilt inside `view` on
+/// every frame, so a change made here lasts until the next redraw.
+/// An agent's `execute_action` reaches a handler and then
+/// [`Model::execute_action`](crate::runtime::Model::execute_action).
+/// This stays because the logic is worth testing on its own.
+impl Canvas {
+    pub fn execute_action(
+        &mut self,
+        action: &str,
+        _params: &serde_json::Value,
+    ) -> Result<serde_json::Value, String> {
+        match action {
+            "clear" => {
+                let count = self.commands.len();
+                self.commands.clear();
+                Ok(serde_json::json!({ "cleared": count }))
+            }
+            _ => Err(format!("Unknown action: {action}")),
+        }
+    }
+}
+
 impl Discoverable for Canvas {
     fn schema(&self) -> WidgetSchema {
         let mut schema =
@@ -234,21 +258,6 @@ impl Discoverable for Canvas {
             "command_count": self.commands.len(),
             "has_background": self.background.is_some(),
         })
-    }
-
-    fn execute_action(
-        &mut self,
-        action: &str,
-        _params: &serde_json::Value,
-    ) -> Result<serde_json::Value, String> {
-        match action {
-            "clear" => {
-                let count = self.commands.len();
-                self.commands.clear();
-                Ok(serde_json::json!({ "cleared": count }))
-            }
-            _ => Err(format!("Unknown action: {action}")),
-        }
     }
 
     fn agent_id(&self) -> Option<&str> {
