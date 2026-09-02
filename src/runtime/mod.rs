@@ -702,6 +702,11 @@ struct DeweyApp<M: Model> {
     /// Whether the window had keyboard focus last frame, so that a change can
     /// be reported as an event. egui exposes focus as state, not an event.
     focused: bool,
+    /// The window size last frame, for the same reason.
+    last_size: crate::core::Size,
+    /// Whether files were hovering last frame, so the hover is reported once
+    /// at each end rather than on every frame in between.
+    hovering_files: bool,
     /// Whether the ontology tree is also published to the platform
     /// accessibility API. Set once at startup; the tree must then be built
     /// every frame, because a screen reader reads it between agent requests.
@@ -718,6 +723,7 @@ struct DeweyApp<M: Model> {
 #[cfg(feature = "egui-backend")]
 impl<M: Model> DeweyApp<M> {
     fn new(model: M, options: ProgramOptions) -> Self {
+        let initial_size = crate::core::Size::new(options.width, options.height);
         let mut ontology = OntologyRegistry::new();
         model.register_ontology(&mut ontology);
         let init_cmd = model.init();
@@ -731,6 +737,8 @@ impl<M: Model> DeweyApp<M> {
             last_tick: std::time::Instant::now(),
             accessibility: cfg!(feature = "accesskit"),
             focused: true,
+            last_size: initial_size,
+            hovering_files: false,
             pending_viewport: Vec::new(),
         };
         app.process_command(init_cmd);
@@ -853,6 +861,44 @@ impl<M: Model + 'static> eframe::App for DeweyApp<M> {
         // Convert egui input events to Dewey events and dispatch
         let mut events = convert_egui_events(ctx);
 
+        // Files hovering over the window are republished every frame for as
+        // long as the pointer is over it. The events are the hover starting
+        // and the hover ending, not sixty a second saying it is still there.
+        let hovering: Vec<String> = ctx.input(|i| {
+            i.raw
+                .hovered_files
+                .iter()
+                .filter_map(|f| f.path.as_ref())
+                .map(|p| p.to_string_lossy().into_owned())
+                .collect()
+        });
+        if !hovering.is_empty() && !self.hovering_files {
+            self.hovering_files = true;
+            events.push(crate::event::Event::FileHover(hovering));
+        } else if hovering.is_empty() && self.hovering_files {
+            self.hovering_files = false;
+            // A drop ends the hover by landing; anything else cancels it.
+            if !events
+                .iter()
+                .any(|e| matches!(e, crate::event::Event::FileDrop(_)))
+            {
+                events.push(crate::event::Event::FileHoverCancelled);
+            }
+        }
+
+        // Size and focus are both state that egui reports every frame, and an
+        // application wants to hear about the change. Emitting on every frame
+        // instead would put a resize event in front of the model sixty times a
+        // second while nothing moved.
+        let size = ctx.input(|i| i.screen_rect());
+        let size = crate::core::Size::new(size.width(), size.height());
+        if (size.width - self.last_size.width).abs() > f32::EPSILON
+            || (size.height - self.last_size.height).abs() > f32::EPSILON
+        {
+            self.last_size = size;
+            events.push(crate::event::Event::Resize(size));
+        }
+
         // Focus is state rather than an event: egui reports where it is, and
         // the change is what an application wants to hear about.
         let focused = ctx.input(|i| i.viewport().focused.unwrap_or(true));
@@ -946,43 +992,20 @@ fn convert_egui_events(ctx: &egui::Context) -> Vec<crate::event::Event> {
     // These are the same three events agpu emits, not a second way of saying
     // the same thing: an application must not have to ask which backend it is
     // running on to know which event a dropped file arrives as.
-    let paths = |files: &[egui::DroppedFile]| -> Vec<String> {
-        files
-            .iter()
-            .filter_map(|f| f.path.as_ref())
-            .map(|p| p.to_string_lossy().into_owned())
-            .collect()
-    };
-
-    if !input.raw.hovered_files.is_empty() {
-        let hovering: Vec<String> = input
+    // A drop is a single moment, so it belongs here. The hover around it is a
+    // state that egui republishes every frame, and is handled where the last
+    // frame is remembered.
+    if !input.raw.dropped_files.is_empty() {
+        let dropped: Vec<String> = input
             .raw
-            .hovered_files
+            .dropped_files
             .iter()
             .filter_map(|f| f.path.as_ref())
             .map(|p| p.to_string_lossy().into_owned())
             .collect();
-        events.push(crate::event::Event::FileHover(hovering));
-    } else if !input.raw.dropped_files.is_empty() {
-        // egui clears `hovered_files` when the drop lands; the cancellation is
-        // the hover ending without a drop, which the next frame reports.
-        events.push(crate::event::Event::FileHoverCancelled);
-    }
-
-    if !input.raw.dropped_files.is_empty() {
-        let dropped = paths(&input.raw.dropped_files);
         if !dropped.is_empty() {
             events.push(crate::event::Event::FileDrop(dropped));
         }
-    }
-
-    // Window state. `screen_rect` moving is a resize; egui reports focus in
-    // `viewport().focused`, neither of which appears in `input.events`.
-    if let Some(rect) = input.raw.screen_rect {
-        events.push(crate::event::Event::Resize(crate::core::Size::new(
-            rect.width(),
-            rect.height(),
-        )));
     }
 
     for event in &input.events {

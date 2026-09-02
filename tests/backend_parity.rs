@@ -163,3 +163,56 @@ fn both_backends_can_emit_every_event_kind() {
         );
     }
 }
+
+/// Events that come from state must be emitted on change, not every frame.
+///
+/// egui reports the window size, the focus and the files hovering over the
+/// window as state, republished on every frame. Converting each one straight
+/// into an event puts sixty of them a second in front of the model while
+/// nothing is happening — which is what the first version of the resize and
+/// hover conversion did, and is the same fault as the state diff that reported
+/// every unchanged widget as changed.
+///
+/// The signal that this is done right is that the backend remembers the last
+/// frame. This asserts the comparison exists rather than trying to run a
+/// window: the emission sites must sit next to a stored previous value.
+#[test]
+fn state_derived_events_are_compared_against_the_last_frame() {
+    let runtime = source("src/runtime/mod.rs");
+
+    for (field, event) in [
+        ("last_size", "Event::Resize"),
+        ("focused", "Event::FocusGained"),
+        ("hovering_files", "Event::FileHover"),
+    ] {
+        assert!(
+            runtime.contains(&format!("self.{field}")),
+            "`{event}` derives from state egui republishes every frame, so the \
+             backend must remember `{field}` from the last one"
+        );
+    }
+
+    // The converter is stateless by construction — it takes only the context —
+    // so nothing derived from state may be emitted there.
+    let start = runtime
+        .find("fn convert_egui_events")
+        .expect("convert_egui_events");
+    let end = runtime[start..]
+        .find("\n}\n")
+        .map_or(runtime.len(), |i| i + start);
+    let converter = &runtime[start..end];
+
+    for event in ["Event::Resize", "Event::FocusGained", "Event::FileHover"] {
+        assert!(
+            !converter.contains(event),
+            "`{event}` is emitted from the stateless converter, which cannot \
+             know whether anything changed since the last frame"
+        );
+    }
+
+    // A drop, by contrast, happens once and belongs there.
+    assert!(
+        converter.contains("Event::FileDrop"),
+        "a drop is a single moment and should be converted directly"
+    );
+}
