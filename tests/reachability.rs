@@ -92,7 +92,8 @@ fn a_subsystem_is_either_driven_or_declared_types_only() {
     for system in SUBSYSTEMS {
         let uses = references_outside(system.trait_name, system.file);
         let module = source(system.file);
-        let declared = module.contains("types only") || module.contains("**This module is types only.**");
+        let declared =
+            module.contains("types only") || module.contains("**This module is types only.**");
 
         if system.types_only {
             assert!(
@@ -107,7 +108,8 @@ fn a_subsystem_is_either_driven_or_declared_types_only() {
                 uses > 0,
                 "`{}` is advertised as a working subsystem but nothing outside \
                  {} refers to it",
-                system.trait_name, system.file
+                system.trait_name,
+                system.file
             );
         }
     }
