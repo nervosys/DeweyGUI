@@ -293,9 +293,15 @@ fn every_complete_readme_sample_compiles() {
         // keeps the two honest — and a sample that warns is teaching the
         // warning: the first version of the quick start declared two message
         // variants and sent neither.
+        // A nested cargo contends with the one running this test for the
+        // build lock, which made the whole suite fail intermittently while
+        // this test passed on its own. Its own target directory removes the
+        // contention, and keeping it in one place means the dependencies are
+        // built once rather than per run.
         let output = std::process::Command::new("cargo")
             .args(["check", "--quiet", "--example", &name])
             .env("RUSTFLAGS", "-Dwarnings")
+            .env("CARGO_TARGET_DIR", root.join("target/readme-samples"))
             .current_dir(root)
             .output();
         let _ = std::fs::remove_file(&path);
