@@ -498,6 +498,39 @@ cargo run --example chat                # Chat interface demo
 cargo run --example counter_agpu --features agpu-backend --no-default-features  # Counter using agpu GPU backend
 ```
 
+## Known issues
+
+### `Unrecognized present mode 1000361000` on recent GPU drivers
+
+Every Dewey application on a current NVIDIA driver logs a warning per surface
+configuration, in release as well as debug:
+
+```
+WARN wgpu_hal::vulkan::conv] Unrecognized present mode 1000361000
+```
+
+Nothing is wrong. The driver advertises `VK_PRESENT_MODE_FIFO_LATEST_READY_KHR`,
+which postdates the Vulkan headers `wgpu-hal 24` was built against, and wgpu
+falls back to FIFO correctly. wgpu 30 demoted the same line to `log::debug!`.
+
+Silence it in the meantime:
+
+```rust
+env_logger::builder().parse_filters("info,wgpu_hal=off").init();
+```
+
+**Why it is not simply fixed.** Moving the `eframe` pin from 0.31 to 0.36 does
+resolve it — that pulls `wgpu-hal 30.0.1`, which is the version with the fix.
+But the `agpu` sibling crate pins `wgpu 24`, and the two cannot coexist: both
+depend on `gpu-allocator`, `wgpu-hal 24` requires `windows 0.58` and
+`wgpu-hal 30` requires `windows 0.62`, and the resolver hands one of them an
+allocator built against the other's bindings. The build fails inside
+`wgpu-hal`, not in this crate.
+
+So the pin moves when `agpu` moves, which is six major wgpu versions and 263
+call sites — its own piece of work rather than a version bump. Reported
+downstream by the Tabinator build as finding 7, and left open deliberately.
+
 ## License
 
 AGPL-3.0-or-later — free for open-source use. Commercial licenses are available from [NERVOSYS](https://nervosys.ai) for proprietary/closed-source applications.

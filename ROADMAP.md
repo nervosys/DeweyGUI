@@ -142,6 +142,10 @@ Agentic-first GUI framework for Rust with pluggable rendering backends.
 - [x] Web backend (`WebPainter` with `WebRenderOp` for wasm32/Canvas 2D)
 - [x] Headless rendering to image buffer (`ImagePainter` software rasterizer)
 - [x] Software rasterizer (pixel-level fill_rect, fill_circle, line, stroke, alpha blending)
+- [ ] Upgrade `agpu` from wgpu 24 to wgpu 30, which unblocks moving the
+      `eframe` pin off 0.31 and silences the present-mode warning. Six major
+      wgpu versions and 263 call sites; the two wgpu versions cannot coexist
+      because they force incompatible `windows` versions on a shared allocator
 - [x] Window control commands (show, hide, focus, minimise, move, resize,
       always-on-top, fullscreen, title) on both backends
 - [~] Multi-window (`WindowManager`, `WindowConfig`, focus tracking) — in-memory
