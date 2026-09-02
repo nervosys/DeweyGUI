@@ -57,8 +57,18 @@ fn driver() -> HeadlessDriver<DocApp> {
 /// `jsonc` blocks carry explanatory comments and are skipped: they exist to be
 /// read, not parsed.
 fn json_blocks() -> Vec<String> {
-    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("docs/agent-protocol.md");
-    let text = std::fs::read_to_string(&path).expect("protocol reference");
+    // The README carries the headline example — the one showing that any
+    // language able to write lines of JSON can drive a Dewey application — and
+    // it was wrong in three ways at once: a numeric `id` where the envelope
+    // takes a string, externally-tagged requests where the protocol is
+    // internally tagged, and three request names that never existed. It is the
+    // first thing a reader sees and the last thing anything checked.
+    let mut text = String::new();
+    for file in ["docs/agent-protocol.md", "README.md"] {
+        let path = Path::new(env!("CARGO_MANIFEST_DIR")).join(file);
+        text.push_str(&std::fs::read_to_string(&path).expect("documentation"));
+        text.push('\n');
+    }
 
     let mut blocks = Vec::new();
     let mut current: Option<String> = None;
@@ -73,7 +83,24 @@ fn json_blocks() -> Vec<String> {
             _ => {}
         }
     }
+    // A JSON Lines block holds one document per line. Parsing it whole fails,
+    // and the first version of this quietly skipped such a block — which is
+    // the one the README's headline example lives in, so the check passed
+    // while reading nothing.
     blocks
+        .into_iter()
+        .flat_map(|block| {
+            if serde_json::from_str::<serde_json::Value>(block.trim()).is_ok() {
+                return vec![block];
+            }
+            block
+                .lines()
+                .map(str::trim)
+                .filter(|l| l.starts_with('{'))
+                .map(str::to_string)
+                .collect()
+        })
+        .collect()
 }
 
 /// The keys of a JSON object, sorted.
@@ -95,7 +122,7 @@ fn keys(value: &serde_json::Value) -> Vec<String> {
 fn every_documented_request_deserialises() {
     let mut checked = 0;
     for block in json_blocks() {
-        let value: serde_json::Value = match serde_json::from_str(&block) {
+        let value: serde_json::Value = match serde_json::from_str(block.trim()) {
             Ok(v) => v,
             // Some blocks are illustrative fragments rather than whole
             // documents; a block that is not JSON at all is not this test's

@@ -141,12 +141,16 @@ fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
 Dewey speaks JSON Lines over stdin/stdout. Any language that can read/write lines of JSON can drive the UI:
 
 ```json
-{"id":1,"request":"QueryOntology"}
-{"id":2,"request":{"GetWidgetState":{"agent_id":"counter_label"}}}
-{"id":3,"request":{"PerformAction":{"agent_id":"increment_btn","action":"click","params":{}}}}
-{"id":4,"request":"ListActions"}
-{"id":5,"request":"Screenshot"}
+{"id": "1", "request": {"type": "negotiate", "client_version": 2, "capabilities": ["validate"]}}
+{"id": "2", "request": {"type": "get_tree"}}
+{"id": "3", "request": {"type": "get_state", "agent_id": "counter_label"}}
+{"id": "4", "request": {"type": "execute_action", "agent_id": "inc_btn", "action": "click"}}
+{"id": "5", "request": {"type": "validate", "strict": true}}
 ```
+
+Full reference: [`docs/agent-protocol.md`](docs/agent-protocol.md). Both files
+are checked against the code — an example naming a request or a field the
+protocol does not have fails the build.
 
 ## Architecture
 
