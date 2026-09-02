@@ -56,7 +56,7 @@ pub use scroll::{ScrollArea, ScrollState};
 pub use select::{Select, SelectState};
 pub use slider::{Slider, SliderState};
 pub use splitter::{SplitDirection, Splitter, SplitterState};
-pub use table::{SortDirection, Table, TableState};
+pub use table::{SortDirection, Table, TableChange, TableState};
 pub use tabs::{TabState, Tabs};
 pub use text_area::{TextArea, TextAreaState};
 pub use toolbar::{Toolbar, ToolbarItem};

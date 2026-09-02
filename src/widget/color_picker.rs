@@ -76,9 +76,7 @@ impl ColorChange {
     /// Components the agent left out are taken from `base` unchanged.
     #[must_use]
     pub fn applied_to(self, base: Color) -> Color {
-        let keep = |sent: Option<u8>, current: f32| {
-            sent.map_or(current, |n| f32::from(n) / 255.0)
-        };
+        let keep = |sent: Option<u8>, current: f32| sent.map_or(current, |n| f32::from(n) / 255.0);
         Color::rgba(
             keep(self.r, base.r),
             keep(self.g, base.g),
@@ -339,6 +337,9 @@ mod change_tests {
 
     #[test]
     fn a_malformed_hex_changes_nothing() {
-        assert_eq!(parse(serde_json::json!({"hex": "zzz"})), ColorChange::default());
+        assert_eq!(
+            parse(serde_json::json!({"hex": "zzz"})),
+            ColorChange::default()
+        );
     }
 }

@@ -1864,7 +1864,7 @@ fn message_free_app_validates_clean() {
         200.0,
     );
     d.init();
-    assert!(d.validate().is_empty());
+    assert!(d.validate().is_empty(), "{:?}", d.validate());
 }
 
 // ── Value-carrying widgets ─────────────────────────────────────────
@@ -1962,7 +1962,7 @@ fn value_widget_app_validates_clean() {
 
     let mut d = HeadlessDriver::new(form_app(), 200.0, 200.0);
     d.init();
-    assert!(d.validate().is_empty());
+    assert!(d.validate().is_empty(), "{:?}", d.validate());
 }
 
 /// A handler bound to an action the widget does not advertise is unreachable:
@@ -2072,6 +2072,7 @@ fn every_extended_widget_dispatches_under_its_advertised_action() {
                 .render(r[2], frame, &mut self.tab_s.borrow_mut());
             TextArea::new()
                 .on_input("area", |w: &mut W, t: &str| w.hits.area = t.to_string())
+                .on_insert(|w: &mut W, t: &str| w.hits.area.push_str(t))
                 .render(r[3], frame, &mut self.area_s.borrow_mut());
             Radio::new("opt", true)
                 .on_select("radio", |w: &mut W| w.hits.radio = true)
@@ -2131,9 +2132,9 @@ fn multi_action_widgets_answer_to_every_action_they_advertise() {
     use dewey::agent::driver::HeadlessDriver;
     use dewey::agent::protocol::AgentRequest;
     use dewey::widget::{
-        ColorChange, ColorPicker, ColorPickerState, CommandPalette, CommandPaletteState, DateChange,
-        DatePicker, DatePickerState, PaletteChange, ScrollArea, ScrollState, StatefulWidget, Tree,
-        TreeChange, TreeNode, Widget,
+        ColorChange, ColorPicker, ColorPickerState, CommandPalette, CommandPaletteState,
+        DateChange, DatePicker, DatePickerState, PaletteChange, ScrollArea, ScrollState,
+        StatefulWidget, Tree, TreeChange, TreeNode, Widget,
     };
 
     #[derive(Default)]
@@ -2235,7 +2236,12 @@ fn multi_action_widgets_answer_to_every_action_they_advertise() {
     let log = &d.model().log;
     assert_eq!(
         log.tree,
-        ["Expand(\"root/a\")", "Collapse(\"root/a\")", "ExpandAll", "CollapseAll"],
+        [
+            "Expand(\"root/a\")",
+            "Collapse(\"root/a\")",
+            "ExpandAll",
+            "CollapseAll"
+        ],
         "every Tree action must reach the handler, in the order called"
     );
     assert_eq!(
@@ -2263,4 +2269,253 @@ fn multi_action_widgets_answer_to_every_action_they_advertise() {
     assert_eq!(log.scroll, Some((None, Some(120.0))));
 
     assert!(d.validate().is_empty(), "{:?}", d.validate());
+}
+
+/// A widget wired for some of its actions but not all reports the gap.
+///
+/// This is the quiet failure: `execute_action(id, "sort")` on a `Table` that
+/// only wired `select_row` returns success and changes nothing, and the agent
+/// has no way to tell that apart from a sort that happened to leave the order
+/// alone.
+#[test]
+fn validate_flags_a_widget_wired_for_only_some_of_its_actions() {
+    use dewey::agent::driver::HeadlessDriver;
+    use dewey::widget::{StatefulWidget, Table, TableState};
+
+    struct App {
+        picked: Option<usize>,
+        state: std::cell::RefCell<TableState>,
+    }
+
+    impl Model for App {
+        type Msg = ();
+        fn update(&mut self, _m: ()) -> Command<()> {
+            Command::None
+        }
+        fn view(&self, frame: &mut Frame<'_>) {
+            Table::new(
+                vec!["name".into()],
+                vec![vec!["a".into()], vec!["b".into()]],
+            )
+            .on_select("rows", |a: &mut App, i: usize| a.picked = Some(i))
+            .render(frame.area, frame, &mut self.state.borrow_mut());
+        }
+    }
+
+    let mut d = HeadlessDriver::new(
+        App {
+            picked: None,
+            state: Default::default(),
+        },
+        400.0,
+        300.0,
+    );
+    d.init();
+
+    let found = d.validate();
+    let gap = found
+        .iter()
+        .find(|d| d.code == "unhandled_action")
+        .unwrap_or_else(|| panic!("expected an unhandled_action warning, got {found:?}"));
+    assert_eq!(gap.agent_id.as_deref(), Some("rows"));
+    assert_eq!(gap.severity, dewey::ontology::Severity::Warning);
+    for action in ["sort", "filter", "page"] {
+        assert!(
+            gap.message.contains(action),
+            "`{action}` missing from: {}",
+            gap.message
+        );
+    }
+    assert!(
+        gap.message.contains("select_row"),
+        "the warning should say what *is* wired: {}",
+        gap.message
+    );
+}
+
+/// An application that drives a widget through `execute_action` is not nagged.
+///
+/// Wiring no handlers at all is a different style, not a partial job, and a
+/// warning there would fire on every pre-handler application.
+#[test]
+fn validate_is_quiet_about_widgets_with_no_handlers_at_all() {
+    use dewey::agent::driver::HeadlessDriver;
+    use dewey::widget::{StatefulWidget, Table, TableState};
+
+    struct App {
+        state: std::cell::RefCell<TableState>,
+    }
+
+    impl Model for App {
+        type Msg = ();
+        fn update(&mut self, _m: ()) -> Command<()> {
+            Command::None
+        }
+        fn view(&self, frame: &mut Frame<'_>) {
+            Table::new(vec!["name".into()], vec![vec!["a".into()]])
+                .agent_id("rows")
+                .render(frame.area, frame, &mut self.state.borrow_mut());
+        }
+    }
+
+    let mut d = HeadlessDriver::new(
+        App {
+            state: Default::default(),
+        },
+        400.0,
+        300.0,
+    );
+    d.init();
+    assert!(
+        !d.validate().iter().any(|d| d.code == "unhandled_action"),
+        "{:?}",
+        d.validate()
+    );
+}
+
+/// A closed dialog must still answer `open`.
+///
+/// It renders nothing, so it has no node in the UI tree and nothing an agent
+/// can find — but `open` is exactly the action it exists to accept, and a
+/// modal that can only be closed strands whatever it was guarding.
+#[test]
+fn a_closed_modal_can_still_be_opened() {
+    use dewey::agent::driver::HeadlessDriver;
+    use dewey::agent::protocol::AgentRequest;
+    use dewey::widget::{Modal, Widget};
+
+    struct App {
+        open: bool,
+    }
+
+    impl Model for App {
+        type Msg = ();
+        fn update(&mut self, _m: ()) -> Command<()> {
+            Command::None
+        }
+        fn view(&self, frame: &mut Frame<'_>) {
+            Modal::new("Confirm", self.open)
+                .on_change("dialog", |a: &mut App, open: bool| a.open = open)
+                .render(frame.area, frame);
+        }
+    }
+
+    let mut d = HeadlessDriver::new(App { open: false }, 300.0, 200.0);
+    d.init();
+
+    let call = |d: &mut HeadlessDriver<App>, action: &str| {
+        d.process_request(&AgentRequest::ExecuteAction {
+            agent_id: "dialog".into(),
+            action: action.into(),
+            params: serde_json::Value::Null,
+        })
+    };
+
+    assert!(call(&mut d, "open").success, "a closed modal must open");
+    assert!(d.model().open, "and the model must say so");
+    assert!(call(&mut d, "close").success);
+    assert!(!d.model().open);
+}
+
+/// `Table::on_change` covers every action the table advertises.
+#[test]
+fn table_on_change_covers_sort_filter_and_page() {
+    use dewey::agent::driver::HeadlessDriver;
+    use dewey::agent::protocol::AgentRequest;
+    use dewey::widget::{StatefulWidget, Table, TableChange, TableState};
+
+    struct App {
+        seen: Vec<String>,
+        state: std::cell::RefCell<TableState>,
+    }
+
+    impl Model for App {
+        type Msg = ();
+        fn update(&mut self, _m: ()) -> Command<()> {
+            Command::None
+        }
+        fn view(&self, frame: &mut Frame<'_>) {
+            Table::new(vec!["name".into()], vec![vec!["a".into()], vec!["b".into()]])
+                .on_change("rows", |a: &mut App, c: TableChange<'_>| {
+                    a.seen.push(format!("{c:?}"));
+                })
+                .render(frame.area, frame, &mut self.state.borrow_mut());
+        }
+    }
+
+    let mut d = HeadlessDriver::new(
+        App {
+            seen: Vec::new(),
+            state: Default::default(),
+        },
+        400.0,
+        300.0,
+    );
+    d.init();
+
+    for (action, params) in [
+        ("select_row", serde_json::json!({"index": 1})),
+        (
+            "sort",
+            serde_json::json!({"column": 0, "direction": "desc"}),
+        ),
+        ("filter", serde_json::json!({"text": "a"})),
+        ("page", serde_json::json!({"page": 2})),
+    ] {
+        let r = d.process_request(&AgentRequest::ExecuteAction {
+            agent_id: "rows".into(),
+            action: action.into(),
+            params,
+        });
+        assert!(r.success, "{action} was refused");
+    }
+
+    assert_eq!(
+        d.model().seen,
+        [
+            "SelectRow(1)",
+            "Sort { column: 0, descending: true }",
+            "Filter(\"a\")",
+            "Page(2)"
+        ]
+    );
+    // Fully wired, so nothing is left silently accepting calls.
+    assert!(
+        !d.validate().iter().any(|d| d.code == "unhandled_action"),
+        "{:?}",
+        d.validate()
+    );
+}
+
+/// An agent can ask what a widget accepts without the application doing
+/// anything to enable it.
+#[test]
+fn the_widget_catalogue_is_available_to_every_session() {
+    use dewey::agent::driver::HeadlessDriver;
+    use dewey::agent::protocol::AgentRequest;
+
+    struct Bare;
+    impl Model for Bare {
+        type Msg = ();
+        fn update(&mut self, _m: ()) -> Command<()> {
+            Command::None
+        }
+        fn view(&self, _frame: &mut Frame<'_>) {}
+    }
+
+    let mut d = HeadlessDriver::new(Bare, 100.0, 100.0);
+    d.init();
+    let r = d.process_request(&AgentRequest::GetSchema {
+        widget_type: "Table".into(),
+    });
+    assert!(r.success, "an unregistered widget type must still resolve");
+    let actions = r.data.expect("schema")["actions"]
+        .as_array()
+        .expect("actions")
+        .iter()
+        .filter_map(|a| a["name"].as_str().map(str::to_string))
+        .collect::<Vec<_>>();
+    for want in ["select_row", "sort", "filter", "page"] {
+        assert!(actions.contains(&want.to_string()), "missing {want}");
+    }
 }

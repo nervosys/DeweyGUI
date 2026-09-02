@@ -40,7 +40,7 @@ pub struct TextArea {
     placeholder: String,
     style: Style,
     agent_id: std::borrow::Cow<'static, str>,
-    on_value: Option<Box<dyn std::any::Any + Send>>,
+    handlers: Vec<(&'static str, Box<dyn std::any::Any + Send>)>,
 }
 
 impl TextArea {
@@ -50,7 +50,7 @@ impl TextArea {
             placeholder: String::new(),
             style: Style::default(),
             agent_id: std::borrow::Cow::Borrowed(""),
-            on_value: None,
+            handlers: Vec::new(),
         }
     }
 
@@ -90,12 +90,29 @@ impl TextArea {
         id: impl Into<std::borrow::Cow<'static, str>>,
         f: impl FnOnce(&mut M, &str) + Send + 'static,
     ) -> Self {
-        let wrapped: crate::runtime::ValueMutation<M> =
-            Box::new(move |m: &mut M, v: &serde_json::Value| {
-                f(m, v.get("text").and_then(|t| t.as_str()).unwrap_or(""))
-            });
         self.agent_id = id.into();
-        self.on_value = Some(Box::new(wrapped));
+        let handler: crate::runtime::ValueMutation<M> =
+            Box::new(move |m: &mut M, v: &serde_json::Value| {
+                f(m, v.get("text").and_then(|t| t.as_str()).unwrap_or(""));
+            });
+        self.handlers.push(("set_text", Box::new(handler)));
+        self
+    }
+
+    /// Give this area the change to apply on `insert`.
+    ///
+    /// Separate from [`on_input`](Self::on_input) because the widget cannot
+    /// perform the insertion itself: the text lives in the application, and
+    /// only the fragment to add arrives with the action. Leave it unwired and
+    /// `validate` will say so — `insert` would otherwise be a call that
+    /// reports success and changes nothing.
+    #[must_use]
+    pub fn on_insert<M: 'static>(mut self, f: impl FnOnce(&mut M, &str) + Send + 'static) -> Self {
+        let handler: crate::runtime::ValueMutation<M> =
+            Box::new(move |m: &mut M, v: &serde_json::Value| {
+                f(m, v.get("text").and_then(|t| t.as_str()).unwrap_or(""));
+            });
+        self.handlers.push(("insert", Box::new(handler)));
         self
     }
 
@@ -211,8 +228,8 @@ impl StatefulWidget for TextArea {
                 frame.register_widget(node);
             }
             frame.register_hitbox(self.agent_id.clone(), area, 1);
-            if let Some(handler) = self.on_value.take() {
-                frame.register_message(self.agent_id.clone(), "set_text", handler);
+            for (action, handler) in self.handlers.drain(..) {
+                frame.register_message(self.agent_id.clone(), action, handler);
             }
         }
 

@@ -168,7 +168,7 @@ pub fn check(
                     Severity::Error,
                     "unadvertised_action",
                     format!(
-                        "`{id}` handles `{action}`, which `{}` does not advertise; an agent                          following the ontology would call one of: {}",
+                        "`{id}` handles `{action}`, which `{}` does not advertise; an agent following the ontology would call one of: {}",
                         node.widget_type,
                         advertised.join(", ")
                     ),
@@ -178,6 +178,49 @@ pub fn check(
             );
         }
     }
+
+    // A widget that publishes an action nothing is wired to accepts the call
+    // and does nothing, which is worse than refusing it: the agent has no way
+    // to tell the difference and moves on believing the interface changed.
+    //
+    // Only widgets the application has already wired at least once are
+    // checked. Wiring none of a widget's actions means the application drives
+    // it through `execute_action` instead, which is a different style, not a
+    // fault.
+    let mut wired: std::collections::HashMap<&str, Vec<&str>> = std::collections::HashMap::new();
+    for (id, action) in handlers {
+        wired.entry(id.as_str()).or_default().push(action);
+    }
+    let mut partial: Vec<Diagnostic> = Vec::new();
+    for (id, actions) in &wired {
+        let Some(node) = by_id.get(id) else { continue };
+        let Some(schema) = registry.get_schema(&node.widget_type) else {
+            continue;
+        };
+        let missing: Vec<&str> = schema
+            .actions
+            .iter()
+            .filter(|a| a.mutates && !actions.contains(&a.name.as_str()))
+            .map(|a| a.name.as_str())
+            .collect();
+        if !missing.is_empty() {
+            partial.push(
+                Diagnostic::new(
+                    Severity::Warning,
+                    "unhandled_action",
+                    format!(
+                        "`{id}` is wired for {}, but `{}` also advertises {}; calling those succeeds and changes nothing",
+                        actions.join(", "),
+                        node.widget_type,
+                        missing.join(", ")
+                    ),
+                )
+                .with_id((*id).to_string())
+                .with_type(node.widget_type.as_ref()),
+            );
+        }
+    }
+    out.append(&mut partial);
 
     out.sort_by(|a, b| (a.code, &a.agent_id).cmp(&(b.code, &b.agent_id)));
     out

@@ -29,6 +29,7 @@ pub struct Modal {
     body: Vec<String>,
     /// Width of the modal window (0.0 = auto).
     width: f32,
+    handlers: Vec<(&'static str, Box<dyn std::any::Any + Send>)>,
 }
 
 impl Modal {
@@ -39,6 +40,7 @@ impl Modal {
             open,
             style: Style::default(),
             agent_id: std::borrow::Cow::Borrowed(""),
+            handlers: Vec::new(),
             body: Vec::new(),
             width: 0.0,
         }
@@ -61,6 +63,29 @@ impl Modal {
 
     pub fn rounded(mut self, radius: f32) -> Self {
         self.style.border_radius = Some(radius);
+        self
+    }
+
+    /// Name this dialog and give it the change to apply on `open` and
+    /// `close`.
+    ///
+    /// A closed modal renders nothing, so it has no node in the UI tree — but
+    /// it still advertises `open`, and that call must work or an agent can
+    /// never get the dialog back.
+    #[must_use]
+    pub fn on_change<M: 'static>(
+        mut self,
+        id: impl Into<std::borrow::Cow<'static, str>>,
+        f: impl Fn(&mut M, bool) + Send + Sync + 'static,
+    ) -> Self {
+        self.agent_id = id.into();
+        let f = std::sync::Arc::new(f);
+        for action in ["open", "close"] {
+            let f = f.clone();
+            let handler: crate::runtime::Mutation<M> =
+                Box::new(move |m: &mut M| f(m, action == "open"));
+            self.handlers.push((action, Box::new(handler)));
+        }
         self
     }
 
@@ -146,7 +171,13 @@ impl Discoverable for Modal {
 }
 
 impl Widget for Modal {
-    fn render(self, area: Rect, frame: &mut Frame<'_>) {
+    fn render(mut self, area: Rect, frame: &mut Frame<'_>) {
+        // Before the early return: a closed dialog still answers `open`.
+        if !self.agent_id.is_empty() {
+            for (action, handler) in self.handlers.drain(..) {
+                frame.register_message(self.agent_id.clone(), action, handler);
+            }
+        }
         if !self.open {
             return;
         }

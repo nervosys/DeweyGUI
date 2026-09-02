@@ -11,6 +11,7 @@ mod schema;
 
 pub use action::{ActionParam, ActionParamType, AgentAction};
 pub use capability::AgentCapability;
+pub mod builtin;
 pub mod diagnostics;
 pub use diagnostics::{Diagnostic, Severity};
 pub use registry::{Accessibility, NodeBounds, OntologyRegistry, Properties, UiNode, UiTree};

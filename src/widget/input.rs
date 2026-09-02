@@ -51,7 +51,7 @@ pub struct TextInput {
     placeholder: String,
     style: Style,
     agent_id: std::borrow::Cow<'static, str>,
-    on_value: Option<Box<dyn std::any::Any + Send>>,
+    handlers: Vec<(&'static str, Box<dyn std::any::Any + Send>)>,
 }
 
 impl TextInput {
@@ -61,7 +61,7 @@ impl TextInput {
             placeholder: String::new(),
             style: Style::default(),
             agent_id: std::borrow::Cow::Borrowed(""),
-            on_value: None,
+            handlers: Vec::new(),
         }
     }
 
@@ -106,15 +106,25 @@ impl TextInput {
     pub fn on_input<M: 'static>(
         mut self,
         id: impl Into<std::borrow::Cow<'static, str>>,
-        f: impl FnOnce(&mut M, &str) + Send + 'static,
+        f: impl Fn(&mut M, &str) + Send + Sync + 'static,
     ) -> Self {
-        let wrapped: crate::runtime::ValueMutation<M> =
-            Box::new(move |m: &mut M, v: &serde_json::Value| {
-                let text = v.get("text").and_then(|t| t.as_str()).unwrap_or("");
-                f(m, text)
-            });
         self.agent_id = id.into();
-        self.on_value = Some(Box::new(wrapped));
+        // `clear` is `set_text` with nothing in it. Wiring only `set_text`
+        // would leave the other action a call that succeeds and does nothing.
+        let f = std::sync::Arc::new(f);
+        for action in ["set_text", "clear"] {
+            let f = f.clone();
+            let handler: crate::runtime::ValueMutation<M> =
+                Box::new(move |m: &mut M, v: &serde_json::Value| {
+                    let text = if action == "clear" {
+                        ""
+                    } else {
+                        v.get("text").and_then(|t| t.as_str()).unwrap_or("")
+                    };
+                    f(m, text);
+                });
+            self.handlers.push((action, Box::new(handler)));
+        }
         self
     }
 
@@ -204,8 +214,8 @@ impl StatefulWidget for TextInput {
     fn render(mut self, area: Rect, frame: &mut Frame<'_>, state: &mut TextInputState) {
         if !self.agent_id.is_empty() {
             frame.register_hitbox(self.agent_id.clone(), area, 1);
-            if let Some(handler) = self.on_value.take() {
-                frame.register_message(self.agent_id.clone(), "set_text", handler);
+            for (action, handler) in self.handlers.drain(..) {
+                frame.register_message(self.agent_id.clone(), action, handler);
             }
         }
 

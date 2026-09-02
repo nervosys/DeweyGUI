@@ -99,12 +99,25 @@ impl Default for TableState {
 }
 
 /// A data table with headers, rows, sorting, filtering, and pagination.
+/// What an agent asked a [`Table`] to do.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TableChange<'a> {
+    /// Select the row at this index.
+    SelectRow(usize),
+    /// Sort by this column.
+    Sort { column: usize, descending: bool },
+    /// Keep only rows matching this text.
+    Filter(&'a str),
+    /// Show this page.
+    Page(usize),
+}
+
 pub struct Table {
     headers: Vec<String>,
     rows: Vec<Vec<String>>,
     style: Style,
     agent_id: std::borrow::Cow<'static, str>,
-    on_value: Option<Box<dyn std::any::Any + Send>>,
+    handlers: Vec<(&'static str, Box<dyn std::any::Any + Send>)>,
 }
 
 impl Table {
@@ -115,7 +128,7 @@ impl Table {
             rows,
             style: Style::default(),
             agent_id: std::borrow::Cow::Borrowed(""),
-            on_value: None,
+            handlers: Vec::new(),
         }
     }
 
@@ -155,7 +168,52 @@ impl Table {
                 )
             });
         self.agent_id = id.into();
-        self.on_value = Some(Box::new(wrapped));
+        self.handlers.push(("select_row", Box::new(wrapped)));
+        self
+    }
+
+    /// Name this table and give it the change to apply for every action it
+    /// advertises: `select_row`, `sort`, `filter` and `page`.
+    ///
+    /// [`on_select`](Self::on_select) covers only the first. The others are
+    /// left to the application because only it knows what its rows mean —
+    /// but a table wired for selection alone accepts `sort` and silently
+    /// ignores it, so `validate` reports the gap.
+    #[must_use]
+    pub fn on_change<M: 'static>(
+        mut self,
+        id: impl Into<std::borrow::Cow<'static, str>>,
+        f: impl Fn(&mut M, TableChange<'_>) + Send + Sync + 'static,
+    ) -> Self {
+        self.agent_id = id.into();
+        let f = std::sync::Arc::new(f);
+        for action in ["select_row", "sort", "filter", "page"] {
+            let f = f.clone();
+            let handler: crate::runtime::ValueMutation<M> =
+                Box::new(move |m: &mut M, v: &serde_json::Value| {
+                    let index = |k: &str| {
+                        v.get(k).and_then(serde_json::Value::as_u64).unwrap_or(0) as usize
+                    };
+                    let change = match action {
+                        "select_row" => TableChange::SelectRow(index("index")),
+                        "sort" => TableChange::Sort {
+                            column: index("column"),
+                            descending: v
+                                .get("direction")
+                                .and_then(serde_json::Value::as_str)
+                                .is_some_and(|d| d.eq_ignore_ascii_case("desc")),
+                        },
+                        "filter" => TableChange::Filter(
+                            v.get("text")
+                                .and_then(serde_json::Value::as_str)
+                                .unwrap_or_default(),
+                        ),
+                        _ => TableChange::Page(index("page")),
+                    };
+                    f(m, change);
+                });
+            self.handlers.push((action, Box::new(handler)));
+        }
         self
     }
 
@@ -358,8 +416,8 @@ impl StatefulWidget for Table {
                 frame.register_widget(node);
             }
             frame.register_hitbox(self.agent_id.clone(), area, 1);
-            if let Some(handler) = self.on_value.take() {
-                frame.register_message(self.agent_id.clone(), "select_row", handler);
+            for (action, handler) in self.handlers.drain(..) {
+                frame.register_message(self.agent_id.clone(), action, handler);
             }
         }
 

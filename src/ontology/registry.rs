@@ -17,11 +17,55 @@ use std::collections::HashMap;
 pub struct OntologyRegistry {
     schemas: HashMap<String, WidgetSchema>,
     tree: Option<UiTree>,
+    /// Whether lookups fall back to the built-in widget catalogue.
+    catalogue: bool,
 }
 
 impl OntologyRegistry {
+    /// A registry that knows every built-in widget type.
+    ///
+    /// The catalogue is shared and built once for the process, not copied per
+    /// registry: an agent session is created per connection, and a session
+    /// that starts by cloning thirty schemas pays for a catalogue it will
+    /// mostly not read.
+    ///
+    /// Six places in the crate build a registry, and one forgetting to
+    /// register the catalogue meant an agent asking `get_schema` got nothing
+    /// and the coverage diagnostics silently had nothing to compare against.
+    /// Use [`Self::empty`] for a registry that knows no types at all.
     pub fn new() -> Self {
+        Self {
+            catalogue: true,
+            ..Self::default()
+        }
+    }
+
+    /// A registry with no widget types at all, built-ins included.
+    #[must_use]
+    pub fn empty() -> Self {
         Self::default()
+    }
+
+    /// The built-in widget schemas, built once per process.
+    fn builtin() -> &'static HashMap<String, WidgetSchema> {
+        static CATALOGUE: std::sync::OnceLock<HashMap<String, WidgetSchema>> =
+            std::sync::OnceLock::new();
+        CATALOGUE.get_or_init(|| {
+            let mut registry = Self::empty();
+            super::builtin::register_all(&mut registry);
+            registry.schemas
+        })
+    }
+
+    /// The built-in schemas this registry falls back to, if any.
+    fn fallback(&self) -> &'static HashMap<String, WidgetSchema> {
+        static NONE: std::sync::OnceLock<HashMap<String, WidgetSchema>> =
+            std::sync::OnceLock::new();
+        if self.catalogue {
+            Self::builtin()
+        } else {
+            NONE.get_or_init(HashMap::new)
+        }
     }
 
     // ── Type Catalog ─────────────────────────────────────────────────
@@ -32,24 +76,52 @@ impl OntologyRegistry {
     }
 
     /// Register a discoverable widget type (convenience).
+    ///
+    /// The instance's actions are copied onto the schema. `schema()` describes
+    /// the type and `actions()` describes what can be called on it, and an
+    /// agent asking `get_schema` needs both: a schema registered without them
+    /// says a widget exists and nothing about how to drive it.
     pub fn register<W: Discoverable>(&mut self, instance: &W) {
-        self.register_schema(instance.schema());
+        let mut schema = instance.schema();
+        if schema.actions.is_empty() {
+            schema.actions = instance.actions();
+        }
+        self.register_schema(schema);
     }
 
     /// List all registered widget type names.
     pub fn list_types(&self) -> Vec<&str> {
-        self.schemas.keys().map(|s| s.as_str()).collect()
+        let mut names: Vec<&str> = self.schemas.keys().map(String::as_str).collect();
+        names.extend(
+            self.fallback()
+                .keys()
+                .map(String::as_str)
+                .filter(|n| !self.schemas.contains_key(*n)),
+        );
+        names
     }
 
     /// Get the schema for a widget type by name.
+    ///
+    /// An application's own registration wins over the built-in of the same
+    /// name, so a schema can be overridden rather than only added to.
     pub fn get_schema(&self, name: &str) -> Option<&WidgetSchema> {
-        self.schemas.get(name)
+        self.schemas.get(name).or_else(|| self.fallback().get(name))
+    }
+
+    /// Every schema this registry can see, application-registered first.
+    fn all_schemas(&self) -> impl Iterator<Item = &WidgetSchema> {
+        self.schemas.values().chain(
+            self.fallback()
+                .iter()
+                .filter(|(name, _)| !self.schemas.contains_key(*name))
+                .map(|(_, schema)| schema),
+        )
     }
 
     /// Find widget types matching a semantic role.
     pub fn find_by_role(&self, role: SemanticRole) -> Vec<&WidgetSchema> {
-        self.schemas
-            .values()
+        self.all_schemas()
             .filter(|s| s.default_role == role)
             .collect()
     }
@@ -57,8 +129,7 @@ impl OntologyRegistry {
     /// Search widget types by tag (case-insensitive substring match).
     pub fn search(&self, query: &str) -> Vec<&WidgetSchema> {
         let query_lower = query.to_lowercase();
-        self.schemas
-            .values()
+        self.all_schemas()
             .filter(|s| {
                 s.name.to_lowercase().contains(&query_lower)
                     || s.description.to_lowercase().contains(&query_lower)
@@ -555,7 +626,8 @@ mod tests {
 
     #[test]
     fn registry_search() {
-        let mut reg = OntologyRegistry::new();
+        // `empty`, not `new`: the catalogue would supply its own matches.
+        let mut reg = OntologyRegistry::empty();
         reg.register_schema(WidgetSchema {
             name: "Button".into(),
             description: "A clickable button".into(),
