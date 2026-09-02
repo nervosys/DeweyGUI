@@ -84,6 +84,53 @@ widgets and their states.
 {"type": "get_tree"}
 ```
 
+Every reply carries a `version`. Pass the one you last saw as `since` and an
+unchanged interface answers `{"unchanged": true, "version": N}` instead of
+resending an identical tree:
+
+```json
+{"type": "get_tree", "since": 12}
+```
+
+This is the difference between a re-poll costing a render and a serialisation
+and one costing a comparison — 100 ns against roughly 5 µs for a 100-row
+interface, at 30 bytes instead of 40 kB. Re-polling is the commonest thing an
+agent does, so it is worth threading the version through.
+
+The tree describes every widget, including those scrolled out of view; there is
+no viewport or paging. For a very long list the reply is correspondingly large.
+
+### validate
+
+Check the rendered interface for structural faults — the ways a GUI can be
+broken while compiling, rendering, and looking correct.
+
+```json
+{"type": "validate"}
+```
+
+```jsonc
+{"ok": false, "errors": 1, "diagnostics": [
+  {"severity": "error", "code": "unaddressable_widget", "widget_type": "Button",
+   "message": "1 `Button` widget(s) rendered without an id, so they are not
+               hit-testable and no agent can act on them; give each one
+               `.action(id, msg)`"}]}
+```
+
+Codes:
+
+| code | severity | meaning |
+| ---- | -------- | ------- |
+| `unaddressable_widget` | error | an interactive widget rendered with no id: it has no hitbox, no tree node, and nothing to name |
+| `duplicate_agent_id` | error | two widgets share an id, so an action naming it is ambiguous |
+| `zero_size_widget` | error | bounds with no area — it cannot be seen or clicked |
+| `offscreen_widget` | warning | bounds outside the window |
+| `unadvertised_action` | error | a handler is bound to an action its widget does not publish, so an agent following the ontology would call a name that does nothing |
+| `unhandled_action` | warning | a widget wired for some of its actions accepts the rest and silently ignores them |
+
+`validate` reports structure, not appearance. A label painted white on white
+passes it.
+
 ### get_state
 
 Get the state of a specific widget by its `agent_id`.
@@ -181,6 +228,11 @@ Execute multiple actions in a single request:
 ```
 
 Response includes a `results` array with one entry per action.
+
+## MCP
+
+The same requests are available as MCP tools, one per request type, including
+`validate` and `get_tree`'s `since`. See `McpServer`.
 
 ## Response Format
 

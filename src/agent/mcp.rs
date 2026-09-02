@@ -126,7 +126,25 @@ fn tool_definitions() -> serde_json::Value {
         },
         {
             "name": "get_tree",
-            "description": "Get a snapshot of the current UI tree.",
+            "description": "Get a snapshot of the current UI tree. Pass the \
+    version from a previous reply as 'since' to be told 'unchanged' instead of \
+    being sent an identical tree.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "since": {
+                        "type": "integer",
+                        "description": "Version last seen; omit for a full tree"
+                    }
+                }
+            }
+        },
+        {
+            "name": "validate",
+            "description": "Check the rendered interface for structural faults: \
+    widgets that cannot be clicked or addressed, duplicated ids, empty or offscreen \
+    bounds, and handlers bound to actions a widget does not advertise. Answers \
+    whether what was built can be operated, which a screenshot cannot.",
             "inputSchema": { "type": "object", "properties": {} }
         },
         {
@@ -195,7 +213,12 @@ fn tool_definitions() -> serde_json::Value {
             "inputSchema": {
                 "type": "object",
                 "properties": {
-                    "format": { "type": "string", "description": "Output format (e.g. 'png')", "default": "png" }
+                    "format": {
+                        "type": "string",
+                        "description": "Output format. 'text' returns a stable \
+    tree rendering suitable for golden comparison between runs.",
+                        "default": "png"
+                    }
                 }
             }
         },
@@ -251,7 +274,10 @@ fn parse_tool_call(name: &str, args: &serde_json::Value) -> Result<AgentRequest,
     match name {
         "ping" => Ok(AgentRequest::Ping),
         "quit" => Ok(AgentRequest::Quit),
-        "get_tree" => Ok(AgentRequest::GetTree { since: None }),
+        "get_tree" => Ok(AgentRequest::GetTree {
+            since: args.get("since").and_then(serde_json::Value::as_u64),
+        }),
+        "validate" => Ok(AgentRequest::Validate),
         "query_ontology" => Ok(AgentRequest::QueryOntology {
             query: args.get("query").and_then(|v| v.as_str()).map(String::from),
             role: args.get("role").and_then(|v| v.as_str()).map(String::from),
@@ -517,7 +543,7 @@ mod tests {
     fn tool_definitions_has_all_tools() {
         let defs = tool_definitions();
         let tools = defs["tools"].as_array().unwrap();
-        assert_eq!(tools.len(), 13);
+        assert_eq!(tools.len(), 14);
         let names: Vec<&str> = tools.iter().map(|t| t["name"].as_str().unwrap()).collect();
         assert!(names.contains(&"ping"));
         assert!(names.contains(&"query_ontology"));
@@ -525,6 +551,35 @@ mod tests {
         assert!(names.contains(&"execute_action"));
         assert!(names.contains(&"batch_actions"));
         assert!(names.contains(&"quit"));
+        assert!(names.contains(&"validate"));
+    }
+
+    /// Every request the protocol understands and an agent would want should
+    /// be reachable from MCP, which is the interface a coding agent connects
+    /// through. `validate` and the conditional `get_tree` were added to the
+    /// protocol and not to this list, so neither could be called here.
+    #[test]
+    fn mcp_exposes_validation_and_conditional_tree_reads() {
+        assert!(matches!(
+            parse_tool_call("validate", &json!({})).unwrap(),
+            AgentRequest::Validate
+        ));
+        assert!(matches!(
+            parse_tool_call("get_tree", &json!({})).unwrap(),
+            AgentRequest::GetTree { since: None }
+        ));
+        assert!(matches!(
+            parse_tool_call("get_tree", &json!({"since": 7})).unwrap(),
+            AgentRequest::GetTree { since: Some(7) }
+        ));
+
+        let defs = tool_definitions();
+        let tools = defs["tools"].as_array().unwrap();
+        let get_tree = tools.iter().find(|t| t["name"] == "get_tree").unwrap();
+        assert!(
+            get_tree["inputSchema"]["properties"]["since"].is_object(),
+            "an agent reading the schema must be told `since` exists"
+        );
     }
 
     #[test]
