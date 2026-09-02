@@ -57,6 +57,29 @@ impl OntologyRegistry {
         })
     }
 
+    /// The whole built-in catalogue, serialised once for the process.
+    ///
+    /// `query_ontology` with no filter asks for every widget type, and the
+    /// answer never changes: it was 42 µs of re-serialising the same thirty
+    /// schemas on every call, which is most of what an agent's first request
+    /// costs. `None` when the application has registered schemas of its own,
+    /// because then the answer is not the catalogue.
+    ///
+    /// Sorted by name, so the reply an agent stores as a golden file does not
+    /// depend on hash order.
+    #[must_use]
+    pub fn catalogue_json(&self) -> Option<&'static serde_json::Value> {
+        if !self.catalogue || !self.schemas.is_empty() {
+            return None;
+        }
+        static JSON: std::sync::OnceLock<serde_json::Value> = std::sync::OnceLock::new();
+        Some(JSON.get_or_init(|| {
+            let mut schemas: Vec<&WidgetSchema> = Self::builtin().values().collect();
+            schemas.sort_by(|a, b| a.name.cmp(&b.name));
+            serde_json::to_value(&schemas).unwrap_or_default()
+        }))
+    }
+
     /// The built-in schemas this registry falls back to, if any.
     fn fallback(&self) -> &'static HashMap<String, WidgetSchema> {
         static NONE: std::sync::OnceLock<HashMap<String, WidgetSchema>> =
@@ -98,6 +121,9 @@ impl OntologyRegistry {
                 .map(String::as_str)
                 .filter(|n| !self.schemas.contains_key(*n)),
         );
+        // Sorted: an agent that stores the catalogue as a golden file should
+        // not see it reorder between runs because of hash iteration order.
+        names.sort_unstable();
         names
     }
 

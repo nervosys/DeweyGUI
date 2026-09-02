@@ -2435,11 +2435,14 @@ fn table_on_change_covers_sort_filter_and_page() {
             Command::None
         }
         fn view(&self, frame: &mut Frame<'_>) {
-            Table::new(vec!["name".into()], vec![vec!["a".into()], vec!["b".into()]])
-                .on_change("rows", |a: &mut App, c: TableChange<'_>| {
-                    a.seen.push(format!("{c:?}"));
-                })
-                .render(frame.area, frame, &mut self.state.borrow_mut());
+            Table::new(
+                vec!["name".into()],
+                vec![vec!["a".into()], vec!["b".into()]],
+            )
+            .on_change("rows", |a: &mut App, c: TableChange<'_>| {
+                a.seen.push(format!("{c:?}"));
+            })
+            .render(frame.area, frame, &mut self.state.borrow_mut());
         }
     }
 
@@ -2518,4 +2521,56 @@ fn the_widget_catalogue_is_available_to_every_session() {
     for want in ["select_row", "sort", "filter", "page"] {
         assert!(actions.contains(&want.to_string()), "missing {want}");
     }
+}
+
+/// An action a widget never advertised is refused, not quietly accepted.
+///
+/// A `Checkbox` advertises `toggle`. `execute_action(id, "click")` used to
+/// come back successful having changed nothing, which is the worst answer
+/// available: the agent has no reason to look again. This project's own
+/// TodoMVC benchmark completed a todo that way for several commits.
+#[test]
+fn an_action_the_widget_does_not_advertise_is_refused() {
+    use dewey::agent::driver::HeadlessDriver;
+    use dewey::agent::protocol::AgentRequest;
+    use dewey::widget::{Checkbox, Widget};
+
+    struct App {
+        on: bool,
+    }
+
+    impl Model for App {
+        type Msg = ();
+        fn update(&mut self, _m: ()) -> Command<()> {
+            Command::None
+        }
+        fn view(&self, frame: &mut Frame<'_>) {
+            Checkbox::new("done", self.on)
+                .on("box", |a: &mut App| a.on = !a.on)
+                .render(frame.area, frame);
+        }
+    }
+
+    let mut d = HeadlessDriver::new(App { on: false }, 200.0, 60.0);
+    d.init();
+
+    let call = |d: &mut HeadlessDriver<App>, action: &str| {
+        d.process_request(&AgentRequest::ExecuteAction {
+            agent_id: "box".into(),
+            action: action.into(),
+            params: serde_json::Value::Null,
+        })
+    };
+
+    let refused = call(&mut d, "click");
+    assert!(!refused.success, "`click` is not advertised by Checkbox");
+    let why = refused.error.expect("a refusal must say why");
+    assert!(
+        why.contains("toggle"),
+        "the refusal should name what is accepted: {why}"
+    );
+    assert!(!d.model().on, "and nothing may have changed");
+
+    assert!(call(&mut d, "toggle").success, "the published name works");
+    assert!(d.model().on);
 }

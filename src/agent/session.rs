@@ -77,6 +77,13 @@ impl AgentSession {
     ) -> (AgentResponse, bool) {
         match request {
             AgentRequest::QueryOntology { query, role } => {
+                // The unfiltered query is the catalogue, and the catalogue is
+                // constant; serve the copy that was serialised once.
+                if query.is_none() && role.is_none() {
+                    if let Some(cached) = registry.catalogue_json() {
+                        return (AgentResponse::ok(cached.clone()), false);
+                    }
+                }
                 let schemas = if let Some(q) = query {
                     registry.search(q)
                 } else {

@@ -124,9 +124,17 @@ fn set_text(id: &str, text: &str) -> AgentRequest {
 }
 
 fn click(id: &str) -> AgentRequest {
+    act(id, "click")
+}
+
+/// A `Checkbox` advertises `toggle`, not `click`. Naming the action the
+/// widget publishes is what an agent reading the ontology would do — and
+/// `click` here reported success and changed nothing until the protocol
+/// started refusing actions a widget never advertised.
+fn act(id: &str, action: &'static str) -> AgentRequest {
     AgentRequest::ExecuteAction {
         agent_id: id.into(),
-        action: "click".into(),
+        action: action.into(),
         params: serde_json::Value::Null,
     }
 }
@@ -152,7 +160,7 @@ fn task() -> Vec<(&'static str, AgentRequest)> {
         ("add item 1      (click add)", click("add")),
         ("type item 2     (set_text)", set_text("new_todo", "ship it")),
         ("add item 2      (click add)", click("add")),
-        ("complete item 1 (click toggle_0)", click("toggle_0")),
+        ("complete item 1 (toggle_0.toggle)", act("toggle_0", "toggle")),
         ("filter active   (click filter_active)", click("filter_active")),
         ("re-read tree    (get_tree)", AgentRequest::GetTree { since: None }),
         (

@@ -114,9 +114,21 @@ impl<M: Model + 'static> HeadlessDriver<M> {
                 response.error = None;
                 serde_json::Value::Null
             } else {
+                // Nothing was wired for this action. If the widget does not
+                // even advertise it, say so rather than reporting success:
+                // an agent that is told a call worked has no reason to look
+                // again, and this is exactly how a `click` on a `Checkbox`
+                // that advertises `toggle` passed silently in this project's
+                // own benchmark.
+                if let Some(err) = self.unknown_action(agent_id, action) {
+                    response.success = false;
+                    response.error = Some(err);
+                }
                 self.model.execute_action(agent_id, action, params)
             };
             if !result.is_null() {
+                response.success = true;
+                response.error = None;
                 response.data = Some(result);
             }
         }
@@ -335,6 +347,26 @@ impl<M: Model + 'static> HeadlessDriver<M> {
     /// A click is physical: it means "activate this widget", not any
     /// particular action name. A `Checkbox` advertises `toggle`, a `Button`
     /// advertises `click`, and pressing either must work.
+    /// Why `action` cannot apply to `agent_id`, if the ontology rules it out.
+    ///
+    /// Only speaks when the widget is in the tree and its type's schema is
+    /// known: a name the widget never published is wrong however the
+    /// application is written, while a name it does publish may still be
+    /// served by `Model::execute_action`.
+    fn unknown_action(&self, agent_id: &str, action: &str) -> Option<String> {
+        let node = self.ontology.tree()?.find(agent_id)?;
+        let schema = self.ontology.get_schema(&node.widget_type)?;
+        if schema.actions.is_empty() || schema.actions.iter().any(|a| a.name == action) {
+            return None;
+        }
+        let advertised: Vec<&str> = schema.actions.iter().map(|a| a.name.as_str()).collect();
+        Some(format!(
+            "`{}` does not accept `{action}`; it advertises: {}",
+            node.widget_type,
+            advertised.join(", ")
+        ))
+    }
+
     fn dispatch_primary(&mut self, agent_id: &str) -> bool {
         let Some(action) = self.handlers.primary_action(agent_id) else {
             return false;

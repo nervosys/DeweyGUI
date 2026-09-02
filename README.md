@@ -305,11 +305,19 @@ discover → act → verify loop over the agent protocol headlessly — no windo
 no GPU, no screenshot. A nine-step TodoMVC task (add two items, complete one,
 switch filter, read the result back):
 
-| Task                                       | Time        | Rate      |
-| ------------------------------------------ | ----------- | --------- |
-| counter: discover → understand → act → verify | **8.2 µs**  | 122,000/s |
-| polling an unchanged screen (`get_tree since=`) | **100 ns**  | 110× less |
-| todomvc: 9-step add/complete/filter/verify | **44.7 µs** | 22,000/s  |
+| Task                                            | Time        | Rate      |
+| ----------------------------------------------- | ----------- | --------- |
+| counter: discover → act → verify → validate     | **12.3 µs** | 81,000/s  |
+| polling an unchanged screen (`get_tree since=`) | **100 ns**  | 49× less  |
+| todomvc: 9-step add/complete/filter/verify      | **42.3 µs** | 24,000/s  |
+| session setup: `query_ontology`, 27 widget types | **36.7 µs** | once      |
+
+The counter figure previously read 8.2 µs and included a `query_ontology`
+step. That step was returning an empty catalogue — schemas were registered
+only by an application that chose to, so for an ordinary program there was
+nothing to return and the call cost nothing. Reading the catalogue is now
+real, and it is session setup rather than part of a loop: an agent learns
+what a `Button` is once and then works.
 
 An agent can also ask whether the interface it just built is *operable*, which
 a screenshot cannot tell it:
