@@ -4,13 +4,28 @@
 //! using the Canvas 2D API. This backend is enabled behind the `web-backend`
 //! feature and only compiles on `wasm32` targets.
 //!
+//! **This module is a painter, not a runner.** [`WebPainter`] records drawing
+//! operations as [`WebRenderOp`]s that a host page can replay onto a canvas;
+//! there is no event loop, no `main`, and nothing that starts an application.
+//! Driving one is the embedder's job.
+//!
+//! A previous version of this comment showed `WebRunner::new(model, painter)
+//! .start()`. No such type has ever existed: the example was marked as an
+//! ignored doctest, so nothing compiled it and nothing noticed.
+//!
 //! # Usage
 //!
-//! ```rust,ignore
-//! use dewey::backend::web::{WebPainter, WebRunner};
+//! ```
+//! use dewey::backend::web::WebPainter;
+//! use dewey::core::{Color, Rect};
+//! use dewey::paint::Painter;
 //!
-//! let painter = WebPainter::new("my-canvas-id");
-//! WebRunner::new(model, painter).start();
+//! let mut painter = WebPainter::new("my-canvas-id");
+//! painter.fill_rect(Rect::new(0.0, 0.0, 100.0, 40.0), Color::BLUE, 4.0);
+//!
+//! // Hand the recorded operations to the page to replay.
+//! let commands = painter.to_json();
+//! assert!(commands.contains("my-canvas-id") || !commands.is_empty());
 //! ```
 
 use crate::core::style::TextStyle;

@@ -79,13 +79,38 @@ use crate::ontology::Discoverable;
 ///
 /// # Implementing
 ///
-/// ```ignore
-/// impl Widget for MyWidget {
+/// ```
+/// use dewey::core::{Color, Position, Rect, Style};
+/// use dewey::ontology::*;
+/// use dewey::runtime::Frame;
+/// use dewey::widget::Widget;
+///
+/// struct Badge {
+///     text: String,
+///     style: Style,
+/// }
+///
+/// impl Widget for Badge {
 ///     fn render(self, area: Rect, frame: &mut Frame<'_>) {
-///         frame.painter().fill_rect(area, self.style.background.unwrap_or(Color::TRANSPARENT));
-///         frame.painter().draw_text(area, &self.text, self.style.text.as_ref());
+///         let background = self.style.background.unwrap_or(Color::TRANSPARENT);
+///         frame.painter().fill_rect(area, background, 4.0);
+///         let text_style = self.style.resolved_text();
+///         frame.painter().text(
+///             Position::new(area.x + 8.0, area.y + 4.0),
+///             &self.text,
+///             &text_style,
+///         );
 ///     }
 /// }
+/// # impl Discoverable for Badge {
+/// #     fn schema(&self) -> WidgetSchema {
+/// #         WidgetSchema::new("Badge", "A small label", SemanticRole::Display)
+/// #     }
+/// #     fn capabilities(&self) -> Vec<AgentCapability> { Vec::new() }
+/// #     fn actions(&self) -> Vec<AgentAction> { Vec::new() }
+/// #     fn semantic_role(&self) -> SemanticRole { SemanticRole::Display }
+/// #     fn agent_state(&self) -> serde_json::Value { serde_json::json!({}) }
+/// # }
 /// ```
 pub trait Widget: Discoverable {
     /// Render this widget into the given area.
@@ -104,16 +129,41 @@ pub trait Widget: Discoverable {
 ///
 /// # Implementing
 ///
-/// ```ignore
-/// impl StatefulWidget for MyEditor {
+/// ```
+/// use dewey::core::{Position, Rect, Style};
+/// use dewey::ontology::*;
+/// use dewey::runtime::Frame;
+/// use dewey::widget::StatefulWidget;
+///
+/// #[derive(Default)]
+/// struct EditorState {
+///     text: String,
+///     last_area: Rect,
+/// }
+///
+/// struct Editor;
+///
+/// impl StatefulWidget for Editor {
 ///     type State = EditorState;
 ///
 ///     fn render(self, area: Rect, frame: &mut Frame<'_>, state: &mut EditorState) {
-///         // Read and mutate state as needed
+///         // Read and mutate state as needed.
 ///         state.last_area = area;
-///         frame.painter().draw_text(area, &state.text, None);
+///         let style = Style::default().resolved_text();
+///         frame
+///             .painter()
+///             .text(Position::new(area.x, area.y), &state.text, &style);
 ///     }
 /// }
+/// # impl Discoverable for Editor {
+/// #     fn schema(&self) -> WidgetSchema {
+/// #         WidgetSchema::new("Editor", "A text editor", SemanticRole::Input)
+/// #     }
+/// #     fn capabilities(&self) -> Vec<AgentCapability> { Vec::new() }
+/// #     fn actions(&self) -> Vec<AgentAction> { Vec::new() }
+/// #     fn semantic_role(&self) -> SemanticRole { SemanticRole::Input }
+/// #     fn agent_state(&self) -> serde_json::Value { serde_json::json!({}) }
+/// # }
 /// ```
 pub trait StatefulWidget: Discoverable {
     /// The state type for this widget.

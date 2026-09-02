@@ -302,3 +302,68 @@ fn every_complete_readme_sample_compiles() {
         );
     }
 }
+
+/// A doctest may not be silenced without saying why.
+///
+/// All three ignored doctests in this crate were hiding broken code. The two
+/// `Widget` trait examples called `Painter::draw_text`, which has never
+/// existed, and passed a two-argument `fill_rect` that takes three. The web
+/// backend's usage example imported and called `WebRunner`, a type nobody ever
+/// wrote — the module is a painter with no runner in it at all.
+///
+/// `ignore` compiles nothing and checks nothing, so an example wearing it is
+/// prose that looks like code. `no_run` compiles without running, and
+/// `compile_fail` asserts the failure, and either is a claim about the code. A
+/// bare `ignore` needs a reason on the line above it.
+#[test]
+fn no_doctest_is_silently_ignored() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+    let mut offenders = Vec::new();
+    let mut stack = vec![root];
+
+    while let Some(dir) = stack.pop() {
+        for entry in std::fs::read_dir(&dir).expect("read dir").flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                stack.push(path);
+                continue;
+            }
+            if path.extension().and_then(|e| e.to_str()) != Some("rs") {
+                continue;
+            }
+            let text = std::fs::read_to_string(&path).unwrap_or_default();
+            let lines: Vec<&str> = text.lines().collect();
+            for (number, line) in lines.iter().enumerate() {
+                let trimmed = line.trim_start();
+                let fence = trimmed
+                    .strip_prefix("///")
+                    .or_else(|| trimmed.strip_prefix("//!"))
+                    .map(str::trim_start);
+                let Some(fence) = fence else { continue };
+                if !fence.starts_with("```") || !fence.contains("ignore") {
+                    continue;
+                }
+                // A reason on the line above is the whole exception.
+                let reason = number
+                    .checked_sub(1)
+                    .and_then(|i| lines.get(i))
+                    .map(|l| l.to_lowercase())
+                    .is_some_and(|l| l.contains("ignore:") || l.contains("cannot compile"));
+                if !reason {
+                    offenders.push(format!(
+                        "{}:{}",
+                        path.file_name().unwrap_or_default().to_string_lossy(),
+                        number + 1
+                    ));
+                }
+            }
+        }
+    }
+
+    assert!(
+        offenders.is_empty(),
+        "these doctests are ignored without a stated reason, so nothing checks \
+         them and nothing says why: {offenders:?}. Write the example so it \
+         compiles, or put `ignore: <reason>` on the line above the fence"
+    );
+}
