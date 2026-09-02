@@ -176,23 +176,25 @@ fn png_len(pixels: &[u8], w: u32, h: u32) -> usize {
 fn seeing(sizes: &[usize]) {
     println!("\n== 1. Seeing: what one observation costs ==\n");
     println!(
-        "  {:<6} {:>21} {:>21} {:>21} {:>21}",
+        "  {:<6} {:>21} {:>21} {:>21} {:>21} {:>21}",
         "",
         "tree (all widgets)",
         "shot (all widgets)",
         "shot (one viewport)",
+        "tree (one viewport)",
         "unchanged (since=)"
     );
     println!(
-        "  {:<6} {:>10} {:>10} {:>10} {:>10} {:>10} {:>10} {:>10} {:>10}",
-        "rows", "time", "bytes", "time", "bytes", "time", "bytes", "time", "bytes"
+        "  {:<6} {:>10} {:>10} {:>10} {:>10} {:>10} {:>10} {:>10} {:>10} {:>10} {:>10}",
+        "rows", "time", "bytes", "time", "bytes", "time", "bytes", "time", "bytes",
+        "time", "bytes"
     );
 
     for &n in sizes {
         let rounds = if n >= 1000 { 40 } else { 400 };
         let mut d = driver(n);
 
-        let full = d.process_request(&AgentRequest::GetTree { since: None });
+        let full = d.process_request(&AgentRequest::GetTree { since: None, viewport: None });
         let version = full
             .data
             .as_ref()
@@ -202,16 +204,18 @@ fn seeing(sizes: &[usize]) {
         let tree_bytes = serde_json::to_vec(&full.data).expect("tree json").len();
 
         let t_tree = best(rounds, || {
-            black_box(d.process_request(&AgentRequest::GetTree { since: None }));
+            black_box(d.process_request(&AgentRequest::GetTree { since: None, viewport: None }));
         });
         let t_poll = best(rounds, || {
             black_box(d.process_request(&AgentRequest::GetTree {
                 since: Some(version),
+                viewport: None,
             }));
         });
         let poll_bytes = serde_json::to_vec(
             &d.process_request(&AgentRequest::GetTree {
                 since: Some(version),
+                viewport: None,
             })
             .data,
         )
@@ -241,8 +245,27 @@ fn seeing(sizes: &[usize]) {
             black_box(png_len(&px, w, VIEWPORT_H));
         });
 
+        // The tree narrowed to the same window the screenshot shows.
+        let view = dewey::agent::protocol::Viewport {
+            x: 0.0,
+            y: 0.0,
+            width: 480.0,
+            height: VIEWPORT_H as f32,
+        };
+        let vp_tree = d.process_request_json(&AgentRequest::GetTree {
+            since: None,
+            viewport: Some(view),
+        });
+        let vp_tree_bytes = vp_tree.len();
+        let t_vp_tree = best(rounds, || {
+            black_box(d.process_request_json(&AgentRequest::GetTree {
+                since: None,
+                viewport: Some(view),
+            }));
+        });
+
         println!(
-            "  {:<6} {:>10} {:>10} {:>10} {:>10} {:>10} {:>10} {:>10} {:>10}",
+            "  {:<6} {:>10} {:>10} {:>10} {:>10} {:>10} {:>10} {:>10} {:>10} {:>10} {:>10}",
             n,
             fmt(t_tree),
             bytes(tree_bytes),
@@ -250,21 +273,29 @@ fn seeing(sizes: &[usize]) {
             bytes(png),
             fmt(t_vp),
             bytes(vp_png),
+            fmt(t_vp_tree),
+            bytes(vp_tree_bytes),
             fmt(t_poll),
             bytes(poll_bytes),
         );
     }
 
     println!(
-        "\n  The middle pair is generous to the tree: it grows the window until every
-  row is drawn. A real screenshot is the third pair — one viewport, near
-  constant however long the list, because it shows only what is on screen.
-  The tree describes every widget including the ones nobody can see.
-
-  So the tree is the smaller observation while the interface fits on a
-  screen, and the larger one as soon as it does not. At 1000 rows it is
-  3.7x slower and 24x bigger than a screenshot of the same application.
-  Nothing in the protocol pages or windows the tree; that is a real gap."
+        "\n  The middle pair is generous to the tree: it grows the window until\n  \
+               every row is drawn. A real screenshot is the third pair, one viewport,\n  \
+               near constant however long the list.\n  \
+             \n  \
+               The fourth pair is `get_tree` given the same viewport. At 1000 rows it\n  \
+               is 11.7 kB against a screenshot of 16.7 kB, and 971 us against 1.53 ms:\n  \
+               smaller and faster, where the unclipped tree was 24x bigger and 3.7x\n  \
+               slower. That column exists because measuring this benchmark showed the\n  \
+               tree losing, which it had no business doing.\n  \
+             \n  \
+               What is still true: the clipped time grows with the list even though\n  \
+               the bytes do not. Clipping happens after the frame is built, so it\n  \
+               saves what the agent reads and not what the framework builds. A list\n  \
+               long enough for that to matter wants virtualisation in the view, which\n  \
+               the widget already offers and this benchmark does not use."
     );
 }
 
@@ -286,7 +317,7 @@ fn acting() {
     let mut d = driver(N);
     // Read the target's position out of the observation, as an agent working
     // from a screenshot would read it off the image.
-    let tree = d.process_request(&AgentRequest::GetTree { since: None });
+    let tree = d.process_request(&AgentRequest::GetTree { since: None, viewport: None });
     let bounds = find_bounds(&tree.data.clone().unwrap(), &format!("toggle_{TARGET}"))
         .expect("target is on screen");
     let (cx, cy) = (bounds.0 + bounds.2 / 2.0, bounds.1 + bounds.3 / 2.0);
@@ -306,7 +337,7 @@ fn acting() {
 
     // -- ontology path ---------------------------------------------------
     let mut d = driver(N);
-    d.process_request(&AgentRequest::GetTree { since: None });
+    d.process_request(&AgentRequest::GetTree { since: None, viewport: None });
     raise_banner(&mut d);
     let r = d.process_request(&AgentRequest::ExecuteAction {
         agent_id: format!("toggle_{TARGET}"),
@@ -586,8 +617,8 @@ fn main() {
     println!(" ");
     println!("  does not");
     println!("    say anything about appearance: the white-on-white label passes");
-    println!("    scale past one screenful — at 1000 rows the tree is 3.7x slower");
-    println!("    and 24x bigger than a screenshot, because it has no viewport");
+    println!("    make an observation constant-time: a viewport keeps the bytes");
+    println!("    flat but the frame behind it is still built in full");
     println!("    make an action cheaper: by id and by coordinate cost the same");
     println!("    come free: a tree-building frame is 1.6-2.0x a plain one");
 }

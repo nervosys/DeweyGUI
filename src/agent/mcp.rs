@@ -135,6 +135,17 @@ fn tool_definitions() -> serde_json::Value {
                     "since": {
                         "type": "integer",
                         "description": "Version last seen; omit for a full tree"
+                    },
+                    "viewport": {
+                        "type": "object",
+                        "description": "Describe only widgets intersecting this rectangle. Without it the tree covers every widget including those scrolled out of sight.",
+                        "properties": {
+                            "x": { "type": "number" },
+                            "y": { "type": "number" },
+                            "width": { "type": "number" },
+                            "height": { "type": "number" }
+                        },
+                        "required": ["x", "y", "width", "height"]
                     }
                 }
             }
@@ -276,6 +287,9 @@ fn parse_tool_call(name: &str, args: &serde_json::Value) -> Result<AgentRequest,
         "quit" => Ok(AgentRequest::Quit),
         "get_tree" => Ok(AgentRequest::GetTree {
             since: args.get("since").and_then(serde_json::Value::as_u64),
+            viewport: args
+                .get("viewport")
+                .and_then(|v| serde_json::from_value(v.clone()).ok()),
         }),
         "validate" => Ok(AgentRequest::Validate),
         "query_ontology" => Ok(AgentRequest::QueryOntology {
@@ -566,11 +580,17 @@ mod tests {
         ));
         assert!(matches!(
             parse_tool_call("get_tree", &json!({})).unwrap(),
-            AgentRequest::GetTree { since: None }
+            AgentRequest::GetTree {
+                since: None,
+                viewport: None
+            }
         ));
         assert!(matches!(
             parse_tool_call("get_tree", &json!({"since": 7})).unwrap(),
-            AgentRequest::GetTree { since: Some(7) }
+            AgentRequest::GetTree {
+                since: Some(7),
+                viewport: None
+            }
         ));
 
         let defs = tool_definitions();

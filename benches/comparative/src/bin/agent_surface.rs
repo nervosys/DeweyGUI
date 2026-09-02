@@ -137,16 +137,16 @@ fn surface(ctx: &egui::Context, titles: &[String]) {
 
     let mut d = dewey_driver(ROWS);
     let tree = d
-        .process_request(&AgentRequest::GetTree { since: None })
+        .process_request(&AgentRequest::GetTree { since: None, viewport: None })
         .data
         .expect("tree");
     let dewey_json = serde_json::to_string(&tree).expect("json");
     let t_dewey = best(200, || {
-        let r = d.process_request(&AgentRequest::GetTree { since: None });
+        let r = d.process_request(&AgentRequest::GetTree { since: None, viewport: None });
         black_box(serde_json::to_string(&r.data).expect("json"));
     });
     let t_dewey_direct = best(200, || {
-        black_box(d.process_request_json(&AgentRequest::GetTree { since: None }));
+        black_box(d.process_request_json(&AgentRequest::GetTree { since: None, viewport: None }));
     });
 
     let update = egui_frame(ctx, titles).expect("accesskit enabled");
@@ -255,7 +255,7 @@ fn naming(ctx: &egui::Context) {
 
     // -- dewey: the author named it --------------------------------------
     let mut d = dewey_driver(ROWS);
-    d.process_request(&AgentRequest::GetTree { since: None });
+    d.process_request(&AgentRequest::GetTree { since: None, viewport: None });
     let r = d.process_request(&AgentRequest::ExecuteAction {
         agent_id: format!("toggle_{TARGET}"),
         action: "toggle".into(),

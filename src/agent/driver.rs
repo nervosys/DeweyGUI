@@ -11,6 +11,54 @@ use crate::runtime::{Command, Frame, Model};
 use super::protocol::{AgentRequest, AgentResponse, RequestEnvelope};
 use super::session::AgentSession;
 
+/// A copy of `tree` describing only the widgets a viewport shows.
+///
+/// The reply also carries `total` and `shown`, so an agent can tell a short
+/// list from a long one it is looking at part of. Nodes are kept when they or
+/// any descendant intersect, so a container does not vanish and take its
+/// visible children with it.
+fn clip_to_viewport(
+    tree: &crate::ontology::UiTree,
+    view: crate::agent::protocol::Viewport,
+) -> crate::ontology::UiTree {
+    fn keep(node: &crate::ontology::UiNode, view: &crate::agent::protocol::Viewport) -> bool {
+        node.bounds.as_ref().is_none_or(|b| view.shows(b))
+            || node.children.iter().any(|c| keep(c, view))
+    }
+    fn prune(
+        node: &crate::ontology::UiNode,
+        view: &crate::agent::protocol::Viewport,
+        shown: &mut usize,
+        total: &mut usize,
+    ) -> crate::ontology::UiNode {
+        let mut out = node.clone();
+        out.children = Vec::new();
+        for child in &node.children {
+            *total += 1;
+            if keep(child, view) {
+                *shown += 1;
+                out.children.push(prune(child, view, shown, total));
+            } else {
+                count(child, total);
+            }
+        }
+        out
+    }
+    fn count(node: &crate::ontology::UiNode, total: &mut usize) {
+        for child in &node.children {
+            *total += 1;
+            count(child, total);
+        }
+    }
+
+    let (mut shown, mut total) = (0usize, 0usize);
+    let root = prune(&tree.root, &view, &mut shown, &mut total);
+    let mut out = crate::ontology::UiTree::new(root);
+    out.total_nodes = Some(total);
+    out.shown_nodes = Some(shown);
+    out
+}
+
 /// Run a Dewey application headlessly, driven entirely by agent protocol messages.
 pub struct HeadlessDriver<M: Model> {
     model: M,
@@ -86,7 +134,11 @@ impl<M: Model + 'static> HeadlessDriver<M> {
         // application first.
         // An agent polling a screen that has not moved gets told so, without
         // the application being rendered or the tree serialised.
-        if let AgentRequest::GetTree { since: Some(seen) } = request {
+        if let AgentRequest::GetTree {
+            since: Some(seen),
+            viewport: None,
+        } = request
+        {
             if *seen == self.version {
                 return AgentResponse::ok(serde_json::json!({
                     "unchanged": true,
@@ -202,6 +254,18 @@ impl<M: Model + 'static> HeadlessDriver<M> {
                     let cmd = self.model.update(msg);
                     self.process_command(cmd);
                 }
+            }
+        }
+
+        // Narrow a tree reply to the requested viewport.
+        if let AgentRequest::GetTree {
+            viewport: Some(view),
+            ..
+        } = request
+        {
+            if let Some(full) = self.ontology.tree() {
+                let clipped = clip_to_viewport(full, *view);
+                response.data = serde_json::to_value(&clipped).ok();
             }
         }
 
@@ -355,7 +419,7 @@ impl<M: Model + 'static> HeadlessDriver<M> {
     }
 
     pub fn process_request_json(&mut self, request: &AgentRequest) -> String {
-        let AgentRequest::GetTree { since } = request else {
+        let AgentRequest::GetTree { since, viewport } = request else {
             let response = self.process_request(request);
             return serde_json::to_string(&response).unwrap_or_default();
         };
@@ -380,6 +444,21 @@ impl<M: Model + 'static> HeadlessDriver<M> {
         struct Envelope<'a> {
             success: bool,
             data: Payload<'a>,
+        }
+
+        if let Some(view) = viewport {
+            let Some(full) = self.ontology.tree() else {
+                return String::new();
+            };
+            let clipped = clip_to_viewport(full, *view);
+            return serde_json::to_string(&Envelope {
+                success: true,
+                data: Payload {
+                    tree: Some(&clipped),
+                    version: self.version,
+                },
+            })
+            .unwrap_or_default();
         }
 
         serde_json::to_string(&Envelope {

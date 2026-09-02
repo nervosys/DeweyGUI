@@ -54,10 +54,18 @@ pub enum AgentRequest {
     /// serialising the tree is the most expensive thing an agent can ask for,
     /// and an agent polling a screen that has not moved asks for it
     /// repeatedly.
+    ///
+    /// Pass `viewport` to be sent only the widgets whose bounds intersect a
+    /// rectangle. The tree otherwise describes every widget in the interface,
+    /// including the ones scrolled out of sight, so for a long list it is
+    /// larger and slower than a screenshot of the same application — a
+    /// screenshot only ever shows one window's worth.
     #[serde(rename = "get_tree")]
     GetTree {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         since: Option<u64>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        viewport: Option<Viewport>,
     },
 
     /// Get the state of a specific widget by its agent ID.
@@ -160,6 +168,32 @@ pub enum InjectedEvent {
     /// A window resize event.
     #[serde(rename = "resize")]
     Resize { width: f32, height: f32 },
+}
+
+/// A rectangle limiting which widgets a tree reply describes.
+///
+/// Matches the region of the interface an agent can currently see, so a
+/// 10,000-row list costs one window's worth of tree rather than all of it.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct Viewport {
+    pub x: f32,
+    pub y: f32,
+    pub width: f32,
+    pub height: f32,
+}
+
+impl Viewport {
+    /// Whether a node's bounds fall partly inside this rectangle.
+    ///
+    /// Touching edges do not count as visible: a widget ending exactly at the
+    /// top of the viewport is above it.
+    #[must_use]
+    pub fn shows(&self, bounds: &crate::ontology::NodeBounds) -> bool {
+        bounds.x < self.x + self.width
+            && bounds.x + bounds.width > self.x
+            && bounds.y < self.y + self.height
+            && bounds.y + bounds.height > self.y
+    }
 }
 
 /// A response from the Dewey application to an agent request.

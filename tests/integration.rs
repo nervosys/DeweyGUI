@@ -1460,7 +1460,10 @@ fn mouse_click_routes_through_hit_map() {
     );
     d.init();
     // Build the frame so the hit map and messages exist.
-    let _ = d.process_request(&AgentRequest::GetTree { since: None });
+    let _ = d.process_request(&AgentRequest::GetTree {
+        since: None,
+        viewport: None,
+    });
 
     d.process_request(&AgentRequest::InjectEvent {
         event: InjectedEvent::MouseClick {
@@ -1666,11 +1669,17 @@ fn get_tree_since_reports_unchanged() {
     );
     d.init();
 
-    let first = d.process_request(&AgentRequest::GetTree { since: None });
+    let first = d.process_request(&AgentRequest::GetTree {
+        since: None,
+        viewport: None,
+    });
     let v = first.data.as_ref().unwrap()["version"].as_u64().unwrap();
 
     // Nothing has happened: the same version comes back as `unchanged`.
-    let again = d.process_request(&AgentRequest::GetTree { since: Some(v) });
+    let again = d.process_request(&AgentRequest::GetTree {
+        since: Some(v),
+        viewport: None,
+    });
     let data = again.data.unwrap();
     assert_eq!(data["unchanged"], serde_json::json!(true));
     assert!(data.get("root").is_none(), "no tree should be sent");
@@ -1681,7 +1690,10 @@ fn get_tree_since_reports_unchanged() {
         action: "click".into(),
         params: serde_json::Value::Null,
     });
-    let after = d.process_request(&AgentRequest::GetTree { since: Some(v) });
+    let after = d.process_request(&AgentRequest::GetTree {
+        since: Some(v),
+        viewport: None,
+    });
     let data = after.data.unwrap();
     assert!(
         data.get("unchanged").is_none(),
@@ -1837,7 +1849,10 @@ fn widget_mutation_responds_to_a_mouse_click() {
         200.0,
     );
     d.init();
-    let _ = d.process_request(&AgentRequest::GetTree { since: None });
+    let _ = d.process_request(&AgentRequest::GetTree {
+        since: None,
+        viewport: None,
+    });
 
     d.process_request(&AgentRequest::InjectEvent {
         event: InjectedEvent::MouseClick {
@@ -2720,7 +2735,13 @@ mod todo_agent_task {
         let null = serde_json::Value::Null;
 
         let steps = [
-            ("discover", AgentRequest::GetTree { since: None }),
+            (
+                "discover",
+                AgentRequest::GetTree {
+                    since: None,
+                    viewport: None,
+                },
+            ),
             (
                 "type item 1",
                 act(
@@ -2742,7 +2763,13 @@ mod todo_agent_task {
             // `toggle`, not `click`: the name the widget publishes.
             ("complete item 1", act("toggle_0", "toggle", null.clone())),
             ("filter active", act("filter_active", "click", null.clone())),
-            ("re-read", AgentRequest::GetTree { since: None }),
+            (
+                "re-read",
+                AgentRequest::GetTree {
+                    since: None,
+                    viewport: None,
+                },
+            ),
         ];
         for (label, req) in &steps {
             assert!(d.process_request(req).success, "step failed: {label}");
@@ -2758,9 +2785,12 @@ mod todo_agent_task {
         );
 
         let tree = serde_json::to_string(
-            &d.process_request(&AgentRequest::GetTree { since: None })
-                .data
-                .expect("tree"),
+            &d.process_request(&AgentRequest::GetTree {
+                since: None,
+                viewport: None,
+            })
+            .data
+            .expect("tree"),
         )
         .unwrap();
         assert!(
@@ -2948,7 +2978,10 @@ fn the_transport_json_path_drives_the_application() {
     // intermediate `serde_json::Value`; it must still be the same document.
     let tree_env = RequestEnvelope {
         id: Some("req-2".into()),
-        request: AgentRequest::GetTree { since: None },
+        request: AgentRequest::GetTree {
+            since: None,
+            viewport: None,
+        },
     };
     let direct: serde_json::Value =
         serde_json::from_str(&d.process_envelope_json(&tree_env)).expect("valid JSON");
@@ -2967,7 +3000,113 @@ fn the_transport_json_path_drives_the_application() {
     let unchanged: serde_json::Value =
         serde_json::from_str(&d.process_request_json(&AgentRequest::GetTree {
             since: Some(version),
+            viewport: None,
         }))
         .expect("valid JSON");
     assert_eq!(unchanged["data"]["unchanged"], serde_json::json!(true));
+}
+
+/// A viewport narrows a tree reply to the widgets it shows.
+///
+/// The tree otherwise describes every widget including those scrolled out of
+/// sight, which made it larger and slower than a screenshot for a long list —
+/// a screenshot only ever shows one window's worth. Measured at 1000 rows the
+/// full tree was 401 kB against a screenshot's 16.7 kB.
+#[test]
+fn a_viewport_narrows_the_tree_to_what_is_visible() {
+    use dewey::agent::driver::HeadlessDriver;
+    use dewey::agent::protocol::{AgentRequest, Viewport};
+
+    const ROWS: usize = 200;
+    const ROW_H: f32 = 20.0;
+
+    struct App;
+    impl Model for App {
+        type Msg = ();
+        fn update(&mut self, _m: ()) -> Command<()> {
+            Command::None
+        }
+        fn view(&self, frame: &mut Frame<'_>) {
+            for i in 0..ROWS {
+                Label::new(format!("row {i}"))
+                    .agent_id(format!("row_{i}"))
+                    .render(Rect::new(0.0, i as f32 * ROW_H, 300.0, ROW_H), frame);
+            }
+        }
+    }
+
+    let mut d = HeadlessDriver::new(App, 300.0, ROWS as f32 * ROW_H);
+    d.init();
+
+    let full = d
+        .process_request(&AgentRequest::GetTree {
+            since: None,
+            viewport: None,
+        })
+        .data
+        .expect("tree");
+    let full_bytes = serde_json::to_string(&full).expect("json").len();
+
+    // One window's worth: the first ten rows.
+    let view = Viewport {
+        x: 0.0,
+        y: 0.0,
+        width: 300.0,
+        height: 10.0 * ROW_H,
+    };
+    let clipped = d
+        .process_request(&AgentRequest::GetTree {
+            since: None,
+            viewport: Some(view),
+        })
+        .data
+        .expect("tree");
+    let clipped_bytes = serde_json::to_string(&clipped).expect("json").len();
+
+    assert_eq!(
+        clipped["shown_nodes"],
+        serde_json::json!(10),
+        "ten rows intersect the viewport: {clipped}"
+    );
+    assert_eq!(
+        clipped["total_nodes"],
+        serde_json::json!(ROWS),
+        "and the agent is told how many there are in all"
+    );
+    assert!(
+        clipped_bytes * 10 < full_bytes,
+        "clipping 200 rows to 10 should save an order of magnitude: \
+         {clipped_bytes} against {full_bytes}"
+    );
+
+    let ids = serde_json::to_string(&clipped).expect("json");
+    assert!(ids.contains("row_0") && ids.contains("row_9"));
+    assert!(
+        !ids.contains("row_10") && !ids.contains("row_199"),
+        "rows below the viewport must not be described"
+    );
+
+    // A viewport further down shows different rows, not the first ones again.
+    let lower = d
+        .process_request(&AgentRequest::GetTree {
+            since: None,
+            viewport: Some(Viewport {
+                y: 100.0 * ROW_H,
+                ..view
+            }),
+        })
+        .data
+        .expect("tree");
+    let lower_ids = serde_json::to_string(&lower).expect("json");
+    assert!(lower_ids.contains("row_100") && !lower_ids.contains("row_0"));
+
+    // The transport path must produce the same document as the Value path.
+    let direct: serde_json::Value =
+        serde_json::from_str(&d.process_request_json(&AgentRequest::GetTree {
+            since: None,
+            viewport: Some(view),
+        }))
+        .expect("valid JSON");
+    assert_eq!(direct["data"]["shown_nodes"], serde_json::json!(10));
+    assert_eq!(direct["data"]["root"], clipped["root"]);
 }

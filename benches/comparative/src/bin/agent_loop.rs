@@ -122,7 +122,7 @@ fn main() {
     const ROUNDS: usize = 2_000;
 
     let steps: Vec<(&str, AgentRequest)> = vec![
-        ("1. discover    (get_tree)", AgentRequest::GetTree { since: None }),
+        ("1. discover    (get_tree)", AgentRequest::GetTree { since: None, viewport: None }),
         (
             "2. read schema (get_schema Button)",
             AgentRequest::GetSchema {
@@ -226,7 +226,7 @@ fn main() {
     // comparison.
     {
         let mut d = driver();
-        let first = d.process_request(&AgentRequest::GetTree { since: None });
+        let first = d.process_request(&AgentRequest::GetTree { since: None, viewport: None });
         let version = first
             .data
             .as_ref()
@@ -235,8 +235,9 @@ fn main() {
             .expect("a tree reply carries the version it was taken at");
 
         let unchanged = d.process_request(&AgentRequest::GetTree {
-            since: Some(version),
-        });
+                since: Some(version),
+                viewport: None,
+            });
         assert_eq!(
             unchanged.data.as_ref().and_then(|v| v.get("unchanged")),
             Some(&serde_json::json!(true)),
@@ -247,12 +248,13 @@ fn main() {
         let mut poll = Duration::MAX;
         for _ in 0..ROUNDS {
             let t = Instant::now();
-            black_box(d.process_request(&AgentRequest::GetTree { since: None }));
+            black_box(d.process_request(&AgentRequest::GetTree { since: None, viewport: None }));
             full = full.min(t.elapsed());
 
             let t = Instant::now();
             black_box(d.process_request(&AgentRequest::GetTree {
                 since: Some(version),
+                viewport: None,
             }));
             poll = poll.min(t.elapsed());
         }

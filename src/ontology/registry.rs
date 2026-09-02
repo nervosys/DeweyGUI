@@ -217,11 +217,25 @@ impl OntologyRegistry {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UiTree {
     pub root: UiNode,
+    /// How many nodes the interface has, when this tree is only part of it.
+    ///
+    /// Set on a reply narrowed to a viewport, so an agent can tell a short
+    /// list from a long one it is seeing a window of. `None` means the tree is
+    /// the whole interface.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub total_nodes: Option<usize>,
+    /// How many of `total_nodes` this tree describes.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shown_nodes: Option<usize>,
 }
 
 impl UiTree {
     pub fn new(root: UiNode) -> Self {
-        Self { root }
+        Self {
+            root,
+            total_nodes: None,
+            shown_nodes: None,
+        }
     }
 
     /// Depth-first search for a node by agent_id.
