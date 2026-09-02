@@ -328,6 +328,17 @@ nothing to return and the call cost nothing. Reading the catalogue is now
 real, and it is session setup rather than part of a loop: an agent learns
 what a `Button` is once and then works.
 
+`benches/comparative/src/bin/ontology.rs` measures this against the only real
+alternative — the same application driven from pixels and coordinates — and
+reports where the ontology loses as well as where it wins. Two findings worth
+stating up front. **A coordinate captured one observation earlier toggled the
+wrong row after a single line was inserted above the list, and reported
+success**; the id was still correct, and the two cost the same, so what the
+ontology buys there is correctness rather than speed. And **the tree has no
+viewport**: at 1000 rows it is 3.7× slower and 24× larger than a screenshot of
+the same application, because it describes every widget including the ones
+nobody can see.
+
 An agent can also ask whether the interface it just built is *operable*, which
 a screenshot cannot tell it:
 

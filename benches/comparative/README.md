@@ -143,6 +143,97 @@ minutes apart gave 3.40 ms and 4.74 ms, a 1.4× spread, where every other row
 moved by under 10%. The table takes the faster one, so the ratio quoted against
 iced is the smaller of the two.
 
+## What the ontology buys, and what it does not
+
+`cargo run --release --bin ontology`
+
+The other benchmarks here measure how fast a frame is built. This one measures
+what that cost is being spent *on*, and looks as hard for where the ontology
+loses as for where it wins.
+
+There is no like-for-like framework to compare against: neither egui nor iced
+publishes a structure an agent can query, so an agent driving them works from
+pixels and screen coordinates. That is the baseline used — **the same
+application, driven both ways.** Both paths exist in this crate, so both run.
+
+### 1. Seeing
+
+| Rows | tree | | screenshot, all rows | | screenshot, one viewport | | unchanged |
+| ---- | ------- | ------- | ------- | ------- | ------- | ------- | ------ |
+|      | time | bytes | time | bytes | time | bytes | bytes |
+| 10   | 22.3 us | 4.5 kB | 147.6 us | 7.3 kB | 683.9 us | 12.7 kB | 30 B |
+| 100  | 371.4 us | 40.2 kB | 3.16 ms | 57.6 kB | 847.4 us | 16.7 kB | 30 B |
+| 1000 | 3.92 ms | 401.5 kB | 37.31 ms | 553.3 kB | 1.15 ms | 16.7 kB | 30 B |
+
+The middle pair grows the window until every row is drawn, which flatters the
+tree. A real screenshot is the third pair: one viewport, near constant however
+long the list, because it shows only what is on screen. The tree describes
+every widget including the ones nobody can see.
+
+So the tree is the smaller observation while the interface fits on a screen and
+the larger one as soon as it does not. **At 1000 rows the structured
+observation is 3.7x slower and 24x bigger than a screenshot of the same
+application.** Nothing in the protocol pages or windows the tree; that is a
+real gap, and the `since=` column is the mitigation that exists today — a
+re-poll of an unchanged screen costs 100 ns and 30 bytes at every size.
+
+### 2. Acting
+
+An agent observes the position of `toggle_17`, then one row is inserted above
+the list — nothing added or removed, every row simply one row lower — and both
+agents act.
+
+| Path | reported | actually changed |
+| ---- | -------- | ---------------- |
+| click at the observed coordinate | success | `toggle_16` — the wrong row |
+| `execute_action("toggle_17")` | success | `toggle_17` — correct |
+
+The two cost the same: 25.6 us by id against 25.2 us by coordinate. The
+ontology buys nothing on speed here. What it buys is that one of them was still
+correct after the screen moved — and note that **neither reported otherwise**.
+The coordinate click was a success by every measure the agent could see.
+
+### 3. Verifying
+
+Six interfaces, each broken in a way that compiles and renders.
+
+| Fault | `validate` | screenshot |
+| ----- | ---------- | ---------- |
+| button rendered with no id | `unaddressable_widget` | — |
+| two widgets share one id | `duplicate_agent_id` | — |
+| widget laid out at zero size | `zero_size_widget` | visible |
+| widget laid out off screen | `offscreen_widget` | visible |
+| wired for `select_row`, not `sort` | `unhandled_action` | — |
+| white text on white ground | — | visible |
+
+5 of 6 against 3 of 6. The last row is the one worth dwelling on: white on
+white is structurally perfect — correct id, real bounds, on screen, fully
+wired — and `validate` passes it. The ontology says nothing about appearance
+and cannot substitute for looking.
+
+### 4. Paying
+
+| Rows | plain frame | on demand | every frame | penalty |
+| ---- | ----------- | --------- | ----------- | ------- |
+| 10   | 3.1 us   | 0.2 ms/s  | 0.3 ms/s  | 1.58x |
+| 100  | 24.5 us  | 1.7 ms/s  | 2.6 ms/s  | 1.80x |
+| 1000 | 232.2 us | 16.2 ms/s | 27.5 ms/s | 1.97x |
+
+Amortized at 60 fps against 5 agent queries a second. With no agent attached
+the cost is not reduced — it is not incurred, because `ontology_enabled()` is
+checked before a node is built rather than before it is registered.
+
+### Summary
+
+**Buys:** an action that still reaches the right widget after the screen moves;
+a re-poll costing 100 ns and 30 bytes instead of a render; three structural
+faults out of six that no screenshot would show.
+
+**Does not buy:** anything about appearance; any speed advantage per action;
+scale past one screenful, where an unpaginated tree loses to a screenshot on
+both time and size; and it is not free — a tree-building frame is 1.6-2.0x a
+plain one.
+
 ### On-demand ontology, amortized
 
 `OntologyMode::OnDemand` (the default) does not build the tree during a frame.

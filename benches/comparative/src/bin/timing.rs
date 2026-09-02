@@ -10,6 +10,7 @@
 //!   2. reports the MINIMUM observed time, which approximates the uncontended
 //!      cost — some rounds get a clean CPU slice, and no round can run faster
 //!      than the real work allows.
+//!
 //! The median is printed alongside to show how much noise was rejected.
 
 use std::hint::black_box;

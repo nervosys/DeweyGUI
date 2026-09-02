@@ -436,6 +436,7 @@ dependencies = [
  "iced_core",
  "iced_renderer",
  "iced_widget",
+ "png",
  "serde_json",
 ]
 
