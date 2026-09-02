@@ -239,3 +239,66 @@ fn documented_responses_match_what_the_server_sends() {
         "no request/response pair was compared, so this test proves nothing"
     );
 }
+
+/// Every complete Rust sample in the README must compile.
+///
+/// The quick start — the first code a reader meets — did not. It returned
+/// `Result<(), eframe::Error>`, and `Result` in this crate's prelude is
+/// Dewey's own one-parameter alias, so the signature was rejected. Nothing
+/// compiled the README, so it had been wrong for as long as the alias has
+/// existed.
+///
+/// Fragments are marked ```rust,ignore and skipped: the agpu sample continues
+/// the one above it and needs a feature, and the logging line is one
+/// statement.
+#[test]
+fn every_complete_readme_sample_compiles() {
+    let readme = std::fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("README.md"))
+        .expect("README");
+
+    let mut samples = Vec::new();
+    let mut current: Option<String> = None;
+    for line in readme.lines() {
+        match (line.trim_end(), current.as_mut()) {
+            ("```rust", None) => current = Some(String::new()),
+            ("```", Some(_)) => samples.push(current.take().unwrap_or_default()),
+            (_, Some(buffer)) => {
+                buffer.push_str(line);
+                buffer.push('\n');
+            }
+            _ => {}
+        }
+    }
+
+    assert!(
+        !samples.is_empty(),
+        "no checkable sample found; if they were all marked `ignore` this test \
+         would pass while proving nothing"
+    );
+
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    for (index, sample) in samples.iter().enumerate() {
+        assert!(
+            sample.contains("fn main"),
+            "sample {index} has no `fn main`, so it is a fragment and should be \
+             marked ```rust,ignore rather than presented as a program"
+        );
+
+        let name = format!("_readme_sample_{index}");
+        let path = root.join("examples").join(format!("{name}.rs"));
+        std::fs::write(&path, sample).expect("write sample");
+
+        let output = std::process::Command::new("cargo")
+            .args(["check", "--quiet", "--example", &name])
+            .current_dir(root)
+            .output();
+        let _ = std::fs::remove_file(&path);
+
+        let output = output.expect("run cargo");
+        assert!(
+            output.status.success(),
+            "README sample {index} does not compile:\n{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+}

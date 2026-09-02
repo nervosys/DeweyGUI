@@ -113,7 +113,7 @@ impl Model for App {
     fn handle_event(&self, _event: Event) -> Option<Msg> { None }
 }
 
-fn main() -> Result<(), eframe::Error> {
+fn main() -> std::result::Result<(), eframe::Error> {
     Program::new(App { count: 0 }).run()
 }
 ```
@@ -127,7 +127,8 @@ For a standalone Vulkan-first GPU backend without egui:
 dewey = { version = "1", default-features = false, features = ["agpu-backend"] }
 ```
 
-```rust
+```rust,ignore
+// Continues the example above, and needs `features = ["agpu-backend"]`.
 use dewey::backend::agpu_backend::AgpuProgram;
 use dewey::prelude::*;
 
@@ -522,7 +523,7 @@ falls back to FIFO correctly. wgpu 30 demoted the same line to `log::debug!`.
 
 Silence it in the meantime:
 
-```rust
+```rust,ignore
 env_logger::builder().parse_filters("info,wgpu_hal=off").init();
 ```
 
