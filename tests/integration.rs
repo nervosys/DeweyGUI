@@ -2786,3 +2786,110 @@ mod todo_agent_task {
         assert!(d.validate().is_empty(), "{:?}", d.validate());
     }
 }
+
+/// Content widgets reach the model too, not a copy thrown away next frame.
+///
+/// `Canvas`, `Chart` and `RichText` each implement `Discoverable::execute_action`
+/// and mutate themselves — but a widget is rebuilt inside `view` every frame,
+/// so that change lasts until the next redraw. Nothing in the protocol calls
+/// it either. Without a handler an agent's `clear` reported success and the
+/// picture stayed exactly as it was.
+#[test]
+fn content_widgets_change_the_application_not_the_frame() {
+    use dewey::agent::driver::HeadlessDriver;
+    use dewey::agent::protocol::AgentRequest;
+    use dewey::widget::{Canvas, Chart, ChartChange, RichText, RichTextChange, Widget};
+
+    #[derive(Default)]
+    struct App {
+        strokes: usize,
+        series: Vec<(String, Vec<f64>)>,
+        markdown: String,
+    }
+
+    impl Model for App {
+        type Msg = ();
+        fn update(&mut self, _m: ()) -> Command<()> {
+            Command::None
+        }
+        fn view(&self, frame: &mut Frame<'_>) {
+            let r = frame.area.rows_of(&[60.0, 60.0, 60.0]);
+            Canvas::new()
+                .on_clear("sketch", |a: &mut App| a.strokes = 0)
+                .render(r[0], frame);
+            Chart::line("readings")
+                .on_change("plot", |a: &mut App, c: ChartChange<'_>| match c {
+                    ChartChange::AddSeries { label, values } => {
+                        a.series.push((label.to_string(), values));
+                    }
+                    ChartChange::RemoveSeries(i) => {
+                        a.series.remove(i);
+                    }
+                    ChartChange::Clear => a.series.clear(),
+                })
+                .render(r[1], frame);
+            RichText::new(Vec::new())
+                .on_change("notes", |a: &mut App, c: RichTextChange<'_>| match c {
+                    RichTextChange::SetMarkdown(md) => a.markdown = md.to_string(),
+                    RichTextChange::Clear => a.markdown.clear(),
+                })
+                .render(r[2], frame);
+        }
+    }
+
+    let mut d = HeadlessDriver::new(
+        App {
+            strokes: 7,
+            ..Default::default()
+        },
+        300.0,
+        200.0,
+    );
+    d.init();
+
+    let call = |d: &mut HeadlessDriver<App>, id: &str, action: &str, params| {
+        let r = d.process_request(&AgentRequest::ExecuteAction {
+            agent_id: id.into(),
+            action: action.into(),
+            params,
+        });
+        assert!(r.success, "{id}.{action} was refused");
+    };
+
+    call(&mut d, "sketch", "clear", serde_json::Value::Null);
+    assert_eq!(d.model().strokes, 0, "Canvas::on_clear");
+
+    call(
+        &mut d,
+        "plot",
+        "add_series",
+        serde_json::json!({"label": "temp", "values": [1.0, 2.5]}),
+    );
+    assert_eq!(
+        d.model().series,
+        [("temp".to_string(), vec![1.0, 2.5])],
+        "Chart::on_change add_series"
+    );
+    call(
+        &mut d,
+        "plot",
+        "remove_series",
+        serde_json::json!({"index": 0}),
+    );
+    assert!(
+        d.model().series.is_empty(),
+        "Chart::on_change remove_series"
+    );
+
+    call(
+        &mut d,
+        "notes",
+        "set_markdown",
+        serde_json::json!({"content": "# hi"}),
+    );
+    assert_eq!(d.model().markdown, "# hi");
+    call(&mut d, "notes", "clear", serde_json::Value::Null);
+    assert!(d.model().markdown.is_empty());
+
+    assert!(d.validate().is_empty(), "{:?}", d.validate());
+}

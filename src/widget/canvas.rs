@@ -65,6 +65,7 @@ pub struct Canvas {
     agent_id: std::borrow::Cow<'static, str>,
     commands: Vec<DrawCommand>,
     background: Option<[u8; 4]>,
+    handlers: Vec<(&'static str, Box<dyn std::any::Any + Send>)>,
 }
 
 impl Canvas {
@@ -72,9 +73,27 @@ impl Canvas {
     pub fn new() -> Self {
         Self {
             agent_id: std::borrow::Cow::Borrowed(""),
+            handlers: Vec::new(),
             commands: Vec::new(),
             background: None,
         }
+    }
+
+    /// Name this canvas and give it the change to apply on `clear`.
+    ///
+    /// A canvas is rebuilt from the model on every frame, so clearing the
+    /// widget clears something that is about to be thrown away. The drawing
+    /// list lives in the application, and this is how an agent reaches it.
+    #[must_use]
+    pub fn on_clear<M: 'static>(
+        mut self,
+        id: impl Into<std::borrow::Cow<'static, str>>,
+        f: impl FnOnce(&mut M) + Send + 'static,
+    ) -> Self {
+        self.agent_id = id.into();
+        let handler: crate::runtime::Mutation<M> = Box::new(f);
+        self.handlers.push(("clear", Box::new(handler)));
+        self
     }
 
     pub fn agent_id(mut self, id: impl Into<std::borrow::Cow<'static, str>>) -> Self {
@@ -242,7 +261,13 @@ impl Discoverable for Canvas {
 }
 
 impl Widget for Canvas {
-    fn render(self, area: Rect, frame: &mut Frame<'_>) {
+    fn render(mut self, area: Rect, frame: &mut Frame<'_>) {
+        if !self.agent_id.is_empty() {
+            for (action, handler) in self.handlers.drain(..) {
+                frame.register_message(self.agent_id.clone(), action, handler);
+            }
+        }
+
         if !self.agent_id.is_empty() {
             if frame.ontology_enabled() {
                 let node = UiNode::new("Canvas", SemanticRole::Canvas)

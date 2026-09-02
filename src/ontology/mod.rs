@@ -38,6 +38,17 @@ pub trait Discoverable {
     fn agent_state(&self) -> serde_json::Value;
 
     /// Attempt to execute a named action with the given JSON parameters.
+    ///
+    /// **This is not the path an agent takes.** Widgets are values built
+    /// afresh inside `view` on every frame, so a change made here is
+    /// discarded at the end of the frame that made it. Nothing in the agent
+    /// protocol calls it; `execute_action` over the wire reaches the handler
+    /// a widget registered (`Button::on`, `Table::on_change`, …) and then
+    /// [`Model::execute_action`](crate::runtime::Model::execute_action),
+    /// both of which change the application's own state.
+    ///
+    /// It remains useful for widgets that own durable state, and for testing
+    /// a widget's action semantics in isolation.
     fn execute_action(
         &mut self,
         action: &str,

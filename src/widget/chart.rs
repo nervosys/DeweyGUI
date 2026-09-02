@@ -47,12 +47,24 @@ pub enum ChartKind {
 ///     .series(Series::new("2025", vec![100.0, 150.0, 200.0], Color::BLUE))
 ///     .series(Series::new("2026", vec![120.0, 180.0, 250.0], Color::GREEN));
 /// ```
+/// What an agent asked a [`Chart`] to do.
+#[derive(Debug, Clone, PartialEq)]
+pub enum ChartChange<'a> {
+    /// Add a series under this label.
+    AddSeries { label: &'a str, values: Vec<f64> },
+    /// Remove the series at this index.
+    RemoveSeries(usize),
+    /// Remove every series.
+    Clear,
+}
+
 pub struct Chart {
     kind: ChartKind,
     title: String,
     labels: Vec<String>,
     series: Vec<Series>,
     agent_id: std::borrow::Cow<'static, str>,
+    handlers: Vec<(&'static str, Box<dyn std::any::Any + Send>)>,
 }
 
 impl Chart {
@@ -65,6 +77,7 @@ impl Chart {
             labels: Vec::new(),
             series: Vec::new(),
             agent_id: std::borrow::Cow::Borrowed(""),
+            handlers: Vec::new(),
         }
     }
 
@@ -77,6 +90,7 @@ impl Chart {
             labels: Vec::new(),
             series: Vec::new(),
             agent_id: std::borrow::Cow::Borrowed(""),
+            handlers: Vec::new(),
         }
     }
 
@@ -89,6 +103,7 @@ impl Chart {
             labels: Vec::new(),
             series: Vec::new(),
             agent_id: std::borrow::Cow::Borrowed(""),
+            handlers: Vec::new(),
         }
     }
 
@@ -105,6 +120,53 @@ impl Chart {
     }
 
     /// Set the agent ID.
+    /// Name this chart and give it the change to apply for every action it
+    /// advertises: `add_series`, `remove_series` and `clear`.
+    ///
+    /// The series are rebuilt from the model each frame, so a change applied
+    /// to the widget lasts until the next redraw and no longer.
+    #[must_use]
+    pub fn on_change<M: 'static>(
+        mut self,
+        id: impl Into<std::borrow::Cow<'static, str>>,
+        f: impl Fn(&mut M, ChartChange<'_>) + Send + Sync + 'static,
+    ) -> Self {
+        self.agent_id = id.into();
+        let f = std::sync::Arc::new(f);
+        for action in ["add_series", "remove_series", "clear"] {
+            let f = f.clone();
+            let handler: crate::runtime::ValueMutation<M> =
+                Box::new(move |m: &mut M, v: &serde_json::Value| {
+                    let change = match action {
+                        "add_series" => ChartChange::AddSeries {
+                            label: v
+                                .get("label")
+                                .and_then(serde_json::Value::as_str)
+                                .unwrap_or_default(),
+                            values: v
+                                .get("values")
+                                .and_then(serde_json::Value::as_array)
+                                .map(|vs| {
+                                    vs.iter()
+                                        .filter_map(serde_json::Value::as_f64)
+                                        .collect::<Vec<_>>()
+                                })
+                                .unwrap_or_default(),
+                        },
+                        "remove_series" => ChartChange::RemoveSeries(
+                            v.get("index")
+                                .and_then(serde_json::Value::as_u64)
+                                .unwrap_or(0) as usize,
+                        ),
+                        _ => ChartChange::Clear,
+                    };
+                    f(m, change);
+                });
+            self.handlers.push((action, Box::new(handler)));
+        }
+        self
+    }
+
     pub fn agent_id(mut self, id: impl Into<std::borrow::Cow<'static, str>>) -> Self {
         self.agent_id = id.into();
         self
@@ -273,7 +335,13 @@ const PALETTE: &[Color] = &[
 ];
 
 impl Widget for Chart {
-    fn render(self, area: Rect, frame: &mut Frame<'_>) {
+    fn render(mut self, area: Rect, frame: &mut Frame<'_>) {
+        if !self.agent_id.is_empty() {
+            for (action, handler) in self.handlers.drain(..) {
+                frame.register_message(self.agent_id.clone(), action, handler);
+            }
+        }
+
         if frame.ontology_enabled() && !self.agent_id.is_empty() {
             let node = UiNode::new("Chart", SemanticRole::DataVisualization)
                 .with_id(self.agent_id.clone())

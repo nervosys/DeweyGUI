@@ -36,7 +36,7 @@ pub mod virtual_list;
 
 pub use button::Button;
 pub use canvas::{Canvas, DrawCommand};
-pub use chart::{Chart, ChartKind, Series};
+pub use chart::{Chart, ChartChange, ChartKind, Series};
 pub use checkbox::Checkbox;
 pub use color_picker::{ColorChange, ColorPicker, ColorPickerState};
 pub use command_palette::{CommandPalette, CommandPaletteState, PaletteChange, PaletteCommand};
@@ -51,7 +51,7 @@ pub use modal::Modal;
 pub use panel::Panel;
 pub use progress::ProgressBar;
 pub use radio::Radio;
-pub use rich_text::{RichText, TextSpan};
+pub use rich_text::{RichText, RichTextChange, TextSpan};
 pub use scroll::{ScrollArea, ScrollState};
 pub use select::{Select, SelectState};
 pub use slider::{Slider, SliderState};

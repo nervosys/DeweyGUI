@@ -88,11 +88,21 @@ impl TextSpan {
 }
 
 /// A rich text widget that renders styled text spans.
+/// What an agent asked a [`RichText`] to do.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RichTextChange<'a> {
+    /// Replace the content with this Markdown.
+    SetMarkdown(&'a str),
+    /// Remove all content.
+    Clear,
+}
+
 pub struct RichText {
     spans: Vec<TextSpan>,
     agent_id: std::borrow::Cow<'static, str>,
     font_size: f32,
     base_color: Color,
+    handlers: Vec<(&'static str, Box<dyn std::any::Any + Send>)>,
 }
 
 impl RichText {
@@ -102,6 +112,7 @@ impl RichText {
         Self {
             spans,
             agent_id: std::borrow::Cow::Borrowed(""),
+            handlers: Vec::new(),
             font_size: 14.0,
             base_color: Color::WHITE,
         }
@@ -116,6 +127,39 @@ impl RichText {
     }
 
     /// Set the agent ID.
+    /// Name this block and give it the change to apply on `set_markdown` and
+    /// `clear`.
+    ///
+    /// The spans are parsed from the model each frame, so replacing them on
+    /// the widget lasts one redraw.
+    #[must_use]
+    pub fn on_change<M: 'static>(
+        mut self,
+        id: impl Into<std::borrow::Cow<'static, str>>,
+        f: impl Fn(&mut M, RichTextChange<'_>) + Send + Sync + 'static,
+    ) -> Self {
+        self.agent_id = id.into();
+        let f = std::sync::Arc::new(f);
+        for action in ["set_markdown", "clear"] {
+            let f = f.clone();
+            let handler: crate::runtime::ValueMutation<M> =
+                Box::new(move |m: &mut M, v: &serde_json::Value| {
+                    let change = if action == "clear" {
+                        RichTextChange::Clear
+                    } else {
+                        RichTextChange::SetMarkdown(
+                            v.get("content")
+                                .and_then(serde_json::Value::as_str)
+                                .unwrap_or_default(),
+                        )
+                    };
+                    f(m, change);
+                });
+            self.handlers.push((action, Box::new(handler)));
+        }
+        self
+    }
+
     pub fn agent_id(mut self, id: impl Into<std::borrow::Cow<'static, str>>) -> Self {
         self.agent_id = id.into();
         self
@@ -241,7 +285,13 @@ impl Discoverable for RichText {
 }
 
 impl Widget for RichText {
-    fn render(self, area: Rect, frame: &mut Frame<'_>) {
+    fn render(mut self, area: Rect, frame: &mut Frame<'_>) {
+        if !self.agent_id.is_empty() {
+            for (action, handler) in self.handlers.drain(..) {
+                frame.register_message(self.agent_id.clone(), action, handler);
+            }
+        }
+
         if frame.ontology_enabled() && !self.agent_id.is_empty() {
             let plain: String = self.spans.iter().map(|s| s.text.as_str()).collect();
             let node = UiNode::new("RichText", SemanticRole::Display)
