@@ -111,6 +111,13 @@ impl<M: Model + 'static> RpcTransport<M> {
 
             let json = self.driver.process_envelope_json(&envelope);
             writeln!(stdout, "{json}")?;
+
+            // A subscribed agent is told what changed, on the same stream. The
+            // protocol has always accepted `subscribe`; until now nothing ever
+            // sent anything back.
+            for event in self.driver.drain_events_json() {
+                writeln!(stdout, "{event}")?;
+            }
             stdout.flush()?;
 
             if !self.driver.is_running() {

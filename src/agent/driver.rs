@@ -27,6 +27,9 @@ pub struct HeadlessDriver<M: Model> {
     /// passes the version it last saw is told `unchanged` rather than being
     /// sent an identical tree.
     version: u64,
+    /// The version the last state diff was taken at, so a subscribed session
+    /// re-renders once per change rather than once per request.
+    diffed_version: u64,
 }
 
 impl<M: Model + 'static> HeadlessDriver<M> {
@@ -45,6 +48,7 @@ impl<M: Model + 'static> HeadlessDriver<M> {
             handlers: crate::runtime::Handlers::default(),
             unaddressable: Vec::new(),
             version: 0,
+            diffed_version: 0,
         }
     }
 
@@ -273,6 +277,36 @@ impl<M: Model + 'static> HeadlessDriver<M> {
     /// against previously seen states. Returns events for subscribed agents.
     pub fn compute_state_diffs(&mut self) -> Vec<super::protocol::AgentEvent> {
         self.session.compute_state_diffs(&self.ontology)
+    }
+
+    /// Events to push after answering a request, as JSON lines.
+    ///
+    /// `subscribe` was accepted by both transports and honoured by neither:
+    /// nothing ever called `compute_state_diffs`, so an agent subscribed and
+    /// then waited for events that were never going to arrive. Returns empty
+    /// when nothing is subscribed, so an unsubscribed session pays a set
+    /// lookup and no diff.
+    pub fn drain_events_json(&mut self) -> Vec<String> {
+        if !self.session.is_subscribed("state_changed") {
+            return Vec::new();
+        }
+        // A mutating request renders *before* it dispatches, so the tree in
+        // the registry describes the screen as it was a moment before the
+        // change. Diffing it would compare the old state against itself and
+        // report nothing — which is how the first version of this passed its
+        // own delivery test and reported no events at all.
+        //
+        // The version counter already marks anything that could have mutated,
+        // so a re-render happens once per actual change rather than once per
+        // request.
+        if self.diffed_version != self.version {
+            self.render();
+            self.diffed_version = self.version;
+        }
+        self.compute_state_diffs()
+            .iter()
+            .filter_map(|event| serde_json::to_string(event).ok())
+            .collect()
     }
 
     /// Render the model view to build/refresh the UI tree in the ontology.

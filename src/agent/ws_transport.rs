@@ -147,6 +147,10 @@ impl<M: Model + 'static> WsTransport<M> {
             let json = self.driver.process_envelope_json(&envelope);
             let _ = websocket.write(Message::Text(json));
 
+            for event in self.driver.drain_events_json() {
+                let _ = websocket.write(Message::Text(event));
+            }
+
             if !self.driver.is_running() {
                 break;
             }

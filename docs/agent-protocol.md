@@ -288,6 +288,20 @@ All responses share a common shape:
 
 ## Server-Pushed Events
 
+Subscribe with `{"type": "subscribe", "events": ["state_changed"]}` and the
+transport writes an event on the same stream — a further JSON line over stdio,
+a further message over a WebSocket — after any request that changed something.
+An event names the widget and carries its new state, so an agent does not have
+to re-read the tree to find out what happened:
+
+```json
+{"type": "state_changed", "agent_id": "readout", "state": {"text": "count 1"}}
+```
+
+Only widgets whose state actually differs are reported, and a subscribed
+session re-renders once per change rather than once per request. Nothing is
+computed at all when nothing is subscribed.
+
 When subscribed, the server pushes `AgentEvent` objects:
 
 ```json

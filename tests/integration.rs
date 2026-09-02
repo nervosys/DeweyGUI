@@ -3616,3 +3616,97 @@ fn the_catalogue_is_served_from_bytes_not_rebuilt() {
         schemas.len()
     );
 }
+
+/// A subscribed agent is actually told what changed.
+///
+/// `subscribe` was accepted by both transports and honoured by neither:
+/// nothing ever called `compute_state_diffs`, so an agent subscribed, waited,
+/// and received nothing. The same shape as every other defect this week — the
+/// call reported success and did nothing — and the one the plan predicted
+/// would be here.
+#[test]
+fn subscribing_delivers_the_events_it_promises() {
+    use dewey::agent::driver::HeadlessDriver;
+    use dewey::agent::protocol::AgentRequest;
+
+    struct App {
+        count: i32,
+    }
+
+    impl Model for App {
+        type Msg = ();
+        fn update(&mut self, _m: ()) -> Command<()> {
+            Command::None
+        }
+        fn view(&self, frame: &mut Frame<'_>) {
+            let rows = frame.area.split_rows(2);
+            Button::new("inc")
+                .on("inc", |a: &mut App| a.count += 1)
+                .render(rows[0], frame);
+            Label::new(format!("count {}", self.count))
+                .agent_id("readout")
+                .render(rows[1], frame);
+        }
+    }
+
+    let mut d = HeadlessDriver::new(App { count: 0 }, 200.0, 100.0);
+    d.init();
+
+    // Nothing subscribed: no events, and no diff computed.
+    d.process_request(&AgentRequest::GetTree {
+        since: None,
+        viewport: None,
+    });
+    assert!(
+        d.drain_events_json().is_empty(),
+        "an unsubscribed session must be told nothing"
+    );
+
+    let sub = d.process_request(&AgentRequest::Subscribe {
+        events: vec!["state_changed".into()],
+    });
+    assert!(sub.success);
+
+    // The first look reports every widget as new, which is the diff having no
+    // previous state rather than a change.
+    d.process_request(&AgentRequest::GetTree {
+        since: None,
+        viewport: None,
+    });
+    let _baseline = d.drain_events_json();
+
+    // Nothing has happened since, so nothing is reported.
+    d.process_request(&AgentRequest::GetTree {
+        since: None,
+        viewport: None,
+    });
+    assert!(
+        d.drain_events_json().is_empty(),
+        "a screen that has not moved must produce no events"
+    );
+
+    // Now change something.
+    let acted = d.process_request(&AgentRequest::ExecuteAction {
+        agent_id: "inc".into(),
+        action: "click".into(),
+        params: serde_json::Value::Null,
+    });
+    assert!(acted.success);
+
+    let events = d.drain_events_json();
+    assert!(!events.is_empty(), "the change must be reported");
+
+    let parsed: Vec<serde_json::Value> = events
+        .iter()
+        .map(|e| serde_json::from_str(e).expect("each event is JSON"))
+        .collect();
+    let readout = parsed
+        .iter()
+        .find(|e| e["agent_id"] == serde_json::json!("readout"))
+        .unwrap_or_else(|| panic!("the label that changed must be named: {parsed:?}"));
+    assert_eq!(
+        readout["state"]["text"],
+        serde_json::json!("count 1"),
+        "and the event must carry the new value, not just the fact of a change"
+    );
+}
