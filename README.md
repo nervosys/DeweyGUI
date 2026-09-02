@@ -381,12 +381,29 @@ clicked, duplicate ids that make an action ambiguous, and zero-size or offscreen
 bounds. The first of those is not hypothetical — it was made while writing this
 project's own benchmarks, where a button looked right and was simply dead.
 
-egui and iced have no equivalent to measure: neither exposes a widget tree, a
-typed action, or a readable state snapshot to an external process, so an agent
-must open a real window, synthesise input at guessed coordinates, screenshot it
-and ask a vision model what the label says. That returns a probabilistic
-reading of an image where `get_state` returns `"1 items left"` — an agent can
-assert on one and only guess at the other.
+**egui does have an equivalent, and an earlier version of this section said it
+did not.** With the `accesskit` feature, every egui frame emits an
+`accesskit::TreeUpdate` — roles, labels, bounds — and egui accepts an
+`AccessKitActionRequest` back, so an agent can read and act without a
+screenshot. It is standardised, predates this project, and is understood by
+every screen reader on three platforms. `benches/comparative/src/bin/agent_surface.rs`
+measures the two against each other and egui wins on two axes: it produces its
+tree faster than DeweyGUI produces one (366 µs against 557 µs, while also
+laying out and tessellating a real frame), and its generated node ids make an
+unaddressable or duplicated widget impossible to write.
+
+Where it loses is what a screen-reader tree is *for*. AccessKit node ids are
+opaque hashes; in the measured case, filtering one row out of a list left the
+id an agent had captured pointing at the **next row down**, the same failure as
+a stale coordinate. The clickable widgets in that list — the checkboxes — carry
+no accessible name at all, so they can only be located by tree position, which
+is what moved. And AccessKit's action vocabulary is 24 fixed verbs for all
+software: of five ordinary intents (sort by a column, set a date, set a colour,
+expand a path, go to page 2) two cannot be expressed at all and two collapse
+into `SetValue` with a string whose format is undocumented.
+
+iced 0.13 has no accessibility feature, so there an agent really does have only
+pixels.
 
 So: Dewey is worse at being *written* by an agent, and uniquely good at being
 *verified* by one. Verification cost is paid on every iteration, and an agent

@@ -4,11 +4,12 @@
 //! measures the thing the frame cost is being spent *on*, and tries as hard to
 //! find where the ontology fails as where it wins.
 //!
-//! The comparison is not against egui or iced. Neither publishes a structure an
-//! agent can query, so there is no like-for-like number to quote — an agent
-//! driving them works from pixels and screen coordinates. That is the baseline
-//! used here: **the same task, done from a screenshot and coordinates, against
-//! the same application.** Both paths exist in this crate, so both can be run.
+//! The baseline here is the same application driven from pixels and screen
+//! coordinates, which is what an agent must do when no structure is available.
+//! That is honest for iced 0.13 and **not** for egui, which publishes an
+//! AccessKit tree — an earlier version of this comment said otherwise and was
+//! wrong. `agent_surface` compares against egui directly; this benchmark is
+//! the pixels-only baseline. Both paths exist in this crate, so both run.
 //!
 //! Sections:
 //!   1. Seeing      — cost and size of an observation

@@ -143,6 +143,89 @@ minutes apart gave 3.40 ms and 4.74 ms, a 1.4× spread, where every other row
 moved by under 10%. The table takes the faster one, so the ratio quoted against
 iced is the smaller of the two.
 
+## Against egui and iced directly
+
+`cargo run --release --bin agent_surface`
+
+**egui has an agent-readable surface, and an earlier version of these notes
+said it did not.** With the `accesskit` feature every egui frame emits an
+`accesskit::TreeUpdate` — roles, labels, bounds — and egui accepts an
+`AccessKitActionRequest` back, so the loop closes without a screenshot. It is
+standardised, predates this project, and is understood by every screen reader
+on Windows, macOS and Linux. iced 0.13 has no accessibility feature, so there
+an agent really does have only pixels.
+
+The question is therefore not who has a structure. It is what a structure
+designed for *screen readers* can express against one designed for agents.
+
+### 1. One observation, 100 rows
+
+| Framework | nodes | bytes | time |
+| --------- | ----- | ----- | ---- |
+| DeweyGUI ontology | 202 | 40,036 | 557 us |
+| egui + AccessKit | 301 | 77,104 | **366 us** |
+| iced 0.13 | — | — | — |
+
+Both timings cover the whole path to something an agent could receive: produce
+it, then serialise it. **egui is faster while doing more work** — its frame
+lays out and tessellates, where DeweyGUI paints into a recording backend that
+draws nothing, and its tree falls out of a frame it had to run anyway where
+`get_tree` is an extra pass. DeweyGUI's payload is about half the size. On the
+cost of a single observation this project loses.
+
+### 2. Naming the widget you want
+
+An agent reads the tree, decides to act on the 18th row, and then one row is
+filtered out of the list above it.
+
+- **egui**: the node for `"item 17"` is `NodeId(9103526755343559150)`. After the
+  filter, that id labels **`"item 18"`** — it followed the position, not the
+  item. Of the 200 nodes that accept a `Click`, 100 carry any text at all; the
+  checkboxes, which are what an agent would actually click, have no accessible
+  name, so they cannot be found by text either — only by position in the tree,
+  which is exactly what moved.
+- **DeweyGUI**: the id is `"toggle_17"`, written by whoever wrote the view.
+  `execute_action("toggle_17", "toggle")` changes the 18th row.
+
+This is the same failure as a stale screen coordinate, at a structured API.
+
+### 3. Action vocabulary
+
+| Intent | DeweyGUI | AccessKit |
+| ------ | -------- | --------- |
+| sort a table by column 2, descending | `sort {column, direction}` | **no representation** |
+| set a date field to 2026-09-01 | `set_date {year, month, day}` | `SetValue(string)`, format undocumented |
+| set a colour to #204060 | `set_color {r,g,b,a \| hex}` | `SetValue(string)` |
+| expand the tree node `root/a` | `expand {path}` | `Expand`, on that node if found |
+| show page 2 of a table | `page {page}` | **no representation** |
+
+AccessKit has 24 fixed actions for all software. That is the right design for a
+screen reader, which must work with programs it has never seen — and it is why
+two of five ordinary intents cannot be expressed and two more collapse into
+`SetValue`.
+
+### 4. Checking the interface is operable
+
+| Fault | DeweyGUI | findable in AccessKit? |
+| ----- | -------- | ---------------------- |
+| button rendered with no id | `unaddressable_widget` | no — it assigns ids itself |
+| two widgets share one id | `duplicate_agent_id` | no — generated ids cannot collide |
+| widget laid out at zero size | `zero_size_widget` | yes — bounds are in the tree |
+| widget wired for one of its actions | `unhandled_action` | no — nothing declares what it should support |
+
+**The first two are not faults in egui because they cannot occur.** Generated
+ids cannot be forgotten or duplicated; that is a real advantage, and it is the
+direct price of the naming win in section 2. Neither framework ships a checker.
+
+### Summary
+
+egui beats this project on observation cost and on a class of authoring mistake
+it makes structurally impossible, and its surface is a standard rather than one
+framework's invention. DeweyGUI's ontology buys names an agent can be told in
+advance instead of discovering by matching display text, per-widget actions with
+typed parameters, a type catalogue to write against, and a check that what was
+built can be operated at all.
+
 ## What the ontology buys, and what it does not
 
 `cargo run --release --bin ontology`
@@ -151,10 +234,11 @@ The other benchmarks here measure how fast a frame is built. This one measures
 what that cost is being spent *on*, and looks as hard for where the ontology
 loses as for where it wins.
 
-There is no like-for-like framework to compare against: neither egui nor iced
-publishes a structure an agent can query, so an agent driving them works from
-pixels and screen coordinates. That is the baseline used — **the same
-application, driven both ways.** Both paths exist in this crate, so both run.
+The baseline here is the same application driven from pixels and screen
+coordinates, which is what an agent must do when no structure is available.
+That is the honest baseline for iced 0.13 and *not* for egui, which has an
+AccessKit tree — see `agent_surface` below for the direct comparison against
+it. Both paths exist in this crate, so both run.
 
 ### 1. Seeing
 

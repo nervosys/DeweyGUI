@@ -12,7 +12,8 @@ publish = false
 [dependencies]
 png = "0.17"
 dewey = { package = "deweygui", path = "../..", default-features = false }
-egui = "0.31"
+egui = { version = "0.31", features = ["accesskit"] }
+accesskit = { version = "0.17", features = ["serde"] }
 iced_core = "0.13"
 iced_widget = "0.13"
 iced_renderer = { version = "0.13", features = ["tiny-skia"] }
