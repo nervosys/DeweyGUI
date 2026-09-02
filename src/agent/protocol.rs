@@ -44,8 +44,15 @@ pub enum AgentRequest {
     /// that are unclickable, duplicated ids, zero-size or offscreen bounds.
     /// This is how an agent confirms the interface it just scaffolded is
     /// actually operable, rather than merely rendering.
+    ///
+    /// Pass `strict` when the application is meant to be driven unattended: it
+    /// promotes warnings to errors and additionally reports a widget that
+    /// publishes actions with nothing wired to any of them.
     #[serde(rename = "validate")]
-    Validate,
+    Validate {
+        #[serde(default)]
+        strict: bool,
+    },
 
     /// Get the current UI tree snapshot.
     ///

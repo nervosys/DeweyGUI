@@ -44,11 +44,46 @@ pub fn register_all(registry: &mut OntologyRegistry) {
     registry.register(&RichText::new(Vec::new()));
     registry.register(&Chart::line("x"));
     registry.register(&Image::from_rgba(1, 1, vec![0, 0, 0, 0]));
+    registry.register(&Canvas::new());
+    registry.register(&VirtualList::new(
+        1.0,
+        |_i, _r, _f: &mut crate::runtime::Frame<'_>| {},
+    ));
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The catalogue must cover every widget module the crate ships.
+    ///
+    /// `Canvas` and `VirtualList` were missing, so `get_schema` returned
+    /// nothing for them and every check that cross-references a handler
+    /// against a widget's advertised actions skipped them silently. Found by a
+    /// strict-validation test that expected a `Canvas` fault and got a pass.
+    #[test]
+    fn the_catalogue_covers_every_widget_module() {
+        let mut registry = OntologyRegistry::empty();
+        register_all(&mut registry);
+        let registered = registry.list_types().len();
+
+        // One schema per widget module, less the modules that ship no widget
+        // type of their own.
+        let modules = std::fs::read_dir(concat!(env!("CARGO_MANIFEST_DIR"), "/src/widget"))
+            .expect("widget dir")
+            .filter_map(Result::ok)
+            .filter(|e| {
+                let name = e.file_name();
+                let name = name.to_string_lossy();
+                name.ends_with(".rs") && name != "mod.rs"
+            })
+            .count();
+
+        assert_eq!(
+            registered, modules,
+            "{modules} widget modules but {registered} schemas registered; a              widget missing from the catalogue is invisible to `get_schema`              and to every diagnostic that reads a schema"
+        );
+    }
 
     /// Every registered type must describe how to drive it, not merely exist.
     #[test]
@@ -63,6 +98,8 @@ mod tests {
             ("Tree", "expand_all"),
             ("Modal", "close"),
             ("CommandPalette", "execute"),
+            ("Canvas", "clear"),
+            ("VirtualList", "scroll_to"),
         ] {
             let schema = registry
                 .get_schema(name)

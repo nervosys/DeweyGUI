@@ -156,7 +156,18 @@ fn tool_definitions() -> serde_json::Value {
     widgets that cannot be clicked or addressed, duplicated ids, empty or offscreen \
     bounds, and handlers bound to actions a widget does not advertise. Answers \
     whether what was built can be operated, which a screenshot cannot.",
-            "inputSchema": { "type": "object", "properties": {} }
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "strict": {
+                        "type": "boolean",
+                        "description": "Promote warnings to errors and also \
+    report widgets that publish actions with nothing wired to any of them. For an \
+    application meant to be driven unattended.",
+                        "default": false
+                    }
+                }
+            }
         },
         {
             "name": "get_state",
@@ -291,7 +302,12 @@ fn parse_tool_call(name: &str, args: &serde_json::Value) -> Result<AgentRequest,
                 .get("viewport")
                 .and_then(|v| serde_json::from_value(v.clone()).ok()),
         }),
-        "validate" => Ok(AgentRequest::Validate),
+        "validate" => Ok(AgentRequest::Validate {
+            strict: args
+                .get("strict")
+                .and_then(serde_json::Value::as_bool)
+                .unwrap_or(false),
+        }),
         "query_ontology" => Ok(AgentRequest::QueryOntology {
             query: args.get("query").and_then(|v| v.as_str()).map(String::from),
             role: args.get("role").and_then(|v| v.as_str()).map(String::from),
@@ -576,7 +592,11 @@ mod tests {
     fn mcp_exposes_validation_and_conditional_tree_reads() {
         assert!(matches!(
             parse_tool_call("validate", &json!({})).unwrap(),
-            AgentRequest::Validate
+            AgentRequest::Validate { strict: false }
+        ));
+        assert!(matches!(
+            parse_tool_call("validate", &json!({"strict": true})).unwrap(),
+            AgentRequest::Validate { strict: true }
         ));
         assert!(matches!(
             parse_tool_call("get_tree", &json!({})).unwrap(),

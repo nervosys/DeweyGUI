@@ -61,6 +61,13 @@ impl Diagnostic {
 /// `unaddressable` lists widget types that rendered while declaring actions but
 /// carrying no id — the runtime collects these during the frame, because a
 /// widget with no id never reaches the tree to be inspected afterwards.
+///
+/// `strict` is for an application that means to be driven unattended. It
+/// promotes every warning to an error and adds one check that is otherwise
+/// silent: a widget publishing actions with nothing wired to any of them. That
+/// is legitimate when the application answers through `Model::execute_action`,
+/// which is why it is not reported by default — and it is also exactly how
+/// `Canvas`, `Chart` and `RichText` came to accept `clear` and do nothing.
 #[must_use]
 pub fn check(
     tree: &super::UiTree,
@@ -68,6 +75,7 @@ pub fn check(
     window: crate::core::Size,
     handlers: &[(String, &'static str)],
     registry: &super::OntologyRegistry,
+    strict: bool,
 ) -> Vec<Diagnostic> {
     let mut out = Vec::new();
     let mut seen: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
@@ -221,6 +229,58 @@ pub fn check(
         }
     }
     out.append(&mut partial);
+
+    // Strict only: a widget that advertises actions and wires none of them.
+    // Silent by default because answering through `Model::execute_action` is a
+    // different style rather than a fault; an application that opts into strict
+    // has said it does not use that style.
+    if strict {
+        let mut stack = vec![&tree.root];
+        let mut unwired: Vec<Diagnostic> = Vec::new();
+        while let Some(node) = stack.pop() {
+            for child in &node.children {
+                stack.push(child);
+            }
+            let Some(id) = node.agent_id.as_deref() else {
+                continue;
+            };
+            if wired.contains_key(id) {
+                continue;
+            }
+            let Some(schema) = registry.get_schema(&node.widget_type) else {
+                continue;
+            };
+            let mutating: Vec<&str> = schema
+                .actions
+                .iter()
+                .filter(|a| a.mutates)
+                .map(|a| a.name.as_str())
+                .collect();
+            if mutating.is_empty() {
+                continue;
+            }
+            unwired.push(
+                Diagnostic::new(
+                    Severity::Error,
+                    "unwired_widget",
+                    format!(
+                        "`{id}` publishes {} but has no handler for any of them; \
+                         under strict validation every advertised action must be \
+                         reachable",
+                        mutating.join(", ")
+                    ),
+                )
+                .with_id(id)
+                .with_type(node.widget_type.as_ref()),
+            );
+        }
+        unwired.sort_by(|a, b| a.agent_id.cmp(&b.agent_id));
+        out.append(&mut unwired);
+
+        for diagnostic in &mut out {
+            diagnostic.severity = Severity::Error;
+        }
+    }
 
     out.sort_by(|a, b| (a.code, &a.agent_id).cmp(&(b.code, &b.agent_id)));
     out

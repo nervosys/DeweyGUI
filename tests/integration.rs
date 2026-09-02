@@ -1626,7 +1626,7 @@ fn validate_is_available_to_agents() {
 
     let mut d = HeadlessDriver::new(DeadButtonApp, 200.0, 100.0);
     d.init();
-    let r = d.process_request(&AgentRequest::Validate);
+    let r = d.process_request(&AgentRequest::Validate { strict: false });
     assert!(r.success);
     let data = r.data.expect("validate returns data");
     assert_eq!(data["ok"], serde_json::json!(false));
@@ -1645,7 +1645,7 @@ fn validate_is_available_to_agents() {
         200.0,
     );
     good.init();
-    let r = good.process_request(&AgentRequest::Validate);
+    let r = good.process_request(&AgentRequest::Validate { strict: false });
     assert_eq!(r.data.unwrap()["ok"], serde_json::json!(true));
 }
 
@@ -2026,6 +2026,7 @@ fn validate_flags_a_handler_for_an_unadvertised_action() {
         dewey::core::Size::new(200.0, 200.0),
         &[("inc".to_string(), "wiggle")],
         &registry,
+        false,
     );
     let bad = found
         .iter()
@@ -3208,4 +3209,175 @@ fn tray_config_carries_an_icon_and_events_name_the_click() {
         button: TrayMouseButton::Left,
     };
     assert!(!matches!(click, TrayEvent::DoubleClick));
+}
+
+/// Strict validation must catch the defects that shipped this week.
+///
+/// The value of a check is not that it passes on good code. It is that it
+/// fails on the specific things that already went wrong. Each case here is a
+/// defect that was live in this repository, reduced to the interface that
+/// exhibits it.
+#[test]
+fn strict_validation_catches_every_defect_from_this_week() {
+    use dewey::agent::driver::HeadlessDriver;
+    use dewey::ontology::Severity;
+    use dewey::widget::{Canvas, Chart, StatefulWidget, Table, TableState, Widget};
+
+    struct Probe(fn(&mut Frame<'_>));
+    impl Model for Probe {
+        type Msg = ();
+        fn update(&mut self, _m: ()) -> Command<()> {
+            Command::None
+        }
+        fn view(&self, frame: &mut Frame<'_>) {
+            (self.0)(frame);
+        }
+    }
+
+    // A `Table` wired for selection only. `sort`, `filter` and `page` were
+    // accepted and ignored.
+    fn half_wired_table(frame: &mut Frame<'_>) {
+        let mut state = TableState::new();
+        Table::new(vec!["c".into()], vec![vec!["a".into()]])
+            .on_select("rows", |_: &mut Probe, _| {})
+            .render(frame.area, frame, &mut state);
+    }
+
+    // A `Canvas` with an id and no handler. `clear` reported success and the
+    // picture did not change, because the widget it mutated was discarded.
+    fn unwired_canvas(frame: &mut Frame<'_>) {
+        Canvas::new().agent_id("sketch").render(frame.area, frame);
+    }
+
+    // Same shape, different widget.
+    fn unwired_chart(frame: &mut Frame<'_>) {
+        Chart::line("readings")
+            .agent_id("plot")
+            .render(frame.area, frame);
+    }
+
+    for (name, build) in [
+        (
+            "table wired for one of four actions",
+            half_wired_table as fn(&mut Frame<'_>),
+        ),
+        ("canvas that publishes clear and ignores it", unwired_canvas),
+        (
+            "chart that publishes three actions and ignores them",
+            unwired_chart,
+        ),
+    ] {
+        let mut d = HeadlessDriver::new(Probe(build), 400.0, 200.0);
+        d.init();
+
+        let strict = d.validate_strict();
+        assert!(
+            strict.iter().any(|f| f.severity == Severity::Error),
+            "strict validation must reject: {name}"
+        );
+    }
+
+    // And a fully wired interface must still pass, or the check is useless.
+    fn correct(frame: &mut Frame<'_>) {
+        let mut state = TableState::new();
+        Table::new(vec!["c".into()], vec![vec!["a".into()]])
+            .on_change("rows", |_: &mut Probe, _| {})
+            .render(frame.area, frame, &mut state);
+    }
+    let mut good = HeadlessDriver::new(Probe(correct), 400.0, 200.0);
+    good.init();
+    assert!(
+        good.validate_strict().is_empty(),
+        "a fully wired interface must pass strict: {:?}",
+        good.validate_strict()
+    );
+}
+
+/// Strict is opt-in, and the ordinary check stays quiet about a style choice.
+///
+/// An application answering through `Model::execute_action` wires no handlers
+/// at all. That is a different way of writing the same program, not a fault,
+/// and reporting it by default would fire on every pre-handler application.
+#[test]
+fn only_strict_reports_a_widget_that_wires_nothing() {
+    use dewey::agent::driver::HeadlessDriver;
+    use dewey::widget::{StatefulWidget, Table, TableState};
+
+    struct App {
+        state: std::cell::RefCell<TableState>,
+    }
+    impl Model for App {
+        type Msg = ();
+        fn update(&mut self, _m: ()) -> Command<()> {
+            Command::None
+        }
+        fn view(&self, frame: &mut Frame<'_>) {
+            Table::new(vec!["c".into()], vec![vec!["a".into()]])
+                .agent_id("rows")
+                .render(frame.area, frame, &mut self.state.borrow_mut());
+        }
+    }
+
+    let mut d = HeadlessDriver::new(
+        App {
+            state: Default::default(),
+        },
+        400.0,
+        200.0,
+    );
+    d.init();
+
+    assert!(d.validate().is_empty(), "{:?}", d.validate());
+
+    let strict = d.validate_strict();
+    let found = strict
+        .iter()
+        .find(|f| f.code == "unwired_widget")
+        .expect("strict must report it");
+    assert_eq!(found.agent_id.as_deref(), Some("rows"));
+    assert!(
+        found.message.contains("sort"),
+        "the report should name what goes unanswered: {}",
+        found.message
+    );
+}
+
+/// Strict is reachable over the protocol, not only from Rust.
+#[test]
+fn strict_validation_is_available_to_agents() {
+    use dewey::agent::driver::HeadlessDriver;
+    use dewey::agent::protocol::AgentRequest;
+    use dewey::widget::{StatefulWidget, Table, TableState};
+
+    struct App {
+        state: std::cell::RefCell<TableState>,
+    }
+    impl Model for App {
+        type Msg = ();
+        fn update(&mut self, _m: ()) -> Command<()> {
+            Command::None
+        }
+        fn view(&self, frame: &mut Frame<'_>) {
+            Table::new(vec!["c".into()], vec![vec!["a".into()]])
+                .agent_id("rows")
+                .render(frame.area, frame, &mut self.state.borrow_mut());
+        }
+    }
+
+    let mut d = HeadlessDriver::new(
+        App {
+            state: Default::default(),
+        },
+        400.0,
+        200.0,
+    );
+    d.init();
+
+    let lax = d.process_request(&AgentRequest::Validate { strict: false });
+    assert_eq!(lax.data.expect("data")["ok"], serde_json::json!(true));
+
+    let strict = d.process_request(&AgentRequest::Validate { strict: true });
+    let data = strict.data.expect("data");
+    assert_eq!(data["ok"], serde_json::json!(false));
+    assert!(data["errors"].as_u64().unwrap_or(0) >= 1, "{data}");
 }

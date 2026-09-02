@@ -210,8 +210,8 @@ impl<M: Model + 'static> HeadlessDriver<M> {
 
         // Structural check: answered here because it needs the frame's own
         // record of what rendered, which the session cannot see.
-        if matches!(request, AgentRequest::Validate) {
-            let findings = self.validate();
+        if let AgentRequest::Validate { strict } = request {
+            let findings = self.validate_with(*strict);
             let errors = findings
                 .iter()
                 .filter(|d| d.severity == crate::ontology::Severity::Error)
@@ -361,6 +361,20 @@ impl<M: Model + 'static> HeadlessDriver<M> {
     /// call this after scaffolding an interface to confirm it is operable
     /// without opening a window.
     pub fn validate(&mut self) -> Vec<crate::ontology::Diagnostic> {
+        self.validate_with(false)
+    }
+
+    /// Check the interface the way an unattended agent needs it to be.
+    ///
+    /// Every warning becomes an error, and a widget that publishes actions
+    /// with nothing wired to any of them is reported — which the ordinary
+    /// check leaves alone, because answering through `Model::execute_action`
+    /// is a different style rather than a fault.
+    pub fn validate_strict(&mut self) -> Vec<crate::ontology::Diagnostic> {
+        self.validate_with(true)
+    }
+
+    fn validate_with(&mut self, strict: bool) -> Vec<crate::ontology::Diagnostic> {
         self.render();
         let tree = self.ontology.tree().cloned().unwrap_or_else(|| {
             crate::ontology::UiTree::new(crate::ontology::UiNode::new(
@@ -375,6 +389,7 @@ impl<M: Model + 'static> HeadlessDriver<M> {
             self.window_size,
             &handlers,
             &self.ontology,
+            strict,
         )
     }
 
@@ -496,7 +511,7 @@ impl<M: Model + 'static> HeadlessDriver<M> {
                 | AgentRequest::BatchActions { .. }
                 | AgentRequest::InjectEvent { .. }
                 | AgentRequest::Screenshot { .. }
-                | AgentRequest::Validate
+                | AgentRequest::Validate { .. }
         )
     }
 
