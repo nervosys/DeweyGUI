@@ -108,3 +108,18 @@ jobs:
       # `get_tree` gained `since`.
       - run: cargo check --all-targets --manifest-path benches/comparative/Cargo.toml
       - run: cargo check --all-targets --manifest-path benches/scaffold/Cargo.toml
+
+      # Compiling a benchmark is not running one. These three assert something
+      # before they time anything, and those assertions are what caught a
+      # TodoMVC task that completed a todo which was never completed.
+      #
+      # Nothing here gates on wall-clock — the runner is far too noisy for
+      # that. `allocs` gates on allocations and bytes per row, which do not
+      # move with the machine; the other two gate on their own correctness
+      # checks, and fail the job by panicking.
+      - name: Allocation budgets
+        run: cargo run --release --bin allocs --manifest-path benches/comparative/Cargo.toml
+      - name: Agent loop closes
+        run: cargo run --release --bin agent_loop --manifest-path benches/comparative/Cargo.toml
+      - name: TodoMVC agent task completes
+        run: cargo run --release --bin agent_task --manifest-path benches/scaffold/Cargo.toml
