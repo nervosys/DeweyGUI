@@ -231,26 +231,29 @@ Dewey speaks JSON Lines over stdin/stdout. Any language that can read/write line
 
 CPU frame-build cost — widget construction, layout, and render-command
 generation for a list of N rows, each with a label and a button, running
-headless with no GPU. Fastest observed frame of 400/120/40 interleaved rounds,
-best of two runs. Full methodology and caveats in
+headless with no GPU. Fastest observed frame of 400/120/40 interleaved rounds.
+Full methodology and caveats in
 [`benches/comparative/`](benches/comparative/README.md).
 
 | Rows | Dewey        | Dewey, agentic | egui 0.31 | iced 0.13 | vs egui | vs iced |
 | ---- | ------------ | -------------- | --------- | --------- | ------- | ------- |
-| 100  | **14.5 µs**  | 30.6 µs        | 115.1 µs  | 43.9 µs   | 7.9×    | 3.0×    |
-| 1000 | **135.0 µs** | 293.3 µs       | 1.13 ms   | 436.5 µs  | 8.4×    | 3.2×    |
-| 5000 | **736.3 µs** | 2.78 ms        | 9.48 ms   | 5.17 ms   | 12.9×   | 7.0×    |
+| 100  | **13.8 µs**  | 27.6 µs        | 108.3 µs  | 41.7 µs   | 7.8×    | 3.0×    |
+| 1000 | **129.3 µs** | 257.4 µs       | 1.01 ms   | 406.7 µs  | 7.8×    | 3.1×    |
+| 5000 | **678.3 µs** | 1.95 ms        | 8.22 ms   | 3.40 ms   | 12.1×   | 5.0×    |
 
-All figures come from a single run — absolute times shift with machine load, so
-the stable quantity is the ratio within a run. A second run agreed on every
-ratio.
+Re-measured on a quiet machine (~20% background load, run-to-run spread at or
+under 1.1× on every row except iced's largest). Earlier printings of this table
+were taken while the machine was saturated and read 8.4× and 12.9× against
+egui, and 7.0× against iced at 5000 rows. iced's 5000-row time is the least
+stable figure here, spanning 3.40–4.74 ms across runs; the ratio above uses the
+run most favourable to iced.
 
 Reproduce with `cd benches/comparative && cargo run --release --bin timing`.
 
 The *agentic* column shows what building the ontology costs when it happens.
 By default it no longer happens per frame: `OntologyMode::OnDemand` builds the
 tree on the next agent query instead, via a paint-free `view` pass. A UI at
-60 fps queried 5 times a second spends 1.9× less at 1000 rows and 3× less at
+60 fps queried 5 times a second spends 1.8× less at 1000 rows and 2.4× less at
 5000 rows than building it every frame — and because `Model::view` takes
 `&self`, the tree an agent reads is built from current state rather than from
 the last painted frame. egui and iced have no equivalent to build, so the
@@ -291,11 +294,17 @@ agent-driveability is nearly free.** Three changes did it:
   `Command`.
 - `Rect::rows_of` / `split_columns` replace a `Layout` and a named `Constraint`
   per band.
-- `TextInput::on_input`, `Slider::on_change` and the same on `List`, `Select`,
-  `Tabs`, `Table`, `TextArea`, `Splitter`, `Toolbar`, `Menu` and `Radio` do it
-  for widgets carrying a value, each bound to the action its ontology
-  advertises. The TodoMVC sample now has no `execute_action` handler at all and
-  the premium for being agent-driveable there is **+6%**.
+- `TextInput::on_input`, `Slider::on_change` and the same on every other
+  widget carrying a value, each bound to the action its ontology advertises.
+  The TodoMVC sample now has no `execute_action` handler at all and the premium
+  for being agent-driveable there is **+6%**.
+- Widgets advertising several actions take one handler for all of them, passed
+  a typed change rather than raw JSON: `Tree::on_change` receives a
+  `TreeChange`, `Table::on_change` a `TableChange`, and so on through
+  `DatePicker`, `CommandPalette`, `ColorPicker`, `Modal`, `Chart` and
+  `RichText`. **Every widget in the library that advertises a mutating action
+  now has a builder that answers it**, and `validate` reports a widget wired
+  for only some of what it publishes.
 
 Together those took the counter from 1.49× to **1.24×** egui's tokens and
 TodoMVC from 1.86× to **1.63×**.

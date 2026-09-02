@@ -113,24 +113,35 @@ cd benches/comparative && cargo run --release --bin timing
 
 Windows 11, release profile, raised priority. Fastest observed frame of
 400/120/40 interleaved rounds. **All figures below come from a single run**,
-because absolute times move with whatever else the machine is doing — a later
-run measured egui 20% faster with egui's code untouched. The stable, load-
-independent quantity is the ratio *within* a run, so that is what the
+because absolute times move with whatever else the machine is doing — an
+earlier printing of this table was taken with the machine saturated, and a
+later run measured egui 20% faster with egui's code untouched. The stable,
+load-independent quantity is the ratio *within* a run, so that is what the
 optimization claims rest on.
+
+These figures come from a quiet machine (~20% background load). The harness
+reports a noise ratio per row — median over minimum — and it is 1.0× on every
+row here except egui and iced at 5000 (1.1× and 1.3×), against swings of 3×
+when this was first measured.
 
 | Rows | Dewey        | Ontology off | Agentic  | On-demand pass | egui 0.31 | iced 0.13 |
 | ---- | ------------ | ------------ | -------- | -------------- | --------- | --------- |
-| 100  | **14.5 µs**  | 14.8 µs      | 30.6 µs  | 23.8 µs        | 115.1 µs  | 43.9 µs   |
-| 1000 | **135.0 µs** | 140.9 µs     | 293.3 µs | 230.4 µs       | 1.13 ms   | 436.5 µs  |
-| 5000 | **736.3 µs** | 734.6 µs     | 2.78 ms  | 2.36 ms        | 9.48 ms   | 5.17 ms   |
+| 100  | **13.8 µs**  | 14.2 µs      | 27.6 µs  | 21.6 µs        | 108.3 µs  | 41.7 µs   |
+| 1000 | **129.3 µs** | 130.3 µs     | 257.4 µs | 200.3 µs       | 1.01 ms   | 406.7 µs  |
+| 5000 | **678.3 µs** | 681.3 µs     | 1.95 ms  | 1.52 ms        | 8.22 ms   | 3.40 ms   |
 
 Speedup over Dewey with no agent ids:
 
 | Rows | vs egui | vs iced |
 | ---- | ------- | ------- |
-| 100  | 7.9×    | 3.0×    |
-| 1000 | 8.4×    | 3.2×    |
-| 5000 | 12.9×   | 7.0×    |
+| 100  | 7.8×    | 3.0×    |
+| 1000 | 7.8×    | 3.1×    |
+| 5000 | 12.1×   | 5.0×    |
+
+iced's 5000-row frame is the least reproducible number in this table: two runs
+minutes apart gave 3.40 ms and 4.74 ms, a 1.4× spread, where every other row
+moved by under 10%. The table takes the faster one, so the ratio quoted against
+iced is the smaller of the two.
 
 ### On-demand ontology, amortized
 
@@ -141,20 +152,23 @@ querying 5 times a second therefore pays:
 
 | Rows | Every frame  | On demand   | Saving   |
 | ---- | ------------ | ----------- | -------- |
-| 100  | 1.8 ms/s     | 1.0 ms/s    | 1.9×     |
-| 1000 | 17.6 ms/s    | 9.3 ms/s    | 1.9×     |
-| 5000 | 166.8 ms/s   | 56.0 ms/s   | 3.0×     |
+| 100  | 1.7 ms/s     | 0.9 ms/s    | 1.8×     |
+| 1000 | 15.4 ms/s    | 8.8 ms/s    | 1.8×     |
+| 5000 | 116.8 ms/s   | 48.3 ms/s   | 2.4×     |
 
-A second run reproduced 1.8× / 1.8× / 4.1×. The saving grows with widget count
-and with the gap between frame rate and query rate: the tree was being built
-60 times a second to be read 5 times.
+Two consecutive runs agreed to one decimal place on all three. Earlier
+printings read 1.9× / 1.9× / 3.0× and 1.8× / 1.8× / 4.1× — the 5000-row saving
+is the one that moves, because it is dominated by the same iced-scale
+allocation noise the row above it shows. The saving grows with widget count and
+with the gap between frame rate and query rate: the tree was being built 60
+times a second to be read 5 times.
 
 Because `Model::view` takes `&self`, the extra pass has no side effects, and
 the tree an agent reads is built from current model state rather than from
 whatever the last painted frame happened to contain.
 
-A second run agreed on every ratio (8.1× / 11.8× / 13.0× vs egui, and the
-agentic ratios below identical to one decimal place).
+Two runs on the quiet machine agreed to within 0.1× on every ratio against
+egui (7.7×/7.8×, 7.6×/7.8×, 12.3×/12.1×).
 
 ### The agentic path, measured as a within-run ratio
 
