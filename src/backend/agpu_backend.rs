@@ -502,10 +502,25 @@ impl<M: Model + 'static> RunningApp<M> {
                 options.height as f64,
             ))
             .with_resizable(options.resizable)
-            .with_transparent(options.transparent);
+            .with_transparent(options.transparent)
+            .with_decorations(options.decorated)
+            .with_window_level(if options.always_on_top {
+                winit::window::WindowLevel::AlwaysOnTop
+            } else {
+                winit::window::WindowLevel::Normal
+            });
 
         if options.fullscreen {
             attrs = attrs.with_fullscreen(Some(winit::window::Fullscreen::Borderless(None)));
+        }
+        if let Some((x, y)) = options.position {
+            attrs = attrs.with_position(winit::dpi::LogicalPosition::new(x, y));
+        }
+        if let Some((w, h)) = options.min_size {
+            attrs = attrs.with_min_inner_size(winit::dpi::LogicalSize::new(w, h));
+        }
+        if let Some((w, h)) = options.max_size {
+            attrs = attrs.with_max_inner_size(winit::dpi::LogicalSize::new(w, h));
         }
 
         let window = Arc::new(event_loop.create_window(attrs)?);
