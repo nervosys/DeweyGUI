@@ -143,7 +143,10 @@ fn main() {
                 agent_id: "count".into(),
             },
         ),
-        ("5. check       (validate)", AgentRequest::Validate),
+        (
+            "5. check       (validate)",
+            AgentRequest::Validate { strict: false },
+        ),
     ];
 
     // Correctness first: a benchmark of a loop that does not work is noise.
