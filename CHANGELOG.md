@@ -61,6 +61,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Handlers on the remaining common interactive widgets, each bound to the
+  action it advertises: `List::on_select`, `Select::on_select`,
+  `Tabs::on_select`, `Table::on_select`, `TextArea::on_input`,
+  `Splitter::on_change`, `Toolbar::on_item`, `Menu::on_item` and
+  `Radio::on_select`. An application driven by any of these writes no
+  `execute_action` handler.
+
 - `TextInput::on_input(id, |model, text| ...)` and
   `Slider::on_change(id, |model, value| ...)` carry the change a value widget
   makes, including the new value. It arrives the same way whether a person
@@ -134,6 +141,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   identical whether or not the ontology is built.
 
 ### Fixed
+
+- `Checkbox`'s handler answered `click`, but its ontology advertises `toggle`.
+  An agent following the ontology called the name the widget published and
+  nothing happened. Handlers are now bound to the advertised action, a mouse
+  click fires whichever action the widget registered, and `validate` reports an
+  `unadvertised_action` when the two disagree — the check exists because this
+  shipped.
 
 - A widget handler answers for its own action only. Dispatch previously fired
   on any `click`, so once value widgets existed an unrelated action could have

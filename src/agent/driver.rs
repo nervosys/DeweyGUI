@@ -170,7 +170,7 @@ impl<M: Model + 'static> HeadlessDriver<M> {
                 if let crate::event::Event::Mouse(m) = &ev {
                     if m.is_click() {
                         if let Some(id) = self.hit_map.hit_test(m.position).map(str::to_owned) {
-                            self.dispatch(&id, "click", &serde_json::Value::Null);
+                            self.dispatch_primary(&id);
                         }
                     }
                 }
@@ -284,7 +284,18 @@ impl<M: Model + 'static> HeadlessDriver<M> {
                 crate::ontology::SemanticRole::Container,
             ))
         });
-        crate::ontology::diagnostics::check(&tree, &self.unaddressable, self.window_size)
+        let handlers: Vec<(String, &'static str)> = self
+            .messages
+            .iter()
+            .map(|(id, (action, _))| (id.clone(), *action))
+            .collect();
+        crate::ontology::diagnostics::check(
+            &tree,
+            &self.unaddressable,
+            self.window_size,
+            &handlers,
+            &self.ontology,
+        )
     }
 
     /// A stable text rendering of the interface, for golden comparison.
@@ -321,6 +332,19 @@ impl<M: Model + 'static> HeadlessDriver<M> {
     /// Returns whether a message was found and applied. This is what lets a
     /// button be driven without the application writing an `execute_action`
     /// arm for it.
+    /// Fire whatever action the widget registered, as a mouse click does.
+    ///
+    /// A click is physical: it means "activate this widget", not any
+    /// particular action name. A `Checkbox` advertises `toggle`, a `Button`
+    /// advertises `click`, and pressing either must work.
+    fn dispatch_primary(&mut self, agent_id: &str) -> bool {
+        let Some((action, _)) = self.messages.get(agent_id) else {
+            return false;
+        };
+        let action = *action;
+        self.dispatch(agent_id, action, &serde_json::Value::Null)
+    }
+
     fn dispatch(&mut self, agent_id: &str, action: &str, params: &serde_json::Value) -> bool {
         let Some((registered, _)) = self.messages.get(agent_id) else {
             return false;

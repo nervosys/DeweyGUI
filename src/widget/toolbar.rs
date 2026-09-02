@@ -53,6 +53,7 @@ pub struct Toolbar {
     items: Vec<ToolbarItem>,
     style: Style,
     agent_id: std::borrow::Cow<'static, str>,
+    on_value: Option<Box<dyn std::any::Any + Send>>,
 }
 
 impl Toolbar {
@@ -62,6 +63,7 @@ impl Toolbar {
             items,
             style: Style::default(),
             agent_id: std::borrow::Cow::Borrowed(""),
+            on_value: None,
         }
     }
 
@@ -77,6 +79,26 @@ impl Toolbar {
 
     pub fn fg(mut self, color: Color) -> Self {
         self.style.foreground = Some(color);
+        self
+    }
+
+    /// Name this widget and give it the change to apply on `click_item`.
+    ///
+    /// Bound to the action `Toolbar` advertises, so an agent following the
+    /// ontology reaches it and the application writes no
+    /// `execute_action` handler.
+    #[must_use]
+    pub fn on_item<M: 'static>(
+        mut self,
+        id: impl Into<std::borrow::Cow<'static, str>>,
+        f: impl FnOnce(&mut M, &str) + Send + 'static,
+    ) -> Self {
+        let wrapped: crate::runtime::ValueMutation<M> =
+            Box::new(move |m: &mut M, v: &serde_json::Value| {
+                f(m, v.get("item_id").and_then(|t| t.as_str()).unwrap_or(""))
+            });
+        self.agent_id = id.into();
+        self.on_value = Some(Box::new(wrapped));
         self
     }
 
@@ -176,7 +198,7 @@ impl Discoverable for Toolbar {
 }
 
 impl Widget for Toolbar {
-    fn render(self, area: Rect, frame: &mut Frame<'_>) {
+    fn render(mut self, area: Rect, frame: &mut Frame<'_>) {
         if !self.agent_id.is_empty() {
             if frame.ontology_enabled() {
                 let mut node = UiNode::new("Toolbar", SemanticRole::Navigation)
@@ -199,6 +221,9 @@ impl Widget for Toolbar {
                 frame.register_widget(node);
             }
             frame.register_hitbox(self.agent_id.clone(), area, 1);
+            if let Some(handler) = self.on_value.take() {
+                frame.register_message(self.agent_id.clone(), "click_item", handler);
+            }
         }
 
         // Toolbar background

@@ -40,6 +40,7 @@ pub struct TextArea {
     placeholder: String,
     style: Style,
     agent_id: std::borrow::Cow<'static, str>,
+    on_value: Option<Box<dyn std::any::Any + Send>>,
 }
 
 impl TextArea {
@@ -49,6 +50,7 @@ impl TextArea {
             placeholder: String::new(),
             style: Style::default(),
             agent_id: std::borrow::Cow::Borrowed(""),
+            on_value: None,
         }
     }
 
@@ -74,6 +76,26 @@ impl TextArea {
 
     pub fn rounded(mut self, radius: f32) -> Self {
         self.style.border_radius = Some(radius);
+        self
+    }
+
+    /// Name this widget and give it the change to apply on `set_text`.
+    ///
+    /// Bound to the action `TextArea` advertises, so an agent following the
+    /// ontology reaches it and the application writes no
+    /// `execute_action` handler.
+    #[must_use]
+    pub fn on_input<M: 'static>(
+        mut self,
+        id: impl Into<std::borrow::Cow<'static, str>>,
+        f: impl FnOnce(&mut M, &str) + Send + 'static,
+    ) -> Self {
+        let wrapped: crate::runtime::ValueMutation<M> =
+            Box::new(move |m: &mut M, v: &serde_json::Value| {
+                f(m, v.get("text").and_then(|t| t.as_str()).unwrap_or(""))
+            });
+        self.agent_id = id.into();
+        self.on_value = Some(Box::new(wrapped));
         self
     }
 
@@ -178,7 +200,7 @@ impl Discoverable for TextArea {
 impl StatefulWidget for TextArea {
     type State = TextAreaState;
 
-    fn render(self, area: Rect, frame: &mut Frame<'_>, state: &mut TextAreaState) {
+    fn render(mut self, area: Rect, frame: &mut Frame<'_>, state: &mut TextAreaState) {
         if !self.agent_id.is_empty() {
             if frame.ontology_enabled() {
                 let node = UiNode::new("TextArea", SemanticRole::Input)
@@ -189,6 +211,9 @@ impl StatefulWidget for TextArea {
                 frame.register_widget(node);
             }
             frame.register_hitbox(self.agent_id.clone(), area, 1);
+            if let Some(handler) = self.on_value.take() {
+                frame.register_message(self.agent_id.clone(), "set_text", handler);
+            }
         }
 
         let border_radius = self.style.border_radius.unwrap_or(2.0);

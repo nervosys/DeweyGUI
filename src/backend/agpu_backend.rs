@@ -768,6 +768,19 @@ impl<M: Model + 'static> RunningApp<M> {
     }
 
     /// Dispatch the message a widget registered for `agent_id`, if any.
+    /// Fire whatever action the widget registered, as a mouse click does.
+    ///
+    /// A click is physical: it means "activate this widget", not any
+    /// particular action name. A `Checkbox` advertises `toggle`, a `Button`
+    /// advertises `click`, and pressing either must work.
+    fn dispatch_primary(&mut self, agent_id: &str) -> bool {
+        let Some((action, _)) = self.messages.get(agent_id) else {
+            return false;
+        };
+        let action = *action;
+        self.dispatch(agent_id, action, &serde_json::Value::Null)
+    }
+
     fn dispatch(&mut self, agent_id: &str, action: &str, params: &serde_json::Value) -> bool {
         let Some((registered, _)) = self.messages.get(agent_id) else {
             return false;
@@ -974,7 +987,7 @@ impl<M: Model + 'static> ApplicationHandler for AppHandler<M> {
                 if let crate::event::Event::Mouse(m) = &dewey_ev {
                     if m.is_click() {
                         if let Some(id) = app.hit_map.hit_test(m.position).map(str::to_owned) {
-                            app.dispatch(&id, "click", &serde_json::Value::Null);
+                            app.dispatch_primary(&id);
                         }
                     }
                 }

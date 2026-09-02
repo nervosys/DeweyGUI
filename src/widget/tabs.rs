@@ -28,6 +28,7 @@ pub struct Tabs {
     labels: Vec<String>,
     style: Style,
     agent_id: std::borrow::Cow<'static, str>,
+    on_value: Option<Box<dyn std::any::Any + Send>>,
 }
 
 impl Tabs {
@@ -37,6 +38,7 @@ impl Tabs {
             labels,
             style: Style::default(),
             agent_id: std::borrow::Cow::Borrowed(""),
+            on_value: None,
         }
     }
 
@@ -52,6 +54,31 @@ impl Tabs {
 
     pub fn fg(mut self, color: Color) -> Self {
         self.style.foreground = Some(color);
+        self
+    }
+
+    /// Name this widget and give it the change to apply on `select_tab`.
+    ///
+    /// Bound to the action `Tabs` advertises, so an agent following the
+    /// ontology reaches it and the application writes no
+    /// `execute_action` handler.
+    #[must_use]
+    pub fn on_select<M: 'static>(
+        mut self,
+        id: impl Into<std::borrow::Cow<'static, str>>,
+        f: impl FnOnce(&mut M, usize) + Send + 'static,
+    ) -> Self {
+        let wrapped: crate::runtime::ValueMutation<M> =
+            Box::new(move |m: &mut M, v: &serde_json::Value| {
+                f(
+                    m,
+                    v.get("index")
+                        .and_then(serde_json::Value::as_u64)
+                        .unwrap_or(0) as usize,
+                )
+            });
+        self.agent_id = id.into();
+        self.on_value = Some(Box::new(wrapped));
         self
     }
 
@@ -125,9 +152,12 @@ impl Discoverable for Tabs {
 impl StatefulWidget for Tabs {
     type State = TabState;
 
-    fn render(self, area: Rect, frame: &mut Frame<'_>, state: &mut TabState) {
+    fn render(mut self, area: Rect, frame: &mut Frame<'_>, state: &mut TabState) {
         if !self.agent_id.is_empty() {
             frame.register_hitbox(self.agent_id.clone(), area, 1);
+            if let Some(handler) = self.on_value.take() {
+                frame.register_message(self.agent_id.clone(), "select_tab", handler);
+            }
         }
 
         let tab_h = 28.0;

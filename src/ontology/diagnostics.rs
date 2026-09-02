@@ -66,6 +66,8 @@ pub fn check(
     tree: &super::UiTree,
     unaddressable: &[&'static str],
     window: crate::core::Size,
+    handlers: &[(String, &'static str)],
+    registry: &super::OntologyRegistry,
 ) -> Vec<Diagnostic> {
     let mut out = Vec::new();
     let mut seen: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
@@ -147,6 +149,50 @@ pub fn check(
         );
     }
 
+    // A handler bound to an action the widget's own ontology does not
+    // advertise is unreachable: the agent is told to call one name and the
+    // application answers another. `Checkbox` advertises `toggle`, and a
+    // handler registered under `click` looked correct and could not be fired.
+    let by_id: std::collections::HashMap<&str, &super::UiNode> = collect_ids(&tree.root);
+    for (id, action) in handlers {
+        let Some(node) = by_id.get(id.as_str()) else {
+            continue;
+        };
+        let Some(schema) = registry.get_schema(&node.widget_type) else {
+            continue;
+        };
+        if !schema.actions.is_empty() && !schema.actions.iter().any(|a| a.name == *action) {
+            let advertised: Vec<_> = schema.actions.iter().map(|a| a.name.as_str()).collect();
+            out.push(
+                Diagnostic::new(
+                    Severity::Error,
+                    "unadvertised_action",
+                    format!(
+                        "`{id}` handles `{action}`, which `{}` does not advertise; an agent                          following the ontology would call one of: {}",
+                        node.widget_type,
+                        advertised.join(", ")
+                    ),
+                )
+                .with_id(id.clone())
+                .with_type(node.widget_type.as_ref()),
+            );
+        }
+    }
+
     out.sort_by(|a, b| (a.code, &a.agent_id).cmp(&(b.code, &b.agent_id)));
     out
+}
+
+fn collect_ids(root: &super::UiNode) -> std::collections::HashMap<&str, &super::UiNode> {
+    let mut map = std::collections::HashMap::new();
+    let mut stack = vec![root];
+    while let Some(node) = stack.pop() {
+        if let Some(id) = node.agent_id.as_deref() {
+            map.insert(id, node);
+        }
+        for child in &node.children {
+            stack.push(child);
+        }
+    }
+    map
 }

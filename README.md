@@ -291,9 +291,11 @@ agent-driveability is nearly free.** Three changes did it:
   `Command`.
 - `Rect::rows_of` / `split_columns` replace a `Layout` and a named `Constraint`
   per band.
-- `TextInput::on_input` and `Slider::on_change` do the same for widgets that
-  carry a value, so the TodoMVC sample now has no `execute_action` handler at
-  all and the premium for being agent-driveable there is **+6%**.
+- `TextInput::on_input`, `Slider::on_change` and the same on `List`, `Select`,
+  `Tabs`, `Table`, `TextArea`, `Splitter`, `Toolbar`, `Menu` and `Radio` do it
+  for widgets carrying a value, each bound to the action its ontology
+  advertises. The TodoMVC sample now has no `execute_action` handler at all and
+  the premium for being agent-driveable there is **+6%**.
 
 Together those took the counter from 1.49× to **1.24×** egui's tokens and
 TodoMVC from 1.86× to **1.63×**.

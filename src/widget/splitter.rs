@@ -43,6 +43,7 @@ pub struct Splitter {
     max_ratio: f32,
     style: Style,
     agent_id: std::borrow::Cow<'static, str>,
+    on_value: Option<Box<dyn std::any::Any + Send>>,
 }
 
 impl Splitter {
@@ -54,6 +55,7 @@ impl Splitter {
             max_ratio: 0.9,
             style: Style::default(),
             agent_id: std::borrow::Cow::Borrowed(""),
+            on_value: None,
         }
     }
 
@@ -87,6 +89,31 @@ impl Splitter {
 
     pub fn fg(mut self, color: Color) -> Self {
         self.style.foreground = Some(color);
+        self
+    }
+
+    /// Name this widget and give it the change to apply on `set_ratio`.
+    ///
+    /// Bound to the action `Splitter` advertises, so an agent following the
+    /// ontology reaches it and the application writes no
+    /// `execute_action` handler.
+    #[must_use]
+    pub fn on_change<M: 'static>(
+        mut self,
+        id: impl Into<std::borrow::Cow<'static, str>>,
+        f: impl FnOnce(&mut M, f64) + Send + 'static,
+    ) -> Self {
+        let wrapped: crate::runtime::ValueMutation<M> =
+            Box::new(move |m: &mut M, v: &serde_json::Value| {
+                f(
+                    m,
+                    v.get("ratio")
+                        .and_then(serde_json::Value::as_f64)
+                        .unwrap_or(0.5),
+                )
+            });
+        self.agent_id = id.into();
+        self.on_value = Some(Box::new(wrapped));
         self
     }
 
@@ -195,7 +222,7 @@ impl Discoverable for Splitter {
 impl StatefulWidget for Splitter {
     type State = SplitterState;
 
-    fn render(self, area: Rect, frame: &mut Frame<'_>, state: &mut SplitterState) {
+    fn render(mut self, area: Rect, frame: &mut Frame<'_>, state: &mut SplitterState) {
         state.ratio = state.ratio.clamp(self.min_ratio, self.max_ratio);
 
         if !self.agent_id.is_empty() {
@@ -214,6 +241,9 @@ impl StatefulWidget for Splitter {
                 frame.register_widget(node);
             }
             frame.register_hitbox(self.agent_id.clone(), area, 1);
+            if let Some(handler) = self.on_value.take() {
+                frame.register_message(self.agent_id.clone(), "set_ratio", handler);
+            }
         }
 
         let (first, second) = Self::compute_rects(area, self.direction, state.ratio);

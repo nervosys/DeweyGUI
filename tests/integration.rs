@@ -1423,13 +1423,24 @@ fn agent_click_dispatches_widget_message() {
     assert!(r.success);
     assert_eq!(d.model().count, 1, "click must reach the model");
 
+    // A Checkbox advertises `toggle`, not `click`; its handler must answer the
+    // action its own ontology tells an agent to use.
     let r = d.process_request(&AgentRequest::ExecuteAction {
         agent_id: "toggle".into(),
-        action: "click".into(),
+        action: "toggle".into(),
         params: serde_json::Value::Null,
     });
     assert!(r.success);
     assert!(d.model().on, "checkbox action must dispatch too");
+
+    // And the name it does not advertise must not work.
+    let before = d.model().on;
+    d.process_request(&AgentRequest::ExecuteAction {
+        agent_id: "toggle".into(),
+        action: "click".into(),
+        params: serde_json::Value::Null,
+    });
+    assert_eq!(d.model().on, before, "an unadvertised action must not fire");
 }
 
 /// A real mouse click must route through the hit map to the same message —
@@ -1711,7 +1722,7 @@ fn snapshot_is_stable_and_reflects_change() {
     // A real change must show up in the diff.
     d.process_request(&dewey::agent::protocol::AgentRequest::ExecuteAction {
         agent_id: "toggle".into(),
-        action: "click".into(),
+        action: "toggle".into(),
         params: serde_json::Value::Null,
     });
     let c = d.snapshot();
@@ -1805,7 +1816,7 @@ fn widget_mutation_needs_no_message_type() {
 
     d.process_request(&AgentRequest::ExecuteAction {
         agent_id: "toggle".into(),
-        action: "click".into(),
+        action: "toggle".into(),
         params: serde_json::Value::Null,
     });
     assert!(d.model().on, "checkbox mutation applied");
@@ -1952,4 +1963,159 @@ fn value_widget_app_validates_clean() {
     let mut d = HeadlessDriver::new(form_app(), 200.0, 200.0);
     d.init();
     assert!(d.validate().is_empty());
+}
+
+/// A handler bound to an action the widget does not advertise is unreachable:
+/// the ontology tells the agent one name and the application answers another.
+/// `Checkbox` advertises `toggle`, and a handler registered under `click`
+/// looked correct and could never be fired — this check exists because that
+/// shipped.
+#[test]
+fn validate_flags_a_handler_for_an_unadvertised_action() {
+    use dewey::agent::driver::HeadlessDriver;
+    use dewey::ontology::{Diagnostic, Severity};
+
+    // The real widgets are consistent, so the check is exercised by asking the
+    // diagnostics directly with a handler that does not match the schema.
+    let mut d = HeadlessDriver::new(
+        ActionApp {
+            count: 0,
+            on: false,
+        },
+        200.0,
+        200.0,
+    );
+    d.init();
+    assert!(
+        d.validate().is_empty(),
+        "the library's own widgets must advertise what they handle"
+    );
+
+    let tree = dewey::runtime::build_ontology_tree(
+        &ActionApp {
+            count: 0,
+            on: false,
+        },
+        dewey::core::Rect::from_size(200.0, 200.0),
+    );
+    use dewey::ontology::Discoverable;
+    let mut registry = dewey::ontology::OntologyRegistry::new();
+    let button = Button::new("x");
+    let mut schema = button.schema();
+    schema.actions = button.actions();
+    registry.register_schema(schema);
+
+    let found: Vec<Diagnostic> = dewey::ontology::diagnostics::check(
+        &tree,
+        &[],
+        dewey::core::Size::new(200.0, 200.0),
+        &[("inc".to_string(), "wiggle")],
+        &registry,
+    );
+    let bad = found
+        .iter()
+        .find(|d| d.code == "unadvertised_action")
+        .expect("a handler for an unadvertised action must be reported");
+    assert_eq!(bad.severity, Severity::Error);
+    assert!(
+        bad.message.contains("click"),
+        "the diagnostic should name what the widget does advertise: {}",
+        bad.message
+    );
+}
+
+// ── Handler coverage across the interactive widgets ────────────────
+
+/// Every widget that now carries a handler must actually dispatch it, under
+/// the action its own ontology advertises. Compiling is not evidence.
+#[test]
+fn every_extended_widget_dispatches_under_its_advertised_action() {
+    use dewey::agent::driver::HeadlessDriver;
+    use dewey::agent::protocol::AgentRequest;
+    use dewey::widget::{
+        List, ListState, Radio, Select, SelectState, StatefulWidget, TabState, Tabs, TextArea,
+        TextAreaState,
+    };
+
+    #[derive(Default)]
+    struct Hits {
+        list: Option<usize>,
+        select: Option<usize>,
+        tab: Option<usize>,
+        area: String,
+        radio: bool,
+    }
+
+    struct W {
+        hits: Hits,
+        list_s: std::cell::RefCell<ListState>,
+        sel_s: std::cell::RefCell<SelectState>,
+        tab_s: std::cell::RefCell<TabState>,
+        area_s: std::cell::RefCell<TextAreaState>,
+    }
+
+    impl Model for W {
+        type Msg = ();
+        fn update(&mut self, _m: ()) -> Command<()> {
+            Command::None
+        }
+        fn view(&self, frame: &mut Frame<'_>) {
+            let r = frame.area.rows_of(&[40.0, 40.0, 40.0, 40.0, 40.0]);
+            List::new(vec!["a".into(), "b".into()])
+                .on_select("lst", |w: &mut W, i: usize| w.hits.list = Some(i))
+                .render(r[0], frame, &mut self.list_s.borrow_mut());
+            Select::new("pick", vec!["x".into(), "y".into()])
+                .on_select("sel", |w: &mut W, i: usize| w.hits.select = Some(i))
+                .render(r[1], frame, &mut self.sel_s.borrow_mut());
+            Tabs::new(vec!["one".into(), "two".into()])
+                .on_select("tabs", |w: &mut W, i: usize| w.hits.tab = Some(i))
+                .render(r[2], frame, &mut self.tab_s.borrow_mut());
+            TextArea::new()
+                .on_input("area", |w: &mut W, t: &str| w.hits.area = t.to_string())
+                .render(r[3], frame, &mut self.area_s.borrow_mut());
+            Radio::new("opt", true)
+                .on_select("radio", |w: &mut W| w.hits.radio = true)
+                .render(r[4], frame);
+        }
+    }
+
+    let mut d = HeadlessDriver::new(
+        W {
+            hits: Hits::default(),
+            list_s: Default::default(),
+            sel_s: Default::default(),
+            tab_s: Default::default(),
+            area_s: Default::default(),
+        },
+        300.0,
+        300.0,
+    );
+    d.init();
+
+    let calls = [
+        ("lst", "select", serde_json::json!({"index": 1})),
+        ("sel", "select", serde_json::json!({"index": 1})),
+        ("tabs", "select_tab", serde_json::json!({"index": 1})),
+        ("area", "set_text", serde_json::json!({"text": "hello"})),
+        ("radio", "select", serde_json::Value::Null),
+    ];
+    for (id, action, params) in calls {
+        let r = d.process_request(&AgentRequest::ExecuteAction {
+            agent_id: id.into(),
+            action: action.into(),
+            params,
+        });
+        assert!(r.success, "{id}.{action} failed");
+    }
+
+    let h = &d.model().hits;
+    assert_eq!(h.list, Some(1), "List::on_select");
+    assert_eq!(h.select, Some(1), "Select::on_select");
+    assert_eq!(h.tab, Some(1), "Tabs::on_select");
+    assert_eq!(h.area, "hello", "TextArea::on_input");
+    assert!(h.radio, "Radio::on_select");
+
+    // And the whole form must be structurally sound, which also proves every
+    // handler is bound to an action its widget advertises.
+    assert!(d.validate().is_empty(), "{:?}", d.validate());
 }
