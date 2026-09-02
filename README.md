@@ -339,10 +339,13 @@ switch filter, read the result back):
 | counter: discover → act → verify → validate     | **12.3 µs** | 81,000/s  |
 | polling an unchanged screen (`get_tree since=`) | **100 ns**  | 49× less  |
 | todomvc: 9-step add/complete/filter/verify      | **42.3 µs** | 24,000/s  |
-| session setup: `query_ontology`, 27 widget types | **36.7 µs** | once      |
+| session setup: `query_ontology`, 29 widget types | **0.4 µs**  | once      |
 
-The counter figure previously read 8.2 µs and included a `query_ontology`
-step. That step was returning an empty catalogue — schemas were registered
+`query_ontology` reads the whole widget catalogue, which never changes, so a
+transport now serves it from bytes serialised once for the process rather than
+deep-cloning and re-serialising a `serde_json::Value` per caller — 36.7 µs to
+0.4 µs. The counter figure previously read 8.2 µs and included a
+`query_ontology` step. That step was returning an empty catalogue — schemas were registered
 only by an application that chose to, so for an ordinary program there was
 nothing to return and the call cost nothing. Reading the catalogue is now
 real, and it is session setup rather than part of a loop: an agent learns

@@ -80,6 +80,18 @@ impl OntologyRegistry {
         }))
     }
 
+    /// The catalogue already serialised, for a transport that wants bytes.
+    ///
+    /// `catalogue_json` avoids rebuilding the reply and is then deep-cloned by
+    /// every caller, which for thirty schemas costs about as much as building
+    /// it did. A transport never wanted the `Value`; it wanted these bytes.
+    #[must_use]
+    pub fn catalogue_str(&self) -> Option<&'static str> {
+        let value = self.catalogue_json()?;
+        static TEXT: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+        Some(TEXT.get_or_init(|| serde_json::to_string(value).unwrap_or_default()))
+    }
+
     /// The built-in schemas this registry falls back to, if any.
     fn fallback(&self) -> &'static HashMap<String, WidgetSchema> {
         static NONE: std::sync::OnceLock<HashMap<String, WidgetSchema>> =

@@ -3552,3 +3552,67 @@ fn a_viewport_skips_the_work_not_just_the_reply() {
         "a widget outside the viewport must stay clickable"
     );
 }
+
+/// Reading the widget catalogue over a transport costs a copy, not a rebuild.
+///
+/// `query_ontology` with no filter returns the same thirty schemas every time.
+/// The reply was cached as a `serde_json::Value` and then deep-cloned and
+/// re-serialised for each caller, which cost about as much as building it from
+/// scratch — 56 µs to emit a constant.
+#[test]
+fn the_catalogue_is_served_from_bytes_not_rebuilt() {
+    use dewey::agent::driver::HeadlessDriver;
+    use dewey::agent::protocol::AgentRequest;
+
+    struct App;
+    impl Model for App {
+        type Msg = ();
+        fn update(&mut self, _m: ()) -> Command<()> {
+            Command::None
+        }
+        fn view(&self, _f: &mut Frame<'_>) {}
+    }
+
+    let mut d = HeadlessDriver::new(App, 100.0, 100.0);
+    d.init();
+    let request = AgentRequest::QueryOntology {
+        query: None,
+        role: None,
+    };
+
+    // The fast path hand-builds its envelope, so it must still be JSON, and it
+    // must still say what the ordinary path says.
+    let raw = d.process_request_json(&request);
+    let parsed: serde_json::Value =
+        serde_json::from_str(&raw).unwrap_or_else(|e| panic!("{raw} is not JSON: {e}"));
+    assert_eq!(parsed["success"], serde_json::json!(true));
+
+    let typed = d.process_request(&request);
+    assert_eq!(
+        parsed["data"],
+        serde_json::to_value(typed.data.expect("data")).expect("value"),
+        "the cached bytes must describe the same catalogue as the Value path"
+    );
+
+    let schemas = parsed["data"].as_array().expect("an array of schemas");
+    assert!(schemas.len() >= 27, "{} widget types", schemas.len());
+    assert!(
+        schemas
+            .iter()
+            .any(|s| s["name"] == "Table" && !s["actions"].as_array().unwrap().is_empty()),
+        "and each must still carry its actions"
+    );
+
+    // A filtered query is not the catalogue and must not be served from it.
+    let filtered = d.process_request_json(&AgentRequest::QueryOntology {
+        query: Some("dropdown".into()),
+        role: None,
+    });
+    let filtered: serde_json::Value = serde_json::from_str(&filtered).expect("JSON");
+    let count = filtered["data"].as_array().map(Vec::len).unwrap_or(0);
+    assert!(
+        count > 0 && count < schemas.len(),
+        "a filtered query returned {count} of {}",
+        schemas.len()
+    );
+}

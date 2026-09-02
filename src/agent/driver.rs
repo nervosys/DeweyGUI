@@ -405,6 +405,20 @@ impl<M: Model + 'static> HeadlessDriver<M> {
     }
 
     pub fn process_request_json(&mut self, request: &AgentRequest) -> String {
+        // The unfiltered catalogue is constant, so it is emitted from a string
+        // serialised once for the process. Going through `process_request`
+        // deep-clones a thirty-schema `Value` and then serialises it, which
+        // costs about as much as building the reply from scratch would.
+        if let AgentRequest::QueryOntology {
+            query: None,
+            role: None,
+        } = request
+        {
+            if let Some(cached) = self.ontology.catalogue_str() {
+                return format!("{{\"success\":true,\"data\":{cached}}}");
+            }
+        }
+
         let AgentRequest::GetTree { since, viewport } = request else {
             let response = self.process_request(request);
             return serde_json::to_string(&response).unwrap_or_default();
