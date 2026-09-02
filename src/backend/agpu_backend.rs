@@ -797,6 +797,41 @@ impl<M: Model + 'static> RunningApp<M> {
                     self.process_command(c);
                 }
             }
+            // This backend owns a real winit window, so these are carried out
+            // rather than queued: there is no frame to wait for.
+            Command::SetWindowVisible(visible) => {
+                self.window.set_visible(visible);
+            }
+            Command::FocusWindow => {
+                self.window.set_visible(true);
+                self.window.focus_window();
+            }
+            Command::MinimiseWindow => {
+                self.window.set_minimized(true);
+            }
+            Command::SetWindowPosition { x, y } => {
+                self.window
+                    .set_outer_position(winit::dpi::LogicalPosition::new(x, y));
+            }
+            Command::SetWindowSize { width, height } => {
+                let _ = self
+                    .window
+                    .request_inner_size(winit::dpi::LogicalSize::new(width, height));
+            }
+            Command::SetAlwaysOnTop(on) => {
+                self.window.set_window_level(if on {
+                    winit::window::WindowLevel::AlwaysOnTop
+                } else {
+                    winit::window::WindowLevel::Normal
+                });
+            }
+            Command::SetFullscreen(on) => {
+                self.window
+                    .set_fullscreen(on.then_some(winit::window::Fullscreen::Borderless(None)));
+            }
+            Command::SetWindowTitle(title) => {
+                self.window.set_title(&title);
+            }
             Command::Message(msg) => {
                 let cmd = self.model.update(msg);
                 self.process_command(cmd);

@@ -62,6 +62,27 @@ pub enum Command<Msg> {
         action: String,
         params: serde_json::Value,
     },
+    /// Show or hide the window without ending the program.
+    ///
+    /// The defining gesture of a tray application is "click the icon, toggle
+    /// the window", and until this existed there was no way to say it: the
+    /// only window operation a `Model` could reach was [`Command::Quit`], so
+    /// closing to the tray and quitting were the same thing.
+    SetWindowVisible(bool),
+    /// Bring the window to the front and give it keyboard focus.
+    FocusWindow,
+    /// Minimise the window to the taskbar or dock.
+    MinimiseWindow,
+    /// Move the window's top-left corner to a screen position.
+    SetWindowPosition { x: f32, y: f32 },
+    /// Resize the window.
+    SetWindowSize { width: f32, height: f32 },
+    /// Keep the window above others, or stop doing so.
+    SetAlwaysOnTop(bool),
+    /// Enter or leave fullscreen.
+    SetFullscreen(bool),
+    /// Set the window title.
+    SetWindowTitle(String),
     /// Spawn an asynchronous task that eventually produces a message.
     Task(Box<dyn FnOnce() -> Msg + Send>),
     /// Spawn an async task with a timeout. If the task doesn't complete
@@ -88,6 +109,22 @@ impl<Msg: std::fmt::Debug> std::fmt::Debug for Command<Msg> {
             Self::Message(msg) => f.debug_tuple("Message").field(msg).finish(),
             Self::SetTickRate(d) => f.debug_tuple("SetTickRate").field(d).finish(),
             Self::ExportOntology => write!(f, "ExportOntology"),
+            Self::SetWindowVisible(v) => f.debug_tuple("SetWindowVisible").field(v).finish(),
+            Self::FocusWindow => write!(f, "FocusWindow"),
+            Self::MinimiseWindow => write!(f, "MinimiseWindow"),
+            Self::SetWindowPosition { x, y } => f
+                .debug_struct("SetWindowPosition")
+                .field("x", x)
+                .field("y", y)
+                .finish(),
+            Self::SetWindowSize { width, height } => f
+                .debug_struct("SetWindowSize")
+                .field("width", width)
+                .field("height", height)
+                .finish(),
+            Self::SetAlwaysOnTop(v) => f.debug_tuple("SetAlwaysOnTop").field(v).finish(),
+            Self::SetFullscreen(v) => f.debug_tuple("SetFullscreen").field(v).finish(),
+            Self::SetWindowTitle(t) => f.debug_tuple("SetWindowTitle").field(t).finish(),
             Self::AgentAction {
                 agent_id,
                 action,
@@ -496,6 +533,20 @@ pub struct ProgramOptions {
     pub vsync: bool,
     /// Whether to use a transparent window.
     pub transparent: bool,
+    /// Whether the window floats above others.
+    ///
+    /// A docked sidebar or utility panel needs this; without it the window is
+    /// an ordinary one that disappears behind whatever is clicked next.
+    pub always_on_top: bool,
+    /// Whether the window has a title bar and borders.
+    pub decorated: bool,
+    /// Initial top-left position in logical pixels. `None` lets the platform
+    /// place the window.
+    pub position: Option<(f32, f32)>,
+    /// Smallest size the window may be resized to.
+    pub min_size: Option<(f32, f32)>,
+    /// Largest size the window may be resized to.
+    pub max_size: Option<(f32, f32)>,
     /// When to build the agent ontology tree. See [`OntologyMode`].
     pub ontology: OntologyMode,
 }
@@ -510,6 +561,11 @@ impl Default for ProgramOptions {
             resizable: true,
             vsync: true,
             transparent: false,
+            always_on_top: false,
+            decorated: true,
+            position: None,
+            min_size: None,
+            max_size: None,
             ontology: OntologyMode::default(),
         }
     }
@@ -544,10 +600,31 @@ impl<M: Model + 'static> Program<M> {
     /// Run the application. This blocks until the window closes.
     pub fn run(self) -> Result<(), eframe::Error> {
         let options = eframe::NativeOptions {
-            viewport: egui::ViewportBuilder::default()
-                .with_inner_size([self.options.width, self.options.height])
-                .with_resizable(self.options.resizable)
-                .with_transparent(self.options.transparent),
+            viewport: {
+                // Every field here was already declared on `ProgramOptions` or
+                // `WindowConfig` and several never reached the window:
+                // `fullscreen` produced a fullscreen window under the agpu
+                // backend and was silently dropped under this one.
+                let mut viewport = egui::ViewportBuilder::default()
+                    .with_inner_size([self.options.width, self.options.height])
+                    .with_resizable(self.options.resizable)
+                    .with_transparent(self.options.transparent)
+                    .with_fullscreen(self.options.fullscreen)
+                    .with_decorations(self.options.decorated);
+                if self.options.always_on_top {
+                    viewport = viewport.with_always_on_top();
+                }
+                if let Some((x, y)) = self.options.position {
+                    viewport = viewport.with_position([x, y]);
+                }
+                if let Some((w, h)) = self.options.min_size {
+                    viewport = viewport.with_min_inner_size([w, h]);
+                }
+                if let Some((w, h)) = self.options.max_size {
+                    viewport = viewport.with_max_inner_size([w, h]);
+                }
+                viewport
+            },
             vsync: self.options.vsync,
             ..Default::default()
         };
@@ -571,6 +648,13 @@ struct DeweyApp<M: Model> {
     options: ProgramOptions,
     running: bool,
     last_tick: std::time::Instant,
+    /// Window operations waiting for a frame to send them on.
+    ///
+    /// `Model::update` runs without an `egui::Context` — deliberately, so that
+    /// an application is not written against one backend — so a command that
+    /// moves the window is queued here and flushed when the frame that has a
+    /// context comes round.
+    pending_viewport: Vec<egui::ViewportCommand>,
 }
 
 #[cfg(feature = "egui-backend")]
@@ -587,6 +671,7 @@ impl<M: Model> DeweyApp<M> {
             options,
             running: true,
             last_tick: std::time::Instant::now(),
+            pending_viewport: Vec::new(),
         };
         app.process_command(init_cmd);
         app
@@ -619,6 +704,43 @@ impl<M: Model> DeweyApp<M> {
                 params,
             } => {
                 log::debug!("AgentAction: {agent_id}.{action}({params})");
+            }
+            Command::SetWindowVisible(visible) => {
+                self.pending_viewport
+                    .push(egui::ViewportCommand::Visible(visible));
+            }
+            Command::FocusWindow => {
+                self.pending_viewport
+                    .push(egui::ViewportCommand::Visible(true));
+                self.pending_viewport.push(egui::ViewportCommand::Focus);
+            }
+            Command::MinimiseWindow => {
+                self.pending_viewport
+                    .push(egui::ViewportCommand::Minimized(true));
+            }
+            Command::SetWindowPosition { x, y } => {
+                self.pending_viewport
+                    .push(egui::ViewportCommand::OuterPosition(egui::pos2(x, y)));
+            }
+            Command::SetWindowSize { width, height } => {
+                self.pending_viewport
+                    .push(egui::ViewportCommand::InnerSize(egui::vec2(width, height)));
+            }
+            Command::SetAlwaysOnTop(on) => {
+                self.pending_viewport
+                    .push(egui::ViewportCommand::WindowLevel(if on {
+                        egui::WindowLevel::AlwaysOnTop
+                    } else {
+                        egui::WindowLevel::Normal
+                    }));
+            }
+            Command::SetFullscreen(on) => {
+                self.pending_viewport
+                    .push(egui::ViewportCommand::Fullscreen(on));
+            }
+            Command::SetWindowTitle(title) => {
+                self.pending_viewport
+                    .push(egui::ViewportCommand::Title(title));
             }
             Command::Task(task) => {
                 // Execute the task synchronously in the update cycle.
@@ -657,6 +779,12 @@ impl<M: Model> DeweyApp<M> {
 #[cfg(feature = "egui-backend")]
 impl<M: Model + 'static> eframe::App for DeweyApp<M> {
     fn update(&mut self, ctx: &egui::Context, _eframe: &mut eframe::Frame) {
+        // Before the running check: a model that hid its window still expects
+        // the hide to happen.
+        for cmd in self.pending_viewport.drain(..) {
+            ctx.send_viewport_cmd(cmd);
+        }
+
         if !self.running {
             ctx.send_viewport_cmd(egui::ViewportCommand::Close);
             return;

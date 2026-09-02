@@ -1,8 +1,20 @@
 //! System tray integration for Dewey.
 //!
-//! Provides a platform-abstracted system tray API. The actual platform
-//! implementation is behind the `system-tray` feature (future work).
-//! This module defines the types and a trait for tray interaction.
+//! **This module is types only.** It defines [`TrayBackend`] and the values it
+//! trades in; it ships no platform implementation, and the runtime does not
+//! construct or poll one. An application that wants a tray icon implements
+//! [`TrayBackend`] itself — over `tray-icon` or similar — and drives
+//! [`TrayBackend::poll_event`] from its own `Model::update`.
+//!
+//! There is no `system-tray` feature to enable. A previous version of this
+//! comment said the implementation was behind one, which sent people looking
+//! for a feature that does not exist.
+//!
+//! To act on a tray click, return [`Command::SetWindowVisible`] or
+//! [`Command::FocusWindow`] from `update`.
+//!
+//! [`Command::SetWindowVisible`]: crate::runtime::Command::SetWindowVisible
+//! [`Command::FocusWindow`]: crate::runtime::Command::FocusWindow
 
 use crate::ontology::*;
 
@@ -63,6 +75,35 @@ impl TrayMenuItem {
     }
 }
 
+/// Raw pixels for a tray icon.
+///
+/// Shaped like [`ImageData`](crate::paint::ImageData) so that supplying an
+/// icon needs no image-decoding dependency: an application that has a PNG
+/// decodes it however it likes and hands over the pixels.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TrayIconImage {
+    pub width: u32,
+    pub height: u32,
+    /// RGBA, 8 bits per channel, `width * height * 4` bytes.
+    pub rgba: Vec<u8>,
+}
+
+impl TrayIconImage {
+    /// Build an icon from RGBA bytes.
+    ///
+    /// Returns `None` when the buffer is not `width * height * 4` bytes, which
+    /// every platform tray API would otherwise reject at a less useful moment.
+    #[must_use]
+    pub fn from_rgba(width: u32, height: u32, rgba: Vec<u8>) -> Option<Self> {
+        let expected = (width as usize) * (height as usize) * 4;
+        (rgba.len() == expected).then_some(Self {
+            width,
+            height,
+            rgba,
+        })
+    }
+}
+
 /// Configuration for a system tray icon.
 #[derive(Debug, Clone)]
 pub struct TrayConfig {
@@ -70,6 +111,12 @@ pub struct TrayConfig {
     pub tooltip: String,
     /// Context menu items.
     pub menu: Vec<TrayMenuItem>,
+    /// The icon to show. `None` leaves the choice to the backend.
+    ///
+    /// Every platform tray API requires an icon to create the item at all, so
+    /// a backend given `None` must invent one. Supply this if the application
+    /// has artwork of its own.
+    pub icon: Option<TrayIconImage>,
 }
 
 impl TrayConfig {
@@ -78,6 +125,7 @@ impl TrayConfig {
         Self {
             tooltip: tooltip.into(),
             menu: Vec::new(),
+            icon: None,
         }
     }
 
@@ -86,6 +134,21 @@ impl TrayConfig {
         self.menu = menu;
         self
     }
+
+    /// Set the tray icon.
+    #[must_use]
+    pub fn with_icon(mut self, icon: TrayIconImage) -> Self {
+        self.icon = Some(icon);
+        self
+    }
+}
+
+/// Which mouse button a tray click used.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TrayMouseButton {
+    Left,
+    Right,
+    Middle,
 }
 
 /// Events from the system tray.
@@ -93,6 +156,13 @@ impl TrayConfig {
 pub enum TrayEvent {
     /// A menu item was clicked.
     MenuItemClicked(String),
+    /// The tray icon was clicked once.
+    ///
+    /// Distinct from [`TrayEvent::DoubleClick`] because the platforms differ
+    /// on which one means "show the window": on Windows it is a single left
+    /// click, on macOS a single click opens the menu. Without this variant a
+    /// backend had to report every click as a double one.
+    Click { button: TrayMouseButton },
     /// The tray icon was double-clicked.
     DoubleClick,
 }

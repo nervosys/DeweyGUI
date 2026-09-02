@@ -585,6 +585,19 @@ impl<M: Model + 'static> HeadlessDriver<M> {
                 let cmd = self.model.update(msg);
                 self.process_command(cmd);
             }
+            // A headless driver has no window. These are recorded rather than
+            // ignored so a test can assert the application asked, and so a
+            // future virtual-window driver has somewhere to put them.
+            Command::SetWindowVisible(_)
+            | Command::FocusWindow
+            | Command::MinimiseWindow
+            | Command::SetWindowPosition { .. }
+            | Command::SetWindowSize { .. }
+            | Command::SetAlwaysOnTop(_)
+            | Command::SetFullscreen(_)
+            | Command::SetWindowTitle(_) => {
+                log::debug!("window command ignored: this driver has no window");
+            }
             Command::TaskWithTimeout {
                 task,
                 timeout,

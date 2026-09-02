@@ -36,9 +36,16 @@
 ### Platform Integration
 
 - **Cross-Platform** — Windows, macOS, Linux, and Web (wasm32)
-- **Multi-Window** — `WindowManager` for opening, closing, focusing, and managing multiple windows
-- **System Tray** — `TrayBackend` trait with configurable menus, tooltips, and tray icons
-- **Native File Dialogs** — `DialogBackend` for open/save dialogs and message boxes
+- **Window control** — `Command::SetWindowVisible`, `FocusWindow`, `MinimiseWindow`,
+  `SetWindowPosition`, `SetWindowSize`, `SetAlwaysOnTop`, `SetFullscreen`,
+  `SetWindowTitle`, honoured by both backends
+- **System Tray** — *types only.* `TrayBackend` is a trait to implement, with
+  `TrayConfig`, `TrayMenuItem`, `TrayEvent` and `TrayIconImage`. No platform
+  backend ships, and the runtime neither creates nor polls one
+- **Native File Dialogs** — *types only.* `DialogBackend` is a trait to
+  implement; no platform backend ships
+- **Multi-Window** — `WindowManager` tracks windows in memory. It does not
+  create or raise real ones; use the window commands above for that
 - **Drag & Drop** — Full drag-and-drop event pipeline with typed payloads (files, text, custom data)
 
 ### Theming & Styling
@@ -212,9 +219,9 @@ Dewey speaks JSON Lines over stdin/stdout. Any language that can read/write line
 | **Layout Engine**       | Constraint-based             | Manual rects      | Flexbox-like      | Grid/Box               | Box/Grid/Custom  | Box/Grid/Form                 | Flex/Stack/Custom        | CSS Flexbox/Grid | CSS Flexbox/Grid     | Panel/Grid/Stack         |
 | **Plugin System**       | ✅ Plugin trait + registry    | ❌                 | ❌                 | ❌                      | ❌                | ✅ QPlugin                     | ✅ Packages               | ✅ npm            | ✅ npm                | ❌                        |
 | **i18n / Localization** | ✅ Built-in (I18n)            | ❌                 | ❌                 | ✅                      | ✅ gettext        | ✅ Qt Linguist                 | ✅ intl                   | ✅ i18next        | ✅ i18next            | ❌                        |
-| **Multi-Window**        | ✅ WindowManager              | ✅ Viewports       | ❌                 | ✅                      | ✅                | ✅                             | ✅                        | ✅                | ✅                    | ✅                        |
-| **System Tray**         | ✅ TrayBackend                | ❌                 | ❌                 | ❌                      | ✅                | ✅                             | ❌ (plugin)               | ✅                | ✅                    | ❌                        |
-| **Native Dialogs**      | ✅ DialogBackend              | ❌ (rfd crate)     | ❌                 | ❌                      | ✅                | ✅                             | ❌ (plugin)               | ✅                | ✅                    | ✅                        |
+| **Multi-Window**        | ⚠️ Bookkeeping only           | ✅ Viewports       | ❌                 | ✅                      | ✅                | ✅                             | ✅                        | ✅                | ✅                    | ✅                        |
+| **System Tray**         | ⚠️ Trait, no backend          | ❌                 | ❌                 | ❌                      | ✅                | ✅                             | ❌ (plugin)               | ✅                | ✅                    | ❌                        |
+| **Native Dialogs**      | ⚠️ Trait, no backend          | ❌ (rfd crate)     | ❌                 | ❌                      | ✅                | ✅                             | ❌ (plugin)               | ✅                | ✅                    | ✅                        |
 | **Drag & Drop**         | ✅ Typed payloads             | ✅ Basic           | ❌                 | ❌                      | ✅                | ✅                             | ✅                        | ✅                | ✅                    | ✅                        |
 | **GPU Render Batching** | ✅ Automatic quad merging     | ✅                 | ✅                 | ✅                      | ✅                | ✅                             | ✅                        | ✅                | N/A                  | ✅                        |
 | **Built-in Profiler**   | ✅ Per-frame + FPS + history  | ❌                 | ❌                 | ❌                      | ❌                | ❌                             | ✅ DevTools               | ✅ DevTools       | ❌                    | ❌                        |
@@ -456,7 +463,9 @@ format is unchanged throughout.
 7. **Built-in profiler** — Per-frame timing, FPS tracking, widget counting, and configurable history — no external tools needed
 8. **Plugin-extensible** — `Plugin` trait with full lifecycle hooks and `PluginRegistry` for modular architecture
 9. **i18n-ready** — Built-in `I18n` framework with locale fallback chains and message catalogs — no third-party crate required
-10. **Platform-complete** — Multi-window, system tray, native file dialogs, and drag-and-drop with typed payloads — all built in
+10. **Window control from the model** — show, hide, focus, move, resize and
+    retitle the window by returning a `Command`, on both backends. Tray and
+    native dialogs are traits to implement against, not implementations
 
 \* Electron/Tauri support agent interaction only through fragile accessibility trees or DOM scraping.
 

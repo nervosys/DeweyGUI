@@ -142,9 +142,15 @@ Agentic-first GUI framework for Rust with pluggable rendering backends.
 - [x] Web backend (`WebPainter` with `WebRenderOp` for wasm32/Canvas 2D)
 - [x] Headless rendering to image buffer (`ImagePainter` software rasterizer)
 - [x] Software rasterizer (pixel-level fill_rect, fill_circle, line, stroke, alpha blending)
-- [x] Multi-window support (`WindowManager`, `WindowConfig`, focus tracking)
-- [x] System tray integration (`TrayBackend` trait, `TrayConfig`, `NullTrayBackend`)
-- [x] Native file dialogs (`DialogBackend` trait, `OpenFileDialog`, `SaveFileDialog`, `MessageBox`)
+- [x] Window control commands (show, hide, focus, minimise, move, resize,
+      always-on-top, fullscreen, title) on both backends
+- [~] Multi-window (`WindowManager`, `WindowConfig`, focus tracking) — in-memory
+      bookkeeping; does not create or raise real windows
+- [~] System tray (`TrayBackend` trait, `TrayConfig`, `TrayIconImage`,
+      `TrayEvent`, `NullTrayBackend`) — types only, no platform backend, not
+      wired into the runtime
+- [~] Native file dialogs (`DialogBackend` trait, `OpenFileDialog`,
+      `SaveFileDialog`, `MessageBox`) — types only, no platform backend
 
 ### v1.3 — Performance & Polish
 - [x] GPU-accelerated canvas rendering (`RenderBatch`, `RenderPrimitive`, quad merging optimization)

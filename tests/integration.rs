@@ -3110,3 +3110,102 @@ fn a_viewport_narrows_the_tree_to_what_is_visible() {
     assert_eq!(direct["data"]["shown_nodes"], serde_json::json!(10));
     assert_eq!(direct["data"]["root"], clipped["root"]);
 }
+
+/// A model can ask for its own window to be shown, hidden or focused.
+///
+/// Reported against 6ef0d7d by the Tabinator build: the defining gesture of a
+/// tray application is "click the icon, toggle the window", and `Command` had
+/// no way to say it. The only window operation reachable from `update` was
+/// `Quit`, so closing to the tray and quitting were the same thing.
+#[test]
+fn a_model_can_move_its_own_window() {
+    use dewey::agent::driver::HeadlessDriver;
+    use dewey::agent::protocol::AgentRequest;
+
+    #[derive(Default)]
+    struct App {
+        visible: bool,
+    }
+
+    impl Model for App {
+        type Msg = bool;
+        fn update(&mut self, show: bool) -> Command<bool> {
+            self.visible = show;
+            // Both must compile and be returnable from `update`; a headless
+            // driver has no window to carry them out on.
+            if show {
+                Command::Batch(vec![
+                    Command::SetWindowVisible(true),
+                    Command::FocusWindow,
+                    Command::SetAlwaysOnTop(true),
+                    Command::SetWindowTitle("Tabinator".into()),
+                ])
+            } else {
+                Command::SetWindowVisible(false)
+            }
+        }
+        fn view(&self, frame: &mut Frame<'_>) {
+            Button::new("toggle")
+                .action("toggle", !self.visible)
+                .render(frame.area, frame);
+        }
+    }
+
+    let mut d = HeadlessDriver::new(App::default(), 200.0, 80.0);
+    d.init();
+
+    let r = d.process_request(&AgentRequest::ExecuteAction {
+        agent_id: "toggle".into(),
+        action: "click".into(),
+        params: serde_json::Value::Null,
+    });
+    assert!(r.success);
+    assert!(
+        d.model().visible,
+        "the window command must not swallow the state change that produced it"
+    );
+
+    // Every variant is constructible and Debug-printable, which is what a
+    // backend match arm needs.
+    let all: Vec<Command<bool>> = vec![
+        Command::SetWindowVisible(false),
+        Command::FocusWindow,
+        Command::MinimiseWindow,
+        Command::SetWindowPosition { x: 10.0, y: 20.0 },
+        Command::SetWindowSize {
+            width: 300.0,
+            height: 400.0,
+        },
+        Command::SetAlwaysOnTop(true),
+        Command::SetFullscreen(false),
+        Command::SetWindowTitle("t".into()),
+    ];
+    assert_eq!(all.len(), 8);
+    assert!(format!("{all:?}").contains("SetWindowPosition"));
+}
+
+/// A tray icon can carry artwork, and a single click is distinguishable.
+///
+/// Both reported by the Tabinator build: `TrayConfig` promised tray icons in
+/// the README and had no field for one, so their backend generates a 32x32
+/// buffer procedurally; and `TrayEvent` had only `DoubleClick`, so a backend
+/// had to report a single click as a double one.
+#[test]
+fn tray_config_carries_an_icon_and_events_name_the_click() {
+    use dewey::tray::{TrayConfig, TrayEvent, TrayIconImage, TrayMouseButton};
+
+    let icon = TrayIconImage::from_rgba(2, 2, vec![0u8; 2 * 2 * 4]).expect("well-formed");
+    let config = TrayConfig::new("Tabinator").with_icon(icon.clone());
+    assert_eq!(config.icon.as_ref().map(|i| i.width), Some(2));
+
+    assert!(
+        TrayIconImage::from_rgba(2, 2, vec![0u8; 3]).is_none(),
+        "a buffer that is not width * height * 4 must be refused here, not by \
+         the platform later"
+    );
+
+    let click = TrayEvent::Click {
+        button: TrayMouseButton::Left,
+    };
+    assert!(!matches!(click, TrayEvent::DoubleClick));
+}
