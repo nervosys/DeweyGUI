@@ -20,10 +20,20 @@ use dewey::prelude::*;
 
 struct TodoApp {
     items: Vec<TodoItem>,
+    /// The next id to hand out. Ids are never reused, so a name an agent read
+    /// once never comes to mean something else.
+    next_id: u32,
     filter: Filter,
 }
 
 struct TodoItem {
+    /// Names this item for as long as it exists.
+    ///
+    /// Not its position: an agent that reads `todo_2`, then switches the
+    /// filter or completes an earlier item, would find the same name meaning
+    /// a different todo — and would be told its action succeeded. `validate`
+    /// reports index-shaped ids as `positional_id` for exactly this reason.
+    id: u32,
     text: String,
     done: bool,
 }
@@ -40,18 +50,22 @@ impl TodoApp {
         Self {
             items: vec![
                 TodoItem {
+                    id: 1,
                     text: "Write documentation".into(),
                     done: false,
                 },
                 TodoItem {
+                    id: 2,
                     text: "Add tests".into(),
                     done: true,
                 },
                 TodoItem {
+                    id: 3,
                     text: "Release v1.0".into(),
                     done: false,
                 },
             ],
+            next_id: 4,
             filter: Filter::All,
         }
     }
@@ -79,7 +93,8 @@ impl TodoApp {
 #[derive(Debug)]
 #[allow(dead_code)]
 enum Msg {
-    ToggleItem(usize),
+    /// Names the item, not its place in the list.
+    ToggleItem(u32),
     AddItem(String),
     SetFilter(Filter),
     ClearDone,
@@ -90,13 +105,18 @@ impl Model for TodoApp {
 
     fn update(&mut self, msg: Msg) -> Command<Msg> {
         match msg {
-            Msg::ToggleItem(idx) => {
-                if let Some(item) = self.items.get_mut(idx) {
+            Msg::ToggleItem(id) => {
+                if let Some(item) = self.items.iter_mut().find(|i| i.id == id) {
                     item.done = !item.done;
                 }
             }
             Msg::AddItem(text) => {
-                self.items.push(TodoItem { text, done: false });
+                self.items.push(TodoItem {
+                    id: self.next_id,
+                    text,
+                    done: false,
+                });
+                self.next_id += 1;
             }
             Msg::SetFilter(f) => self.filter = f,
             Msg::ClearDone => self.items.retain(|i| !i.done),
@@ -165,8 +185,15 @@ impl Model for TodoApp {
         let item_rows = Layout::new(Direction::Vertical, item_constraints).split(rows[3]);
 
         for (i, item) in visible.iter().enumerate() {
+            // `on` rather than `agent_id`: the id alone makes the checkbox
+            // visible to an agent, and toggling it would have done nothing.
+            let id = item.id;
             Checkbox::new(&item.text, item.done)
-                .agent_id(format!("todo_{i}"))
+                .on(format!("todo_{id}"), move |app: &mut TodoApp| {
+                    if let Some(item) = app.items.iter_mut().find(|i| i.id == id) {
+                        item.done = !item.done;
+                    }
+                })
                 .render(item_rows[i], frame);
         }
 
