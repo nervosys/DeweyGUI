@@ -182,7 +182,7 @@ impl Widget for Modal {
             return;
         }
 
-        if frame.ontology_enabled() && !self.agent_id.is_empty() {
+        if frame.describes(area) && !self.agent_id.is_empty() {
             let node = UiNode::new("Modal", SemanticRole::Modal)
                 .with_id(self.agent_id.clone())
                 .with_bounds(area.into())

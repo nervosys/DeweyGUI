@@ -200,7 +200,7 @@ impl Discoverable for Toolbar {
 impl Widget for Toolbar {
     fn render(mut self, area: Rect, frame: &mut Frame<'_>) {
         if !self.agent_id.is_empty() {
-            if frame.ontology_enabled() {
+            if frame.describes(area) {
                 let mut node = UiNode::new("Toolbar", SemanticRole::Navigation)
                     .with_id(self.agent_id.clone())
                     .with_bounds(area.into());

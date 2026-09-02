@@ -410,7 +410,7 @@ impl StatefulWidget for DatePicker {
         let ts = self.style.resolved_text();
 
         if !self.agent_id.is_empty() {
-            if frame.ontology_enabled() {
+            if frame.describes(area) {
                 let node = UiNode::new("DatePicker", SemanticRole::Input)
                     .with_id(self.agent_id.clone())
                     .with_bounds(area.into())

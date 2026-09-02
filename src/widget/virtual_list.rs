@@ -231,7 +231,7 @@ where
         );
 
         if !self.agent_id.is_empty() {
-            if frame.ontology_enabled() {
+            if frame.describes(area) {
                 let node = UiNode::new("VirtualList", SemanticRole::Scrollable)
                     .with_id(self.agent_id.clone())
                     .with_bounds(area.into())

@@ -226,7 +226,7 @@ impl StatefulWidget for Splitter {
         state.ratio = state.ratio.clamp(self.min_ratio, self.max_ratio);
 
         if !self.agent_id.is_empty() {
-            if frame.ontology_enabled() {
+            if frame.describes(area) {
                 let node = UiNode::new("Splitter", SemanticRole::Container)
                     .with_id(self.agent_id.clone())
                     .with_bounds(area.into())

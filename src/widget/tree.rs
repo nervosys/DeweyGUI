@@ -286,7 +286,7 @@ impl Widget for Tree {
                 frame.register_message(self.agent_id.clone(), action, handler);
             }
         }
-        if frame.ontology_enabled() && !self.agent_id.is_empty() {
+        if frame.describes(area) && !self.agent_id.is_empty() {
             let node = UiNode::new("Tree", SemanticRole::TreeNode)
                 .with_id(self.agent_id.clone())
                 .with_bounds(area.into())

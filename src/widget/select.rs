@@ -197,7 +197,7 @@ impl StatefulWidget for Select {
 
         // Built last so owned fields move into the state instead of being
         // cloned; painting above only borrows them.
-        if frame.ontology_enabled() && !self.agent_id.is_empty() {
+        if frame.describes(area) && !self.agent_id.is_empty() {
             let selected_text = self
                 .options
                 .get(state.selected)

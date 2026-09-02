@@ -351,7 +351,7 @@ impl StatefulWidget for CommandPalette {
         }
 
         if !self.agent_id.is_empty() {
-            if frame.ontology_enabled() {
+            if frame.describes(area) {
                 let results: Vec<_> = filtered
                     .iter()
                     .map(|c| serde_json::json!({"id": c.id, "label": c.label}))

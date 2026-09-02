@@ -107,7 +107,7 @@ impl Discoverable for ProgressBar {
 
 impl Widget for ProgressBar {
     fn render(self, area: Rect, frame: &mut Frame<'_>) {
-        if frame.ontology_enabled() && !self.agent_id.is_empty() {
+        if frame.describes(area) && !self.agent_id.is_empty() {
             let node = UiNode::new("ProgressBar", SemanticRole::Progress)
                 .with_id(self.agent_id.clone())
                 .with_bounds(area.into())

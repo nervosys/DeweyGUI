@@ -251,24 +251,29 @@ it. Both paths exist in this crate, so both run.
 
 ### 1. Seeing
 
-| Rows | tree | | screenshot, all rows | | screenshot, one viewport | | unchanged |
+| Rows | tree, all | | screenshot, one viewport | | **tree, one viewport** | | unchanged |
 | ---- | ------- | ------- | ------- | ------- | ------- | ------- | ------ |
 |      | time | bytes | time | bytes | time | bytes | bytes |
-| 10   | 22.3 us | 4.5 kB | 147.6 us | 7.3 kB | 683.9 us | 12.7 kB | 30 B |
-| 100  | 371.4 us | 40.2 kB | 3.16 ms | 57.6 kB | 847.4 us | 16.7 kB | 30 B |
-| 1000 | 3.92 ms | 401.5 kB | 37.31 ms | 553.3 kB | 1.15 ms | 16.7 kB | 30 B |
+| 10   | 28.1 us | 4.5 kB | 979.5 us | 12.7 kB | **9.9 us** | 4.5 kB | 30 B |
+| 100  | 368.7 us | 40.2 kB | 1.65 ms | 16.7 kB | **46.6 us** | 11.7 kB | 30 B |
+| 1000 | 7.48 ms | 401.5 kB | 1.50 ms | 16.7 kB | **288.5 us** | 11.7 kB | 30 B |
 
 The middle pair grows the window until every row is drawn, which flatters the
 tree. A real screenshot is the third pair: one viewport, near constant however
 long the list, because it shows only what is on screen. The tree describes
 every widget including the ones nobody can see.
 
-So the tree is the smaller observation while the interface fits on a screen and
-the larger one as soon as it does not. **At 1000 rows the structured
-observation is 3.7x slower and 24x bigger than a screenshot of the same
-application.** Nothing in the protocol pages or windows the tree; that is a
-real gap, and the `since=` column is the mitigation that exists today — a
-re-poll of an unchanged screen costs 100 ns and 30 bytes at every size.
+Given the same viewport the screenshot gets, the tree is **5x faster and 30%
+smaller** at 1000 rows. It was not always: the unclipped tree describes every
+widget including the ones nobody can see, and at 1000 rows that was 3.7x slower
+and 24x bigger than a picture. The viewport now decides *before* a `UiNode` is
+built rather than clipping a finished tree, which took the clipped 1000-row
+read from 971 us to 288 us.
+
+What remains: the clipped time still grows with the list, because an
+off-screen widget is still laid out and still painted — only the description is
+skipped. A list long enough for that to matter wants `VirtualList` in the view.
+A re-poll of an unchanged screen costs 100 ns and 30 bytes at every size.
 
 ### 2. Acting
 

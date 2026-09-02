@@ -11,54 +11,6 @@ use crate::runtime::{Command, Frame, Model};
 use super::protocol::{AgentRequest, AgentResponse, RequestEnvelope};
 use super::session::AgentSession;
 
-/// A copy of `tree` describing only the widgets a viewport shows.
-///
-/// The reply also carries `total` and `shown`, so an agent can tell a short
-/// list from a long one it is looking at part of. Nodes are kept when they or
-/// any descendant intersect, so a container does not vanish and take its
-/// visible children with it.
-fn clip_to_viewport(
-    tree: &crate::ontology::UiTree,
-    view: crate::agent::protocol::Viewport,
-) -> crate::ontology::UiTree {
-    fn keep(node: &crate::ontology::UiNode, view: &crate::agent::protocol::Viewport) -> bool {
-        node.bounds.as_ref().is_none_or(|b| view.shows(b))
-            || node.children.iter().any(|c| keep(c, view))
-    }
-    fn prune(
-        node: &crate::ontology::UiNode,
-        view: &crate::agent::protocol::Viewport,
-        shown: &mut usize,
-        total: &mut usize,
-    ) -> crate::ontology::UiNode {
-        let mut out = node.clone();
-        out.children = Vec::new();
-        for child in &node.children {
-            *total += 1;
-            if keep(child, view) {
-                *shown += 1;
-                out.children.push(prune(child, view, shown, total));
-            } else {
-                count(child, total);
-            }
-        }
-        out
-    }
-    fn count(node: &crate::ontology::UiNode, total: &mut usize) {
-        for child in &node.children {
-            *total += 1;
-            count(child, total);
-        }
-    }
-
-    let (mut shown, mut total) = (0usize, 0usize);
-    let root = prune(&tree.root, &view, &mut shown, &mut total);
-    let mut out = crate::ontology::UiTree::new(root);
-    out.total_nodes = Some(total);
-    out.shown_nodes = Some(shown);
-    out
-}
-
 /// Run a Dewey application headlessly, driven entirely by agent protocol messages.
 pub struct HeadlessDriver<M: Model> {
     model: M,
@@ -148,7 +100,10 @@ impl<M: Model + 'static> HeadlessDriver<M> {
         }
 
         if Self::needs_tree(request) {
-            self.render();
+            match request {
+                AgentRequest::GetTree { viewport, .. } => self.render_clipped(*viewport),
+                _ => self.render(),
+            }
         }
 
         let (mut response, should_quit) = self.session.process_request(request, &self.ontology);
@@ -257,18 +212,6 @@ impl<M: Model + 'static> HeadlessDriver<M> {
             }
         }
 
-        // Narrow a tree reply to the requested viewport.
-        if let AgentRequest::GetTree {
-            viewport: Some(view),
-            ..
-        } = request
-        {
-            if let Some(full) = self.ontology.tree() {
-                let clipped = clip_to_viewport(full, *view);
-                response.data = serde_json::to_value(&clipped).ok();
-            }
-        }
-
         // Stamp the version onto a tree reply so the agent can ask
         // conditionally next time.
         if matches!(request, AgentRequest::GetTree { .. }) {
@@ -334,23 +277,51 @@ impl<M: Model + 'static> HeadlessDriver<M> {
 
     /// Render the model view to build/refresh the UI tree in the ontology.
     fn render(&mut self) {
+        self.render_clipped(None);
+    }
+
+    /// Render, describing only the widgets a viewport shows.
+    ///
+    /// The viewport goes in before the frame runs rather than being applied to
+    /// the finished tree: a widget outside it never becomes a `UiNode` at all.
+    /// Clipping afterwards kept the reply small and left the work in place,
+    /// which is why the clipped time still grew with the length of a list.
+    ///
+    /// Hit-testing and painting are untouched — an off-screen widget is still
+    /// laid out and still clickable, it is simply not described.
+    fn render_clipped(&mut self, viewport: Option<crate::agent::protocol::Viewport>) {
         let area =
             crate::core::Rect::new(0.0, 0.0, self.window_size.width, self.window_size.height);
         self.hit_map.clear();
         let mut backend =
             crate::backend::test::TestBackend::new(self.window_size.width, self.window_size.height);
         let mut frame = Frame::new(area, &mut self.hit_map, &mut backend);
+        if let Some(view) = viewport {
+            frame = frame.clipped_to(crate::core::Rect::new(
+                view.x,
+                view.y,
+                view.width,
+                view.height,
+            ));
+        }
         self.model.view(&mut frame);
 
         self.unaddressable = frame.take_unaddressable();
         self.handlers = crate::runtime::Handlers::take_from(&mut frame);
 
+        let skipped = frame.skipped();
         let nodes = frame.take_nodes();
-        if !nodes.is_empty() {
+        let shown = nodes.len();
+        if !nodes.is_empty() || viewport.is_some() {
             let mut root =
                 crate::ontology::UiNode::new("root", crate::ontology::SemanticRole::Container);
             root.children = nodes;
-            self.ontology.set_tree(crate::ontology::UiTree::new(root));
+            let mut tree = crate::ontology::UiTree::new(root);
+            if viewport.is_some() {
+                tree.shown_nodes = Some(shown);
+                tree.total_nodes = Some(shown + skipped);
+            }
+            self.ontology.set_tree(tree);
         }
     }
 
@@ -447,7 +418,7 @@ impl<M: Model + 'static> HeadlessDriver<M> {
             }
         }
 
-        self.render();
+        self.render_clipped(*viewport);
 
         #[derive(serde::Serialize)]
         struct Payload<'a> {
@@ -459,21 +430,6 @@ impl<M: Model + 'static> HeadlessDriver<M> {
         struct Envelope<'a> {
             success: bool,
             data: Payload<'a>,
-        }
-
-        if let Some(view) = viewport {
-            let Some(full) = self.ontology.tree() else {
-                return String::new();
-            };
-            let clipped = clip_to_viewport(full, *view);
-            return serde_json::to_string(&Envelope {
-                success: true,
-                data: Payload {
-                    tree: Some(&clipped),
-                    version: self.version,
-                },
-            })
-            .unwrap_or_default();
         }
 
         serde_json::to_string(&Envelope {

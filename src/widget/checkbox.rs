@@ -169,7 +169,7 @@ impl Widget for Checkbox {
 
         // Built last so owned fields (text, item vectors) move into the
         // state instead of being cloned; painting above only borrows them.
-        if frame.ontology_enabled() && !self.agent_id.is_empty() {
+        if frame.describes(area) && !self.agent_id.is_empty() {
             let node = UiNode::new("Checkbox", SemanticRole::Input)
                 .with_id(self.agent_id.clone())
                 .with_bounds(area.into())

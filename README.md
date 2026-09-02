@@ -354,10 +354,13 @@ reports where the ontology loses as well as where it wins. Two findings worth
 stating up front. **A coordinate captured one observation earlier toggled the
 wrong row after a single line was inserted above the list, and reported
 success**; the id was still correct, and the two cost the same, so what the
-ontology buys there is correctness rather than speed. And **the tree has no
-viewport**: at 1000 rows it is 3.7× slower and 24× larger than a screenshot of
-the same application, because it describes every widget including the ones
-nobody can see.
+ontology buys there is correctness rather than speed. And the tree used to
+describe every widget including the ones nobody could see, which at 1000 rows
+made it 3.7× slower and 24× larger than a screenshot — `get_tree` now takes a
+`viewport`, and decides before building a node rather than clipping a finished
+tree, so the same read is **5× faster and 30% smaller** than the picture. What
+it still does not do is stop laying out and painting the widgets it declines to
+describe, so the time grows with the list even though the reply does not.
 
 An agent can also ask whether the interface it just built is *operable*, which
 a screenshot cannot tell it:

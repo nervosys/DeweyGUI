@@ -291,11 +291,12 @@ fn seeing(sizes: &[usize]) {
                slower. That column exists because measuring this benchmark showed the\n  \
                tree losing, which it had no business doing.\n  \
              \n  \
-               What is still true: the clipped time grows with the list even though\n  \
-               the bytes do not. Clipping happens after the frame is built, so it\n  \
-               saves what the agent reads and not what the framework builds. A list\n  \
-               long enough for that to matter wants virtualisation in the view, which\n  \
-               the widget already offers and this benchmark does not use."
+               What is still true, and smaller than it was: the clipped time still\n  \
+               grows with the list. The viewport now decides before a UiNode is\n  \
+               built rather than after, so an off-screen widget costs nothing to\n  \
+               describe — but it is still laid out and still painted, and that is\n  \
+               what remains. A list long enough for it to matter wants VirtualList\n  \
+               in the view, which this benchmark deliberately does not use."
     );
 }
 

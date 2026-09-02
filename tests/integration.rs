@@ -3490,3 +3490,65 @@ fn on_demand_is_the_default_and_means_what_it_says() {
     App.view(&mut on);
     assert_eq!(on.take_nodes().len(), 1);
 }
+
+/// A viewport skips building nodes rather than discarding them afterwards.
+///
+/// The first version clipped a finished tree, so the reply stayed small and
+/// the work stayed: a thousand-row list built a thousand `UiNode`s to throw
+/// away all but ten, and the clipped time grew with the list while the bytes
+/// did not.
+#[test]
+fn a_viewport_skips_the_work_not_just_the_reply() {
+    const ROWS: usize = 200;
+    const ROW_H: f32 = 20.0;
+
+    struct App;
+    impl Model for App {
+        type Msg = ();
+        fn update(&mut self, _m: ()) -> Command<()> {
+            Command::None
+        }
+        fn view(&self, frame: &mut Frame<'_>) {
+            for i in 0..ROWS {
+                // Buttons, not labels: a hitbox is what makes the claim about
+                // hit-testing below testable at all.
+                Button::new(format!("row {i}"))
+                    .on(format!("row_{i}"), |_: &mut App| {})
+                    .render(Rect::new(0.0, i as f32 * ROW_H, 300.0, ROW_H), frame);
+            }
+        }
+    }
+
+    let area = Rect::from_size(300.0, ROWS as f32 * ROW_H);
+    let mut hit_map = dewey::event::HitMap::new();
+    let mut painter = dewey::paint::NullPainter;
+
+    let mut clipped = Frame::new(area, &mut hit_map, &mut painter).clipped_to(Rect::new(
+        0.0,
+        0.0,
+        300.0,
+        10.0 * ROW_H,
+    ));
+    App.view(&mut clipped);
+
+    assert_eq!(
+        clipped.take_nodes().len(),
+        10,
+        "only the visible rows are described"
+    );
+    assert_eq!(
+        clipped.skipped(),
+        ROWS - 10,
+        "and the rest are counted, not built — the count is what lets a reply \
+         say how much of the interface it is showing without a second pass"
+    );
+
+    // Hit-testing is deliberately untouched: an off-screen widget is still
+    // laid out and still clickable, it is simply not described.
+    assert!(
+        hit_map
+            .hit_test(dewey::core::Position::new(10.0, 150.0 * ROW_H))
+            .is_some(),
+        "a widget outside the viewport must stay clickable"
+    );
+}

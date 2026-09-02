@@ -248,7 +248,7 @@ impl StatefulWidget for ColorPicker {
         }
 
         if !self.agent_id.is_empty() {
-            if frame.ontology_enabled() {
+            if frame.describes(area) {
                 let node = UiNode::new("ColorPicker", SemanticRole::Input)
                     .with_id(self.agent_id.clone())
                     .with_bounds(area.into())

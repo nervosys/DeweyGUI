@@ -292,7 +292,7 @@ impl Widget for RichText {
             }
         }
 
-        if frame.ontology_enabled() && !self.agent_id.is_empty() {
+        if frame.describes(area) && !self.agent_id.is_empty() {
             let plain: String = self.spans.iter().map(|s| s.text.as_str()).collect();
             let node = UiNode::new("RichText", SemanticRole::Display)
                 .with_id(self.agent_id.clone())

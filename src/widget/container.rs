@@ -127,7 +127,7 @@ impl Discoverable for Container {
 
 impl Widget for Container {
     fn render(self, area: Rect, frame: &mut Frame<'_>) {
-        if frame.ontology_enabled() && !self.agent_id.is_empty() {
+        if frame.describes(area) && !self.agent_id.is_empty() {
             let mut node = UiNode::new("Container", SemanticRole::Container)
                 .with_id(self.agent_id.clone())
                 .with_bounds(area.into());

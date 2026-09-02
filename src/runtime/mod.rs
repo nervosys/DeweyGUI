@@ -231,6 +231,19 @@ pub struct Frame<'a> {
     /// clicked or addressed. Collected here because such a widget never
     /// reaches the UI tree to be noticed afterwards.
     unaddressable: Vec<&'static str>,
+    /// Widgets the viewport excluded. Counted rather than built, so a reply
+    /// can say how much of the interface it is showing without a second pass
+    /// over the whole thing — which is what the first version of this did, and
+    /// it cost more than the clipping saved.
+    skipped: usize,
+    /// When set, only widgets intersecting this rectangle are described.
+    ///
+    /// Clipping the finished tree kept the reply small and left the work in
+    /// place: a thousand-row list still built a thousand `UiNode`s to throw
+    /// away all but ten. Asking here instead means an off-screen widget costs
+    /// nothing at all, the same way `ontology` already skips everything when
+    /// no agent is attached.
+    viewport: Option<Rect>,
 }
 
 impl<'a> Frame<'a> {
@@ -263,7 +276,16 @@ impl<'a> Frame<'a> {
             ontology,
             messages: Vec::new(),
             unaddressable: Vec::new(),
+            skipped: 0,
+            viewport: None,
         }
+    }
+
+    /// Describe only the widgets intersecting `viewport`.
+    #[must_use]
+    pub fn clipped_to(mut self, viewport: Rect) -> Self {
+        self.viewport = Some(viewport);
+        self
     }
 
     /// Whether this frame is collecting ontology nodes.
@@ -273,6 +295,35 @@ impl<'a> Frame<'a> {
     #[must_use]
     pub fn ontology_enabled(&self) -> bool {
         self.ontology
+    }
+
+    /// Whether this frame wants a description of a widget occupying `area`.
+    ///
+    /// Widgets call this instead of [`ontology_enabled`](Self::ontology_enabled)
+    /// so that building a [`UiNode`](crate::ontology::UiNode) is skipped
+    /// entirely for a widget outside the viewport, rather than the node being
+    /// built and then discarded.
+    pub fn describes(&mut self, area: Rect) -> bool {
+        if !self.ontology {
+            return false;
+        }
+        let Some(view) = self.viewport else {
+            return true;
+        };
+        let visible = area.x < view.x + view.width
+            && area.x + area.width > view.x
+            && area.y < view.y + view.height
+            && area.y + area.height > view.y;
+        if !visible {
+            self.skipped += 1;
+        }
+        visible
+    }
+
+    /// How many widgets the viewport excluded this frame.
+    #[must_use]
+    pub fn skipped(&self) -> usize {
+        self.skipped
     }
 
     /// Get a mutable reference to the painter for this frame.
