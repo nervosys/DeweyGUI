@@ -177,6 +177,13 @@ impl<M: Model + 'static> RunningApp<M> {
         };
 
         let mut ontology = OntologyRegistry::new();
+        // The GPU's own schemas. These types exist, implement `Discoverable`
+        // and are exported in the prelude, and nothing had ever registered
+        // one — so an agent querying an agpu application was told about
+        // whatever the application registered and nothing about the renderer,
+        // the pipeline or the surface it was running on. The crate's stated
+        // difference from wgpu is that all of it is discoverable.
+        crate::ontology::gpu::register_gpu_ontology(&mut ontology);
         model.register_ontology(&mut ontology);
 
         let init_cmd = model.init();

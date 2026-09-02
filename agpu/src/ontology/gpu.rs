@@ -238,3 +238,51 @@ impl Discoverable for AgpuAppOntology {
         }
     }
 }
+
+/// Register every GPU schema this crate describes.
+///
+/// Called when an [`AgpuApp`](crate::app::AgpuApp) starts, so an agent that
+/// asks what it is running on is told about the shape renderer, the text
+/// engine, the surface, the pipeline and the application itself — not only
+/// about the widgets the application happened to register.
+pub fn register_gpu_ontology(registry: &mut crate::ontology::OntologyRegistry) {
+    registry.register(&ShapeRendererOntology);
+    registry.register(&TextEngineOntology);
+    registry.register(&SurfaceOntology);
+    registry.register(&PipelineOntology);
+    registry.register(&AgpuAppOntology);
+}
+
+#[cfg(test)]
+mod registration_tests {
+    use super::*;
+    use crate::ontology::OntologyRegistry;
+
+    /// The crate's stated difference is that the GPU is discoverable too.
+    ///
+    /// The five schemas below existed, implemented `Discoverable`, and were
+    /// exported in the prelude — and nothing registered any of them, so an
+    /// agent querying an agpu application learned nothing about the renderer
+    /// it was running on. The README called that "complete ontology".
+    #[test]
+    fn the_gpu_describes_itself() {
+        let mut registry = OntologyRegistry::new();
+        register_gpu_ontology(&mut registry);
+
+        for name in [
+            "ShapeRenderer",
+            "TextEngine",
+            "GpuSurface",
+            "GpuPipeline",
+            "AgpuApp",
+        ] {
+            let schema = registry
+                .get_schema(name)
+                .unwrap_or_else(|| panic!("`{name}` must be discoverable"));
+            assert!(
+                !schema.description.is_empty(),
+                "`{name}` is registered with nothing to say about itself"
+            );
+        }
+    }
+}
