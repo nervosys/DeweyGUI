@@ -309,6 +309,19 @@ agent-driveability is nearly free.** Three changes did it:
 Together those took the counter from 1.49× to **1.24×** egui's tokens and
 TodoMVC from 1.86× to **1.63×**.
 
+What the ontology changes about *writing* a GUI is measured separately, in
+`benches/scaffold/src/bin/dev_loop.rs`. It does not make an agent write less
+code. What it changes is how the agent finds out it was wrong: five authoring
+mistakes that compile, render and look correct — a button with no id, an id
+copy-pasted onto two widgets, layout arithmetic that leaves a widget no room, a
+widget positioned past the edge, a widget wired for one of its actions — are all
+caught by `validate` in single-digit microseconds, and none of them by the
+compiler. The two sets do not overlap: types check that a call is well formed,
+`validate` checks that the interface the call builds can be operated. An agent
+looking up one widget reads **377 tokens** against 11,194 for the equivalent
+documentation, and can ask a question — *which widget answers to "dropdown"* —
+that prose cannot be asked at all.
+
 Verifying it afterwards is where that inverts. Dewey closes the full
 discover → act → verify loop over the agent protocol headlessly — no window,
 no GPU, no screenshot. A nine-step TodoMVC task (add two items, complete one,

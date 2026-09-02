@@ -273,7 +273,7 @@ fn main() {
             cond = e;
         }
     }
-    println!("");
+    println!();
     println!("polling an unchanged screen, interleaved, min of {ROUNDS}:");
     println!("  get_tree                {:>10}", fmt(uncond));
     println!(

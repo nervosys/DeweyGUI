@@ -1,17 +1,20 @@
 # Agent Scaffolding Benchmarks
 
 How expensive is it for an *agent* to build and then verify a GUI program in
-each framework? Two costs, measured separately:
+each framework? Three costs, measured separately:
 
 1. **Scaffolding** — what the agent has to write, and how long it waits to find
    out whether it compiles.
 2. **Closing the loop** — whether the agent can then confirm the program works,
    and how fast.
+3. **The development loop** — what the ontology changes about how an agent
+   finds out that what it wrote is wrong.
 
 ```bash
 cd benches/scaffold && python measure.py           # scaffolding cost
 cd benches/comparative && cargo run --release --bin agent_loop   # counter loop
 cd benches/scaffold   && cargo run --release --bin agent_task    # todomvc task
+cd benches/scaffold   && cargo run --release --bin dev_loop      # development loop
 ```
 
 ## The canonical programs
@@ -194,6 +197,80 @@ different failure mode. Step 4 returns a *probabilistic reading of an image*
 where `get_state` returns `"Count: 1"`. An agent can assert on the second and
 only guess at the first. The honest comparison is therefore not a ratio; it is
 that one column exists and the other does not.
+
+## 3. What the ontology does to the development loop
+
+`cargo run --release --bin dev_loop`
+
+Section 1 measures the program an agent must produce. This measures the
+*loop* it produces it in: learn the vocabulary, write, find out it is wrong,
+fix. Frameworks differ less in how much code comes out than in how long that
+third step takes, and in how many mistakes it never takes at all.
+
+### 1. Learning — what must be read before the first line
+
+| Source | bytes | ~tokens |
+| ------ | ----- | ------- |
+| `query_ontology` — all 27 widget types | 15,065 | 5,955 |
+| `query_ontology("dropdown")` | 908 | **377** |
+| doc comments + signatures, 30 files | 39,041 | 11,194 |
+| widget sources, 30 files | 256,294 | 61,658 |
+
+The whole catalogue is about half the documentation and a tenth of the source —
+real but modest. The number that matters is the second row. **An agent that
+knows it wants a dropdown reads 377 tokens, thirty times less than the
+documentation**, and there is no equivalent request to make of a doc tree: an
+agent reading prose cannot ask which widget answers to a word.
+
+### 2. Wrong, and it compiles
+
+Five authoring mistakes that compile, render, and look right, plus one correct
+interface as a control.
+
+| Mistake | `validate` says | cost |
+| ------- | --------------- | ---- |
+| button rendered with no id | `unaddressable_widget` | 700 ns |
+| id copy-pasted onto two widgets | `duplicate_agent_id` | 2.7 us |
+| layout arithmetic leaves no room | `zero_size_widget` | 2.1 us |
+| widget positioned past the edge | `offscreen_widget` | 1.7 us |
+| widget wired for one of its actions | `unhandled_action` | 2.7 us |
+| *nothing wrong* | clean | 1.1 us |
+
+5 of 5, and the correct interface is not flagged.
+
+### 3. Wrong, and it does not compile
+
+| Mistake | `cargo check` | rejected |
+| ------- | ------------- | -------- |
+| method that does not exist | 2.24 s | yes |
+| closure takes the wrong arguments | 2.57 s | yes |
+| wrong type assigned in a handler | 2.23 s | yes |
+| stateful widget without its state | 2.73 s | yes |
+
+**The two sets do not overlap.** The compiler catches all of section 3 and none
+of section 2; `validate` catches all of section 2 and none of section 3. Types
+check that a call is well formed. `validate` checks that the interface the call
+builds can be operated.
+
+### 4. The loop
+
+| Channel | latency |
+| ------- | ------- |
+| `cargo check` | 2.44 s |
+| `validate` a rendered interface | 2.8 us |
+
+Roughly a million to one — and that ratio is the wrong way to read it.
+`validate` needs a compiled binary, so it does not replace the compile; it adds
+a second check to the end of one that already happened, for a cost that
+disappears next to it.
+
+### What this does not show
+
+The ontology does not make an agent write less code — that is the table above,
+and the premium for agent-driveability is +6%. It does not shorten the compile,
+which remains the slowest part of the loop by five orders of magnitude. And it
+says nothing about whether the result looks right; see the white-on-white row
+in the previous section.
 
 ## What this says
 
