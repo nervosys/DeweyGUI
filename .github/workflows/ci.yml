@@ -2,9 +2,9 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [master, main]
   pull_request:
-    branches: [main]
+    branches: [master, main]
 
 env:
   CARGO_TERM_COLOR: always
@@ -92,3 +92,19 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - run: cargo test
+
+  benches:
+    name: Benchmark crates
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      # `benches/comparative` and `benches/scaffold` are separate workspaces,
+      # excluded from the package so their egui and iced dependencies are not
+      # imposed on anyone installing the crate. That also means the main
+      # `cargo check` never sees them, and both had silently stopped compiling
+      # — one when node ids became `Cow<'static, str>`, the other when
+      # `get_tree` gained `since`.
+      - run: cargo check --all-targets --manifest-path benches/comparative/Cargo.toml
+      - run: cargo check --all-targets --manifest-path benches/scaffold/Cargo.toml

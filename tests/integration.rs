@@ -2574,3 +2574,215 @@ fn an_action_the_widget_does_not_advertise_is_refused() {
     assert!(call(&mut d, "toggle").success, "the published name works");
     assert!(d.model().on);
 }
+
+/// The full TodoMVC agent task, run as a test rather than only as a benchmark.
+///
+/// This exact sequence lived only in `benches/scaffold`, a separate workspace
+/// the main `cargo check` never builds. It sat broken for several commits:
+/// the toggle step named `click` on a `Checkbox`, which advertises `toggle`,
+/// and reported success while doing nothing. A check that only runs when
+/// someone remembers to run a benchmark is not a check.
+mod todo_agent_task {
+    use super::*;
+    use dewey::agent::driver::HeadlessDriver;
+    use dewey::agent::protocol::AgentRequest;
+    use dewey::widget::input::TextInputState;
+    use dewey::widget::{Checkbox, StatefulWidget, TextInput};
+    use std::cell::RefCell;
+
+    #[derive(Clone, Copy, PartialEq)]
+    enum Filter {
+        All,
+        Active,
+        Completed,
+    }
+
+    struct Todo {
+        title: String,
+        done: bool,
+    }
+
+    pub struct App {
+        todos: Vec<Todo>,
+        filter: Filter,
+        input: RefCell<TextInputState>,
+    }
+
+    impl App {
+        fn visible(&self) -> Vec<usize> {
+            (0..self.todos.len())
+                .filter(|&i| match self.filter {
+                    Filter::All => true,
+                    Filter::Active => !self.todos[i].done,
+                    Filter::Completed => self.todos[i].done,
+                })
+                .collect()
+        }
+
+        fn remaining(&self) -> usize {
+            self.todos.iter().filter(|t| !t.done).count()
+        }
+
+        fn add(&mut self) {
+            let title = self.input.borrow().text.trim().to_string();
+            if !title.is_empty() {
+                self.todos.push(Todo { title, done: false });
+                *self.input.borrow_mut() = TextInputState::new();
+            }
+        }
+    }
+
+    impl Model for App {
+        type Msg = ();
+
+        fn update(&mut self, _msg: ()) -> Command<()> {
+            Command::None
+        }
+
+        fn view(&self, frame: &mut Frame<'_>) {
+            let h = frame.area.height;
+            let rows = frame.area.rows_of(&[36.0, 32.0, h - 96.0, 28.0]);
+
+            let top = rows[0].cols_of(&[rows[0].width - 80.0, 80.0]);
+            TextInput::new()
+                .placeholder("What needs doing?")
+                .on_input("new_todo", |a: &mut App, t: &str| {
+                    *a.input.borrow_mut() = TextInputState::new().with_text(t)
+                })
+                .render(top[0], frame, &mut self.input.borrow_mut());
+            Button::new("Add").on("add", App::add).render(top[1], frame);
+
+            let f = rows[1].split_columns(3);
+            Button::new("All")
+                .on("filter_all", |a: &mut App| a.filter = Filter::All)
+                .render(f[0], frame);
+            Button::new("Active")
+                .on("filter_active", |a: &mut App| a.filter = Filter::Active)
+                .render(f[1], frame);
+            Button::new("Completed")
+                .on("filter_completed", |a: &mut App| {
+                    a.filter = Filter::Completed
+                })
+                .render(f[2], frame);
+
+            for (i, row) in self.visible().into_iter().zip(rows[2].rows(28.0)) {
+                let c = row.cols_of(&[24.0, row.width - 52.0, 28.0]);
+                Checkbox::new("", self.todos[i].done)
+                    .on(format!("toggle_{i}"), move |a: &mut App| {
+                        a.todos[i].done = !a.todos[i].done
+                    })
+                    .render(c[0], frame);
+                Label::new(self.todos[i].title.clone())
+                    .agent_id(format!("item_{i}"))
+                    .render(c[1], frame);
+                Button::new("x")
+                    .on(format!("delete_{i}"), move |a: &mut App| {
+                        a.todos.remove(i);
+                    })
+                    .render(c[2], frame);
+            }
+
+            let foot = rows[3].cols_of(&[rows[3].width - 140.0, 140.0]);
+            Label::new(format!("{} items left", self.remaining()))
+                .agent_id("remaining")
+                .render(foot[0], frame);
+            Button::new("Clear completed")
+                .on("clear_completed", |a: &mut App| a.todos.retain(|t| !t.done))
+                .render(foot[1], frame);
+        }
+    }
+
+    fn driver() -> HeadlessDriver<App> {
+        let mut d = HeadlessDriver::new(
+            App {
+                todos: Vec::new(),
+                filter: Filter::All,
+                input: RefCell::new(TextInputState::new()),
+            },
+            480.0,
+            400.0,
+        );
+        d.init();
+        d
+    }
+
+    fn act(id: &str, action: &str, params: serde_json::Value) -> AgentRequest {
+        AgentRequest::ExecuteAction {
+            agent_id: id.into(),
+            action: action.into(),
+            params,
+        }
+    }
+
+    #[test]
+    fn an_agent_can_add_complete_filter_and_read_the_result_back() {
+        let mut d = driver();
+        let null = serde_json::Value::Null;
+
+        let steps = [
+            ("discover", AgentRequest::GetTree { since: None }),
+            (
+                "type item 1",
+                act(
+                    "new_todo",
+                    "set_text",
+                    serde_json::json!({"text": "write tests"}),
+                ),
+            ),
+            ("add item 1", act("add", "click", null.clone())),
+            (
+                "type item 2",
+                act(
+                    "new_todo",
+                    "set_text",
+                    serde_json::json!({"text": "ship it"}),
+                ),
+            ),
+            ("add item 2", act("add", "click", null.clone())),
+            // `toggle`, not `click`: the name the widget publishes.
+            ("complete item 1", act("toggle_0", "toggle", null.clone())),
+            ("filter active", act("filter_active", "click", null.clone())),
+            ("re-read", AgentRequest::GetTree { since: None }),
+        ];
+        for (label, req) in &steps {
+            assert!(d.process_request(req).success, "step failed: {label}");
+        }
+
+        let seen = d.process_request(&AgentRequest::GetState {
+            agent_id: "remaining".into(),
+        });
+        let shown = serde_json::to_string(&seen.data.expect("state")).unwrap();
+        assert!(
+            shown.contains("1 items left"),
+            "the footer must show what the agent did: {shown}"
+        );
+
+        let tree = serde_json::to_string(
+            &d.process_request(&AgentRequest::GetTree { since: None })
+                .data
+                .expect("tree"),
+        )
+        .unwrap();
+        assert!(
+            tree.contains("ship it"),
+            "the active filter keeps the incomplete item"
+        );
+        assert!(
+            !tree.contains("write tests"),
+            "and drops the completed one: {tree}"
+        );
+    }
+
+    /// The interface the agent drove must also be structurally sound.
+    #[test]
+    fn the_todo_app_validates_clean() {
+        let mut d = driver();
+        d.process_request(&act(
+            "new_todo",
+            "set_text",
+            serde_json::json!({"text": "a"}),
+        ));
+        d.process_request(&act("add", "click", serde_json::Value::Null));
+        assert!(d.validate().is_empty(), "{:?}", d.validate());
+    }
+}
