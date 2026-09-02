@@ -1,7 +1,13 @@
 //! Native file dialog abstraction for Dewey.
 //!
-//! Provides a platform-abstracted API for open/save file dialogs.
-//! The actual implementation delegates to a `DialogBackend` trait.
+//! **This module is types only.** It defines [`DialogBackend`] and the values
+//! it trades in; it ships no platform implementation, and the runtime does not
+//! call one. An application that wants a native file dialog implements the
+//! trait itself — over `rfd` or similar — and calls it from its own
+//! `Model::update`.
+//!
+//! [`NullDialogBackend`] exists for tests and for a build that should not open
+//! a dialog; it answers every request with nothing.
 
 use std::path::PathBuf;
 
