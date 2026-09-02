@@ -3879,7 +3879,6 @@ fn ids_numbered_by_position_are_reported() {
 /// filter active and every id below it shifts by one.
 #[test]
 fn the_projects_own_todo_sample_is_flagged() {
-    use dewey::agent::driver::HeadlessDriver;
     use dewey::agent::protocol::AgentRequest;
 
     let mut d = todo_agent_task::driver_for_lint();
