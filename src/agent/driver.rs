@@ -205,6 +205,13 @@ impl<M: Model + 'static> HeadlessDriver<M> {
 
         // Handle injected events
         if let AgentRequest::InjectEvent { event } = request {
+            // A resize changes the window this driver lays out against.
+            // Forwarding the event alone left `window_size` at whatever it was
+            // constructed with, so the next render used the old size and
+            // `validate` measured "offscreen" against a window that had moved.
+            if let super::protocol::InjectedEvent::Resize { width, height } = event {
+                self.window_size = crate::core::Size::new(*width, *height);
+            }
             if let Some(ev) = AgentSession::convert_injected_event(event) {
                 // A click lands on whatever the hit map says is under it, so a
                 // widget with an `action` responds without the application

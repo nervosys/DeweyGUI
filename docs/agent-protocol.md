@@ -223,6 +223,16 @@ Inject a synthetic event into the application event pipeline.
 {"type": "inject_event", "event": {"kind": "resize", "width": 1280, "height": 720}}
 ```
 
+#### Resize
+
+```json
+{"type": "inject_event", "event": {"kind": "resize", "width": 900, "height": 300}}
+```
+
+Changes the window the interface is laid out against, so the next `get_tree`
+describes the new layout and `validate` measures `offscreen_widget` against the
+new bounds. This is how a responsive layout is tested without opening a window.
+
 ### subscribe
 
 Subscribe to server-pushed events. Available event types:

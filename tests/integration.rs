@@ -4038,3 +4038,76 @@ fn a_dropped_file_is_one_event_on_both_backends() {
     // desktop is a `FileDrop`, not a drag with an unusual payload.
     let _ = DragPayload::Text("dragging between two widgets".into());
 }
+
+/// An agent that resizes the window sees a differently laid-out interface.
+///
+/// `inject_event` accepts a resize and converts it, so `handle_event` is
+/// called — but the driver's own window size was set once at construction and
+/// never updated, so the next `get_tree` rendered at the original size and
+/// `validate`'s offscreen check measured against it. Testing a responsive
+/// layout through the protocol gave answers about a window that had not
+/// changed.
+#[test]
+fn resizing_through_the_protocol_relays_out_the_interface() {
+    use dewey::agent::driver::HeadlessDriver;
+    use dewey::agent::protocol::{AgentRequest, InjectedEvent};
+
+    struct App;
+    impl Model for App {
+        type Msg = ();
+        fn update(&mut self, _m: ()) -> Command<()> {
+            Command::None
+        }
+        fn view(&self, frame: &mut Frame<'_>) {
+            // Fills whatever it is given, so its bounds report the window.
+            Button::new("wide")
+                .on("banner", |_: &mut App| {})
+                .render(frame.area, frame);
+        }
+    }
+
+    let mut d = HeadlessDriver::new(App, 400.0, 200.0);
+    d.init();
+
+    let width_of = |d: &mut HeadlessDriver<App>| -> f64 {
+        let tree = d
+            .process_request(&AgentRequest::GetTree {
+                since: None,
+                viewport: None,
+            })
+            .data
+            .expect("tree");
+        tree["root"]["children"][0]["bounds"]["width"]
+            .as_f64()
+            .expect("bounds")
+    };
+
+    assert_eq!(width_of(&mut d), 400.0);
+
+    let resized = d.process_request(&AgentRequest::InjectEvent {
+        event: InjectedEvent::Resize {
+            width: 900.0,
+            height: 300.0,
+        },
+    });
+    assert!(resized.success);
+
+    assert_eq!(
+        d.window_size().width,
+        900.0,
+        "the driver must take the new size, not just forward the event"
+    );
+    assert_eq!(
+        width_of(&mut d),
+        900.0,
+        "and the next render must use it, or an agent testing a responsive \
+         layout is told about a window that never changed"
+    );
+
+    // The offscreen check measures against the window, so it must move too.
+    assert!(
+        d.validate().iter().all(|f| f.code != "offscreen_widget"),
+        "{:?}",
+        d.validate()
+    );
+}
