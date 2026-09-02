@@ -2893,3 +2893,81 @@ fn content_widgets_change_the_application_not_the_frame() {
 
     assert!(d.validate().is_empty(), "{:?}", d.validate());
 }
+
+/// The JSON a transport sends must mean the same thing as the typed reply, and
+/// must actually drive the application.
+///
+/// Both transports used to reimplement the request loop, and their copies had
+/// fallen behind: an `execute_action` became a `Command::AgentAction` that the
+/// command loop logged and dropped. An agent connected over stdio or a
+/// WebSocket could read the interface and change nothing. They now share the
+/// driver, so this exercises the path they take.
+#[test]
+fn the_transport_json_path_drives_the_application() {
+    use dewey::agent::driver::HeadlessDriver;
+    use dewey::agent::protocol::{AgentRequest, RequestEnvelope};
+
+    struct App {
+        count: i32,
+    }
+
+    impl Model for App {
+        type Msg = ();
+        fn update(&mut self, _m: ()) -> Command<()> {
+            Command::None
+        }
+        fn view(&self, frame: &mut Frame<'_>) {
+            Button::new("inc")
+                .on("inc", |a: &mut App| a.count += 1)
+                .render(frame.area, frame);
+        }
+    }
+
+    let mut d = HeadlessDriver::new(App { count: 0 }, 200.0, 80.0);
+    d.init();
+
+    let envelope = RequestEnvelope {
+        id: Some("req-1".into()),
+        request: AgentRequest::ExecuteAction {
+            agent_id: "inc".into(),
+            action: "click".into(),
+            params: serde_json::Value::Null,
+        },
+    };
+    let json = d.process_envelope_json(&envelope);
+    let parsed: serde_json::Value = serde_json::from_str(&json).expect("valid JSON");
+    assert_eq!(parsed["success"], serde_json::json!(true), "{json}");
+    assert_eq!(
+        parsed["id"],
+        serde_json::json!("req-1"),
+        "the id comes back"
+    );
+    assert_eq!(d.model().count, 1, "the action must reach the model");
+
+    // The tree reply takes a different, hand-built path to avoid an
+    // intermediate `serde_json::Value`; it must still be the same document.
+    let tree_env = RequestEnvelope {
+        id: Some("req-2".into()),
+        request: AgentRequest::GetTree { since: None },
+    };
+    let direct: serde_json::Value =
+        serde_json::from_str(&d.process_envelope_json(&tree_env)).expect("valid JSON");
+    let typed = d.process_envelope(&tree_env);
+
+    assert_eq!(direct["id"], serde_json::json!("req-2"));
+    assert_eq!(direct["success"], serde_json::json!(true));
+    assert_eq!(
+        direct["data"],
+        serde_json::to_value(typed.data.expect("data")).expect("value"),
+        "the fast path and the Value path must agree"
+    );
+
+    // And the conditional form still short-circuits through it.
+    let version = direct["data"]["version"].as_u64().expect("version");
+    let unchanged: serde_json::Value =
+        serde_json::from_str(&d.process_request_json(&AgentRequest::GetTree {
+            since: Some(version),
+        }))
+        .expect("valid JSON");
+    assert_eq!(unchanged["data"]["unchanged"], serde_json::json!(true));
+}

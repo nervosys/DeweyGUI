@@ -11,10 +11,9 @@ use std::time::Instant;
 use tungstenite::Message;
 use tungstenite::accept;
 
-use super::protocol::{AgentRequest, AgentResponse, RequestEnvelope};
-use super::session::AgentSession;
-use crate::ontology::OntologyRegistry;
-use crate::runtime::{Command, Model};
+use super::driver::HeadlessDriver;
+use super::protocol::{AgentResponse, RequestEnvelope};
+use crate::runtime::Model;
 
 /// Maximum allowed size for a single JSON message (1 MB).
 const MAX_MESSAGE_BYTES: usize = 1_048_576;
@@ -42,34 +41,37 @@ const MAX_REQUESTS_PER_SEC: u32 = 1000;
 /// let transport = WsTransport::new(MyApp, "127.0.0.1:9001");
 /// transport.run().unwrap();
 /// ```
+/// A thin frame around [`HeadlessDriver`]: this type owns the socket, and the
+/// driver owns what a request means. It used to own both, and the copy fell
+/// behind — an `execute_action` arriving here became a `Command::AgentAction`
+/// that the command loop logged and discarded, so an agent over a WebSocket
+/// could read the interface and change nothing.
 pub struct WsTransport<M: Model + 'static> {
-    model: M,
-    session: AgentSession,
-    ontology: OntologyRegistry,
-    running: bool,
+    driver: HeadlessDriver<M>,
     bind_addr: String,
 }
 
 impl<M: Model + 'static> WsTransport<M> {
     /// Create a new WebSocket transport bound to the given address.
     pub fn new(model: M, bind_addr: impl Into<String>) -> Self {
-        let mut ontology = OntologyRegistry::new();
-        model.register_ontology(&mut ontology);
+        Self::with_window(model, bind_addr, 1280.0, 720.0)
+    }
 
+    /// Create a transport whose virtual window is a given size.
+    ///
+    /// Bounds in the UI tree are laid out against this, so an agent that cares
+    /// where things are should set it to the window the application expects.
+    #[must_use]
+    pub fn with_window(model: M, bind_addr: impl Into<String>, width: f32, height: f32) -> Self {
         Self {
-            model,
-            session: AgentSession::new(),
-            ontology,
-            running: true,
+            driver: HeadlessDriver::new(model, width, height),
             bind_addr: bind_addr.into(),
         }
     }
 
     /// Run the WebSocket server, accepting one connection and processing messages.
     pub fn run(mut self) -> io::Result<M> {
-        let init_cmd = self.model.init();
-        self.process_command(init_cmd);
-        self.model.register_ontology(&mut self.ontology);
+        self.driver.init();
 
         let listener = TcpListener::bind(&self.bind_addr)?;
         log::info!("WsTransport listening on {}", self.bind_addr);
@@ -142,104 +144,15 @@ impl<M: Model + 'static> WsTransport<M> {
                 }
             };
 
-            let (mut response, should_quit) = self
-                .session
-                .process_request(&envelope.request, &self.ontology);
-
-            // Handle side effects
-            if let AgentRequest::ExecuteAction {
-                agent_id,
-                action,
-                params,
-            } = &envelope.request
-            {
-                let cmd = Command::AgentAction {
-                    agent_id: agent_id.clone(),
-                    action: action.clone(),
-                    params: params.clone(),
-                };
-                self.process_command(cmd);
-            }
-
-            if let AgentRequest::InjectEvent { event } = &envelope.request {
-                if let Some(ev) = AgentSession::convert_injected_event(event) {
-                    if let Some(msg) = self.model.handle_event(ev) {
-                        let cmd = self.model.update(msg);
-                        self.process_command(cmd);
-                    }
-                }
-            }
-
-            if let Some(ref id) = envelope.id {
-                response = response.with_id(id.clone());
-            }
-
-            let json = serde_json::to_string(&response).unwrap_or_default();
+            let json = self.driver.process_envelope_json(&envelope);
             let _ = websocket.write(Message::Text(json));
 
-            if should_quit || !self.running {
+            if !self.driver.is_running() {
                 break;
             }
         }
 
         let _ = websocket.close(None);
-        Ok(self.model)
-    }
-
-    fn process_command(&mut self, cmd: Command<M::Msg>) {
-        match cmd {
-            Command::None => {}
-            Command::Quit => {
-                self.running = false;
-            }
-            Command::Batch(cmds) => {
-                for c in cmds {
-                    self.process_command(c);
-                }
-            }
-            Command::Message(msg) => {
-                let cmd = self.model.update(msg);
-                self.process_command(cmd);
-            }
-            Command::SetTickRate(_) => {}
-            Command::ExportOntology => {
-                self.model.register_ontology(&mut self.ontology);
-            }
-            Command::AgentAction {
-                agent_id,
-                action,
-                params,
-            } => {
-                log::debug!("WsTransport: AgentAction {agent_id}.{action}({params})");
-            }
-            Command::Task(task) => {
-                let msg = task();
-                let cmd = self.model.update(msg);
-                self.process_command(cmd);
-            }
-            Command::TaskWithTimeout {
-                task,
-                timeout,
-                on_timeout,
-            } => {
-                use std::sync::mpsc;
-                let (tx, rx) = mpsc::channel();
-                std::thread::spawn(move || {
-                    let result = task();
-                    let _ = tx.send(result);
-                });
-                let msg = match rx.recv_timeout(timeout) {
-                    Ok(result) => result,
-                    Err(_) => on_timeout,
-                };
-                let cmd = self.model.update(msg);
-                self.process_command(cmd);
-            }
-            Command::TaskCancellable { task, token } => {
-                let msg = task(token);
-                let cmd = self.model.update(msg);
-                self.process_command(cmd);
-            }
-        }
+        Ok(self.driver.into_model())
     }
 }

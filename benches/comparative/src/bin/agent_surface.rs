@@ -145,6 +145,9 @@ fn surface(ctx: &egui::Context, titles: &[String]) {
         let r = d.process_request(&AgentRequest::GetTree { since: None });
         black_box(serde_json::to_string(&r.data).expect("json"));
     });
+    let t_dewey_direct = best(200, || {
+        black_box(d.process_request_json(&AgentRequest::GetTree { since: None }));
+    });
 
     let update = egui_frame(ctx, titles).expect("accesskit enabled");
     let egui_json = serde_json::to_string(&update).expect("accesskit json");
@@ -169,17 +172,28 @@ fn surface(ctx: &egui::Context, titles: &[String]) {
         egui_json.len(),
         fmt(t_egui)
     );
+    println!(
+        "  {:<22} {:>10} {:>12} {:>10}",
+        "  DeweyGUI, transport path",
+        "",
+        "",
+        fmt(t_dewey_direct)
+    );
     println!("  {:<22} {:>10} {:>12} {:>10}", "iced 0.13", "—", "—", "—");
     println!(
-        "\n  Both timings are the whole path to an observation an agent could\n  \
+        "\n  All timings are the whole path to an observation an agent could\n  \
                receive: produce it, then serialise it to JSON.\n  \
              \n  \
-               egui is faster, and is doing more work while being faster: its frame\n  \
-               lays out and tessellates, where DeweyGUI paints into a recording\n  \
-               backend that draws nothing. The tree also falls out of a frame egui\n  \
-               had to run anyway, where get_tree is an extra pass. On the cost of a\n  \
-               single observation this project loses to a general-purpose\n  \
-               accessibility API. iced 0.13 has no such feature to measure."
+               The first DeweyGUI row is `process_request`, which returns a\n  \
+               `serde_json::Value` for an in-process caller to inspect. Building that\n  \
+               Value is 379 us of the 557 where writing the same tree straight out as\n  \
+               bytes is 44, so the transports do not build one: they take the third\n  \
+               row. That is what a real agent over stdio or a WebSocket receives.\n  \
+             \n  \
+               egui is still doing more work per frame — it lays out and tessellates,\n  \
+               where DeweyGUI paints into a recording backend that draws nothing — and\n  \
+               its tree falls out of a frame it had to run anyway. iced 0.13 has no\n  \
+               such feature to measure."
     );
 }
 
@@ -465,13 +479,16 @@ fn main() {
     println!("  iced 0.13 has no agent-readable surface. That comparison is not");
     println!("  close and is not interesting.");
     println!();
-    println!("  egui has one, via AccessKit, and it beats this project on two");
-    println!("  measured axes: it produces its tree faster than DeweyGUI produces");
-    println!("  one, while also laying out and tessellating a real frame; and its");
-    println!("  generated ids make an unaddressable or duplicated widget");
-    println!("  impossible to write. It is also standardised in a way this");
+    println!("  egui has one, via AccessKit, and it beats this project on a");
+    println!("  measured axis: its generated ids make an unaddressable or");
+    println!("  duplicated widget impossible to write, where an author who names");
+    println!("  widgets can name them wrong. It is also standardised in a way this");
     println!("  project's is not: every screen reader on three platforms already");
     println!("  understands it.");
+    println!();
+    println!("  On observation cost egui beat this project until the Value in the");
+    println!("  middle of get_tree was removed; the transports now serialise the");
+    println!("  tree directly and the same reply costs 87 us against 264.");
     println!();
     println!("  Where it loses is what a screen-reader tree is for. Its ids are");
     println!("  opaque, and in the case measured here filtering one row out of a");

@@ -387,10 +387,12 @@ did not.** With the `accesskit` feature, every egui frame emits an
 `AccessKitActionRequest` back, so an agent can read and act without a
 screenshot. It is standardised, predates this project, and is understood by
 every screen reader on three platforms. `benches/comparative/src/bin/agent_surface.rs`
-measures the two against each other and egui wins on two axes: it produces its
-tree faster than DeweyGUI produces one (366 µs against 557 µs, while also
-laying out and tessellating a real frame), and its generated node ids make an
-unaddressable or duplicated widget impossible to write.
+measures the two against each other. egui wins on one axis: its generated node
+ids make an unaddressable or duplicated widget impossible to write, where an
+author who names widgets can name one wrong. It won on observation cost too —
+366 µs against 557 µs — until that measurement exposed an intermediate
+`serde_json::Value` in `get_tree` that cost 379 µs of the 557 and bought
+nothing a transport wanted; the same reply now costs **87 µs**.
 
 Where it loses is what a screen-reader tree is *for*. AccessKit node ids are
 opaque hashes; in the measured case, filtering one row out of a list left the

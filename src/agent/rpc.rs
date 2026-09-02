@@ -6,10 +6,9 @@
 use std::io::{self, Write};
 use std::time::Instant;
 
+use super::driver::HeadlessDriver;
 use super::protocol::{AgentResponse, RequestEnvelope};
-use super::session::AgentSession;
-use crate::ontology::OntologyRegistry;
-use crate::runtime::{Command, Model};
+use crate::runtime::Model;
 
 /// Maximum allowed size for a single JSON request line (1 MB).
 const MAX_LINE_BYTES: usize = 1_048_576;
@@ -17,34 +16,44 @@ const MAX_LINE_BYTES: usize = 1_048_576;
 /// Maximum requests per second before throttling.
 const MAX_REQUESTS_PER_SEC: u32 = 1000;
 
+/// The virtual window a transport lays out against unless told otherwise.
+const DEFAULT_WIDTH: f32 = 1280.0;
+const DEFAULT_HEIGHT: f32 = 720.0;
+
 /// Runs a Dewey application over stdin/stdout JSON Lines protocol.
+///
+/// A thin frame around [`HeadlessDriver`]: this type owns the line reading,
+/// the rate limit and the size cap, and the driver owns what a request means.
+/// It used to own both, and the copy fell behind — an `execute_action` arriving
+/// here was turned into a `Command::AgentAction` that the command loop logged
+/// and discarded, so an agent over stdio could read the interface and change
+/// nothing.
 pub struct RpcTransport<M: Model + 'static> {
-    model: M,
-    session: AgentSession,
-    ontology: OntologyRegistry,
-    running: bool,
+    driver: HeadlessDriver<M>,
 }
 
 impl<M: Model + 'static> RpcTransport<M> {
     /// Create a new RPC transport with the given model.
     pub fn new(model: M) -> Self {
-        let mut ontology = OntologyRegistry::new();
-        model.register_ontology(&mut ontology);
-
         Self {
-            model,
-            session: AgentSession::new(),
-            ontology,
-            running: true,
+            driver: HeadlessDriver::new(model, DEFAULT_WIDTH, DEFAULT_HEIGHT),
+        }
+    }
+
+    /// Create a transport whose virtual window is a given size.
+    ///
+    /// Bounds in the UI tree are laid out against this, so an agent that cares
+    /// where things are should set it to the window the application expects.
+    #[must_use]
+    pub fn with_window(model: M, width: f32, height: f32) -> Self {
+        Self {
+            driver: HeadlessDriver::new(model, width, height),
         }
     }
 
     /// Run the RPC loop, reading from stdin and writing to stdout.
     pub fn run(mut self) -> io::Result<M> {
-        // Initialize
-        let init_cmd = self.model.init();
-        self.process_command(init_cmd);
-        self.model.register_ontology(&mut self.ontology);
+        self.driver.init();
 
         let stdin = io::stdin();
         let mut stdout = io::stdout();
@@ -100,108 +109,15 @@ impl<M: Model + 'static> RpcTransport<M> {
                 }
             };
 
-            let (mut response, should_quit) = self
-                .session
-                .process_request(&envelope.request, &self.ontology);
-
-            // Handle side effects
-            if let super::protocol::AgentRequest::ExecuteAction {
-                agent_id,
-                action,
-                params,
-            } = &envelope.request
-            {
-                let cmd = Command::AgentAction {
-                    agent_id: agent_id.clone(),
-                    action: action.clone(),
-                    params: params.clone(),
-                };
-                self.process_command(cmd);
-            }
-
-            if let super::protocol::AgentRequest::InjectEvent { event } = &envelope.request {
-                if let Some(ev) = AgentSession::convert_injected_event(event) {
-                    if let Some(msg) = self.model.handle_event(ev) {
-                        let cmd = self.model.update(msg);
-                        self.process_command(cmd);
-                    }
-                }
-            }
-
-            if let Some(ref id) = envelope.id {
-                response = response.with_id(id.clone());
-            }
-
-            let json = serde_json::to_string(&response).unwrap_or_default();
+            let json = self.driver.process_envelope_json(&envelope);
             writeln!(stdout, "{json}")?;
             stdout.flush()?;
 
-            if should_quit {
-                break;
-            }
-
-            if !self.running {
+            if !self.driver.is_running() {
                 break;
             }
         }
 
-        Ok(self.model)
-    }
-
-    fn process_command(&mut self, cmd: Command<M::Msg>) {
-        match cmd {
-            Command::None => {}
-            Command::Quit => {
-                self.running = false;
-            }
-            Command::Batch(cmds) => {
-                for c in cmds {
-                    self.process_command(c);
-                }
-            }
-            Command::Message(msg) => {
-                let cmd = self.model.update(msg);
-                self.process_command(cmd);
-            }
-            Command::SetTickRate(_) => {}
-            Command::ExportOntology => {
-                self.model.register_ontology(&mut self.ontology);
-            }
-            Command::AgentAction {
-                agent_id,
-                action,
-                params,
-            } => {
-                log::debug!("RpcTransport: AgentAction {agent_id}.{action}({params})");
-            }
-            Command::Task(task) => {
-                let msg = task();
-                let cmd = self.model.update(msg);
-                self.process_command(cmd);
-            }
-            Command::TaskWithTimeout {
-                task,
-                timeout,
-                on_timeout,
-            } => {
-                use std::sync::mpsc;
-                let (tx, rx) = mpsc::channel();
-                std::thread::spawn(move || {
-                    let result = task();
-                    let _ = tx.send(result);
-                });
-                let msg = match rx.recv_timeout(timeout) {
-                    Ok(result) => result,
-                    Err(_) => on_timeout,
-                };
-                let cmd = self.model.update(msg);
-                self.process_command(cmd);
-            }
-            Command::TaskCancellable { task, token } => {
-                let msg = task(token);
-                let cmd = self.model.update(msg);
-                self.process_command(cmd);
-            }
-        }
+        Ok(self.driver.into_model())
     }
 }

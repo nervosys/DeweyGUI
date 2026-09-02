@@ -162,16 +162,24 @@ designed for *screen readers* can express against one designed for agents.
 
 | Framework | nodes | bytes | time |
 | --------- | ----- | ----- | ---- |
-| DeweyGUI ontology | 202 | 40,036 | 557 us |
-| egui + AccessKit | 301 | 77,104 | **366 us** |
+| DeweyGUI, `process_request` (Value) | 202 | 40,036 | 479 us |
+| egui + AccessKit | 301 | 77,104 | 264 us |
+| **DeweyGUI, transport path** | 202 | 40,036 | **87 us** |
 | iced 0.13 | — | — | — |
 
-Both timings cover the whole path to something an agent could receive: produce
-it, then serialise it. **egui is faster while doing more work** — its frame
-lays out and tessellates, where DeweyGUI paints into a recording backend that
-draws nothing, and its tree falls out of a frame it had to run anyway where
-`get_tree` is an extra pass. DeweyGUI's payload is about half the size. On the
-cost of a single observation this project loses.
+All three cover the whole path to something an agent could receive: produce it,
+then serialise it.
+
+**egui won this until the intermediate `serde_json::Value` came out of
+`get_tree`.** Building that Value cost 379 us of the original 557, where
+writing the same tree straight out as bytes costs 44 — so the transports no
+longer build one. The first row is what an in-process caller gets, because it
+wants a `Value` to inspect; the third is what a real agent over stdio or a
+WebSocket receives.
+
+egui is still doing more work per frame — it lays out and tessellates, where
+DeweyGUI paints into a recording backend that draws nothing, and its tree falls
+out of a frame it had to run anyway.
 
 ### 2. Naming the widget you want
 
@@ -219,9 +227,10 @@ direct price of the naming win in section 2. Neither framework ships a checker.
 
 ### Summary
 
-egui beats this project on observation cost and on a class of authoring mistake
-it makes structurally impossible, and its surface is a standard rather than one
-framework's invention. DeweyGUI's ontology buys names an agent can be told in
+egui beats this project on a class of authoring mistake it makes structurally
+impossible, and its surface is a standard rather than one framework's
+invention. It also beat it on observation cost until measuring this exposed a
+`serde_json::Value` sitting in the middle of `get_tree` for no reason. DeweyGUI's ontology buys names an agent can be told in
 advance instead of discovering by matching display text, per-widget actions with
 typed parameters, a type catalogue to write against, and a check that what was
 built can be operated at all.

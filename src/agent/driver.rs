@@ -54,6 +54,12 @@ impl<M: Model + 'static> HeadlessDriver<M> {
     }
 
     /// Access the current model.
+    /// Take the model back, consuming the driver.
+    #[must_use]
+    pub fn into_model(self) -> M {
+        self.model
+    }
+
     pub fn model(&self) -> &M {
         &self.model
     }
@@ -306,6 +312,84 @@ impl<M: Model + 'static> HeadlessDriver<M> {
             &handlers,
             &self.ontology,
         )
+    }
+
+    /// Answer a request as the JSON bytes a transport will send.
+    ///
+    /// For everything but `get_tree` this is `process_request` followed by
+    /// serialisation. `get_tree` is special because it is the one reply large
+    /// enough for the intermediate `serde_json::Value` to dominate: building
+    /// one for a 100-row interface costs 379 µs where writing the same tree
+    /// straight out as bytes costs 44 µs. A transport only ever wanted the
+    /// bytes, so it need not pay for the `Value` on the way.
+    ///
+    /// `process_request` still returns a `Value`, because an in-process caller
+    /// usually wants to inspect the reply rather than send it.
+    /// Answer a framed envelope as the JSON bytes a transport will send.
+    ///
+    /// Carries the request id through onto the reply, as
+    /// [`process_envelope`](Self::process_envelope) does.
+    pub fn process_envelope_json(&mut self, envelope: &RequestEnvelope) -> String {
+        let json = self.process_request_json(&envelope.request);
+        let Some(id) = envelope.id.as_deref() else {
+            return json;
+        };
+        // Splice the id in rather than reparse: the tree reply is the large
+        // one, and rebuilding it as a `Value` to add a field would give back
+        // everything the direct path saved.
+        match json.strip_prefix('{') {
+            Some(rest) => format!(
+                "{{{}{}",
+                serde_json::json!({ "id": id })
+                    .as_object()
+                    .map(|o| {
+                        o.iter()
+                            .map(|(k, v)| format!("{}:{},", serde_json::json!(k), v))
+                            .collect::<String>()
+                    })
+                    .unwrap_or_default(),
+                rest
+            ),
+            None => json,
+        }
+    }
+
+    pub fn process_request_json(&mut self, request: &AgentRequest) -> String {
+        let AgentRequest::GetTree { since } = request else {
+            let response = self.process_request(request);
+            return serde_json::to_string(&response).unwrap_or_default();
+        };
+
+        // The unchanged reply is small; the ordinary path is fine for it.
+        if let Some(seen) = since {
+            if *seen == self.version {
+                let response = self.process_request(request);
+                return serde_json::to_string(&response).unwrap_or_default();
+            }
+        }
+
+        self.render();
+
+        #[derive(serde::Serialize)]
+        struct Payload<'a> {
+            #[serde(flatten)]
+            tree: Option<&'a crate::ontology::UiTree>,
+            version: u64,
+        }
+        #[derive(serde::Serialize)]
+        struct Envelope<'a> {
+            success: bool,
+            data: Payload<'a>,
+        }
+
+        serde_json::to_string(&Envelope {
+            success: true,
+            data: Payload {
+                tree: self.ontology.tree(),
+                version: self.version,
+            },
+        })
+        .unwrap_or_default()
     }
 
     /// A stable text rendering of the interface, for golden comparison.
