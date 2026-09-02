@@ -281,4 +281,10 @@ pub enum DragPayload {
     Path(Vec<String>),
     /// Arbitrary JSON data.
     Json(serde_json::Value),
+    /// Files dropped onto the window from outside the application.
+    ///
+    /// The commonest drag-and-drop there is, and the one payload the typed
+    /// variants above could not express: a drop from the desktop has no source
+    /// widget and carries paths, not text or an index.
+    Files(Vec<std::path::PathBuf>),
 }

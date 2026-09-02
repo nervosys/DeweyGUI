@@ -3975,3 +3975,91 @@ fn widget_action_logic_survives_as_an_inherent_method() {
         "and the edge case that logic exists for still holds"
     );
 }
+
+/// A file dropped on the window reaches the model, and says where it landed.
+///
+/// The README listed drag-and-drop beside the tray and the native dialogs,
+/// and it was true of the agpu backend only: the default backend walks
+/// `input.events`, and egui collects dropped files outside that stream, so it
+/// delivered nothing. The same shape as `fullscreen` and `OntologyMode` —
+/// honoured by one backend, silently absent from the default one.
+#[test]
+fn a_dropped_file_carries_its_paths_and_its_target() {
+    use dewey::event::{DragDropEvent, DragDropKind, DragPayload, Event};
+
+    // `DragPayload` had no variant for the commonest drop there is: one from
+    // the desktop, which has no source widget and carries paths.
+    let payload = DragPayload::Files(vec![
+        std::path::PathBuf::from("/tmp/report.csv"),
+        std::path::PathBuf::from("/tmp/notes.md"),
+    ]);
+
+    struct App {
+        dropped: Vec<String>,
+        onto: String,
+    }
+
+    impl Model for App {
+        type Msg = (Vec<String>, String);
+
+        fn update(&mut self, (files, onto): Self::Msg) -> Command<Self::Msg> {
+            self.dropped = files;
+            self.onto = onto;
+            Command::None
+        }
+
+        fn handle_event(&self, event: Event) -> Option<Self::Msg> {
+            let Event::DragDrop(DragDropEvent {
+                kind:
+                    DragDropKind::Drop {
+                        target_id, payload, ..
+                    },
+                ..
+            }) = event
+            else {
+                return None;
+            };
+            let DragPayload::Files(paths) = payload else {
+                return None;
+            };
+            Some((
+                paths
+                    .iter()
+                    .filter_map(|p| p.file_name())
+                    .map(|n| n.to_string_lossy().into_owned())
+                    .collect(),
+                target_id,
+            ))
+        }
+
+        fn view(&self, frame: &mut Frame<'_>) {
+            Button::new("drop here")
+                .on("inbox", |_: &mut App| {})
+                .render(frame.area, frame);
+        }
+    }
+
+    let mut app = App {
+        dropped: Vec::new(),
+        onto: String::new(),
+    };
+
+    let event = Event::DragDrop(DragDropEvent {
+        kind: DragDropKind::Drop {
+            source_id: String::new(),
+            target_id: "inbox".into(),
+            payload,
+        },
+        position: dewey::core::Position::new(10.0, 10.0),
+    });
+
+    let msg = app.handle_event(event).expect("a file drop is a drop");
+    app.update(msg);
+
+    assert_eq!(app.dropped, ["report.csv", "notes.md"]);
+    assert_eq!(
+        app.onto, "inbox",
+        "and the application must be told which widget it landed on, not just \
+         that something arrived"
+    );
+}

@@ -847,7 +847,24 @@ impl<M: Model + 'static> eframe::App for DeweyApp<M> {
         }
 
         // Convert egui input events to Dewey events and dispatch
-        let events = convert_egui_events(ctx);
+        let mut events = convert_egui_events(ctx);
+        // A drop names the widget it landed on, resolved the same way a click
+        // is. Without this the application would be told a file arrived and
+        // not where.
+        for event in &mut events {
+            if let crate::event::Event::DragDrop(drag) = event {
+                if let Some(id) = self.hit_map.hit_test(drag.position).map(str::to_owned) {
+                    match &mut drag.kind {
+                        crate::event::DragDropKind::Drop { target_id, .. }
+                        | crate::event::DragDropKind::DragOver { target_id }
+                        | crate::event::DragDropKind::DragLeave { target_id } => {
+                            *target_id = id;
+                        }
+                        _ => {}
+                    }
+                }
+            }
+        }
         for event in events {
             if let Some(msg) = self.model.handle_event(event) {
                 let cmd = self.model.update(msg);
@@ -920,6 +937,46 @@ impl<M: Model + 'static> eframe::App for DeweyApp<M> {
 fn convert_egui_events(ctx: &egui::Context) -> Vec<crate::event::Event> {
     let mut events = Vec::new();
     let input = ctx.input(|i| i.clone());
+
+    // Files dragged onto the window. egui collects these outside its event
+    // stream, so a backend that only walks `input.events` never sees them —
+    // which is why the default backend delivered no drag-and-drop at all while
+    // the agpu one did, and the README claimed the feature for both.
+    let pointer = input
+        .pointer
+        .latest_pos()
+        .map_or(crate::core::Position::ZERO, |p| {
+            crate::core::Position::new(p.x, p.y)
+        });
+
+    if !input.raw.hovered_files.is_empty() {
+        events.push(crate::event::Event::DragDrop(crate::event::DragDropEvent {
+            kind: crate::event::DragDropKind::DragOver {
+                target_id: String::new(),
+            },
+            position: pointer,
+        }));
+    }
+
+    if !input.raw.dropped_files.is_empty() {
+        let paths: Vec<std::path::PathBuf> = input
+            .raw
+            .dropped_files
+            .iter()
+            .filter_map(|f| f.path.clone())
+            .collect();
+        if !paths.is_empty() {
+            events.push(crate::event::Event::DragDrop(crate::event::DragDropEvent {
+                // No source widget: the drag started outside the application.
+                kind: crate::event::DragDropKind::Drop {
+                    source_id: String::new(),
+                    target_id: String::new(),
+                    payload: crate::event::DragPayload::Files(paths),
+                },
+                position: pointer,
+            }));
+        }
+    }
 
     for event in &input.events {
         match event {
