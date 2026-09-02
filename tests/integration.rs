@@ -4417,3 +4417,83 @@ fn the_handshake_mentions_the_features_that_exist() {
     let agreed = serde_json::to_string(&data["supported_capabilities"]).expect("json");
     assert!(agreed.contains("validate") && agreed.contains("tree_viewport"));
 }
+
+/// A subscription request that exceeds the cap fails rather than truncating.
+///
+/// Taking as many as fit left an agent subscribed to some of what it asked
+/// for, holding a success, with no way to tell which. The cap is a limit; a
+/// request that exceeds it is a request that failed.
+#[test]
+fn an_oversized_subscription_is_refused_not_trimmed() {
+    use dewey::agent::driver::HeadlessDriver;
+    use dewey::agent::protocol::AgentRequest;
+
+    struct App;
+    impl Model for App {
+        type Msg = ();
+        fn update(&mut self, _m: ()) -> Command<()> {
+            Command::None
+        }
+        fn view(&self, _f: &mut Frame<'_>) {}
+    }
+
+    let mut d = HeadlessDriver::new(App, 100.0, 100.0);
+    d.init();
+
+    // Every name is deliverable, so only the count can be the objection.
+    let too_many: Vec<String> = std::iter::repeat_n("state_changed".to_string(), 101).collect();
+    let refused = d.process_request(&AgentRequest::Subscribe { events: too_many });
+    assert!(!refused.success, "101 exceeds the cap of 100");
+    assert!(
+        refused.error.expect("a reason").contains("limit"),
+        "the refusal should name the limit"
+    );
+
+    // And nothing was half-applied.
+    assert!(
+        d.drain_events_json().is_empty(),
+        "a refused subscription must not leave a partial one behind"
+    );
+}
+
+/// An incompatible client is told the handshake failed, not told inside a
+/// success that it failed.
+#[test]
+fn an_incompatible_client_fails_the_handshake() {
+    use dewey::agent::driver::HeadlessDriver;
+    use dewey::agent::protocol::{AgentRequest, PROTOCOL_VERSION};
+
+    struct App;
+    impl Model for App {
+        type Msg = ();
+        fn update(&mut self, _m: ()) -> Command<()> {
+            Command::None
+        }
+        fn view(&self, _f: &mut Frame<'_>) {}
+    }
+
+    let mut d = HeadlessDriver::new(App, 100.0, 100.0);
+    d.init();
+
+    let future = d.process_request(&AgentRequest::Negotiate {
+        client_version: PROTOCOL_VERSION + 5,
+        capabilities: vec![],
+    });
+    assert!(
+        !future.success,
+        "a client checks `success`, so that is where an incompatible version \
+         has to show up"
+    );
+    assert!(future.error.expect("a reason").contains("protocol"));
+    // The detail is still there for a client that wants to explain itself.
+    assert_eq!(
+        future.data.expect("details")["compatible"],
+        serde_json::json!(false)
+    );
+
+    let current = d.process_request(&AgentRequest::Negotiate {
+        client_version: PROTOCOL_VERSION,
+        capabilities: vec![],
+    });
+    assert!(current.success);
+}

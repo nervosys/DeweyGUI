@@ -34,8 +34,20 @@ On connect, the agent should negotiate capabilities:
 Response:
 
 ```json
-{"success": true, "id": "1", "data": {"protocol_version": 2, "min_version": 1, "server_capabilities": ["state_diffs", "batch_actions", "screenshot", "ws_transport", "protocol_v2"]}}
+{"success": true, "id": "1", "data": {"protocol_version": 2, "min_protocol_version": 1,
+ "compatible": true, "supported_capabilities": ["batch_actions", "state_diffs"],
+ "server_capabilities": ["state_diffs", "batch_actions", "screenshot", "ws_transport",
+ "protocol_v2", "validate", "strict_validate", "tree_viewport", "conditional_tree",
+ "accesskit"]}}
 ```
+
+`supported_capabilities` is the subset of what you asked for that this server
+has; `server_capabilities` is everything it has.
+
+A client speaking a version outside `min_protocol_version..=protocol_version`
+gets `success: false`. It used to be told `compatible: false` inside a
+successful response, which a client checking `success` — which is what a client
+checks — sailed straight past.
 
 ## Request Types
 

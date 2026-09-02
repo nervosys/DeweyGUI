@@ -205,9 +205,21 @@ impl AgentSession {
                     );
                 }
 
+                // Truncating silently would leave an agent subscribed to some
+                // of what it asked for with a success in hand and no way to
+                // tell which. The cap is a limit, and a request that exceeds
+                // it is a request that failed.
                 let remaining = MAX_SUBSCRIPTIONS.saturating_sub(self.subscriptions.len());
-                let to_add: Vec<_> = events.iter().take(remaining).cloned().collect();
-                self.subscriptions.extend(to_add);
+                if events.len() > remaining {
+                    return (
+                        AgentResponse::err(format!(
+                            "{} subscriptions requested with room for {remaining};                              the limit is {MAX_SUBSCRIPTIONS}",
+                            events.len()
+                        )),
+                        false,
+                    );
+                }
+                self.subscriptions.extend(events.iter().cloned());
                 (
                     AgentResponse::ok(serde_json::json!({
                         "subscriptions": self.subscriptions.iter().collect::<Vec<_>>()
@@ -330,18 +342,26 @@ impl AgentSession {
                     })
                     .collect();
 
-                (
-                    AgentResponse::ok(serde_json::json!({
-                        "protocol_version": PROTOCOL_VERSION,
-                        "min_protocol_version": MIN_PROTOCOL_VERSION,
-                        "client_version": client_version,
-                        "compatible": compatible,
-                        "supported_capabilities": supported_caps,
-                        "server_capabilities": SERVER_CAPABILITIES,
-                        "framework": "dewey",
-                    })),
-                    false,
-                )
+                // An incompatible client used to be told so inside a
+                // successful response, so one checking `success` — which is
+                // what a client checks — carried on regardless. The handshake
+                // failing is the point of having one.
+                let mut response = AgentResponse::ok(serde_json::json!({
+                    "protocol_version": PROTOCOL_VERSION,
+                    "min_protocol_version": MIN_PROTOCOL_VERSION,
+                    "client_version": client_version,
+                    "compatible": compatible,
+                    "supported_capabilities": supported_caps,
+                    "server_capabilities": SERVER_CAPABILITIES,
+                    "framework": "dewey",
+                }));
+                if !compatible {
+                    response.success = false;
+                    response.error = Some(format!(
+                        "client speaks protocol {client_version}; this server                          speaks {MIN_PROTOCOL_VERSION} to {PROTOCOL_VERSION}"
+                    ));
+                }
+                (response, false)
             }
         }
     }
