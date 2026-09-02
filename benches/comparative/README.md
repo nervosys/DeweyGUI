@@ -223,7 +223,13 @@ two of five ordinary intents cannot be expressed and two more collapse into
 
 **The first two are not faults in egui because they cannot occur.** Generated
 ids cannot be forgotten or duplicated; that is a real advantage, and it is the
-direct price of the naming win in section 2. Neither framework ships a checker.
+direct price of the naming win in section 2.
+
+The price runs the other way too, and `validate` now says so. An id an author
+writes as `toggle_{i}` follows position exactly as an AccessKit node id does:
+remove the row above it and the same name means a different thing. That is
+reported as `positional_id`, and it fires on this project's own TodoMVC
+sample — which is the only reason the check is worth having.
 
 ### Summary
 

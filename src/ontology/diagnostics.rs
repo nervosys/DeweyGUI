@@ -329,6 +329,8 @@ pub fn check(
     }
     out.append(&mut partial);
 
+    out.append(&mut positional_ids(tree));
+
     // Strict only: a widget that advertises actions and wires none of them.
     // Silent by default because answering through `Model::execute_action` is a
     // different style rather than a fault; an application that opts into strict
@@ -382,6 +384,83 @@ pub fn check(
     }
 
     out.sort_by(|a, b| (a.code, &a.agent_id).cmp(&(b.code, &b.agent_id)));
+    out
+}
+
+/// Report sibling widgets whose ids are their index in the list.
+///
+/// This is the one axis on which egui measurably beats this project, and it is
+/// the price of ids an author chooses: egui generates them, so a widget there
+/// cannot be unaddressable or duplicated — but its ids are opaque and follow
+/// position, and filtering one row out of a list left an id an agent had
+/// captured pointing at the next row down.
+///
+/// An id written as `toggle_{i}` has exactly that failure. Remove the row
+/// above it and the same name now means a different thing, so an agent acting
+/// on what it read a moment ago acts on the wrong row and is told it
+/// succeeded. Keying by something stable about the item — an identifier, a
+/// title — costs nothing and does not move.
+///
+/// A warning rather than an error: `tab_0` really is positional, and a list
+/// that never reorders is fine as it is. Strict promotes it, which is the
+/// setting that says the application is driven unattended.
+fn positional_ids(tree: &super::UiTree) -> Vec<Diagnostic> {
+    /// Split `list_3` into ("list_", 3).
+    fn split(id: &str) -> Option<(&str, usize)> {
+        let digits = id.len() - id.trim_end_matches(|c: char| c.is_ascii_digit()).len();
+        if digits == 0 || digits == id.len() {
+            return None;
+        }
+        let (prefix, number) = id.split_at(id.len() - digits);
+        Some((prefix, number.parse().ok()?))
+    }
+
+    let mut out = Vec::new();
+    let mut stack = vec![&tree.root];
+    while let Some(parent) = stack.pop() {
+        for child in &parent.children {
+            stack.push(child);
+        }
+
+        // Ids sharing a prefix, in the order they were rendered.
+        let mut groups: std::collections::HashMap<&str, Vec<usize>> =
+            std::collections::HashMap::new();
+        for child in &parent.children {
+            let Some(id) = child.agent_id.as_deref() else {
+                continue;
+            };
+            if let Some((prefix, number)) = split(id) {
+                groups.entry(prefix).or_default().push(number);
+            }
+        }
+
+        let mut named: Vec<(&str, Vec<usize>)> = groups
+            .into_iter()
+            .filter(|(_, numbers)| {
+                // Dense and ascending from zero is an index, not a key.
+                numbers.len() >= 2 && numbers.iter().enumerate().all(|(i, n)| *n == i)
+            })
+            .collect();
+        named.sort_unstable_by_key(|(prefix, _)| *prefix);
+
+        for (prefix, numbers) in named {
+            out.push(
+                Diagnostic::new(
+                    Severity::Warning,
+                    "positional_id",
+                    format!(
+                        "`{prefix}0`..`{prefix}{}` are numbered by position; remove an \
+                         earlier one and every id after it names something else, so an \
+                         agent acting on what it read a moment ago acts on the wrong \
+                         widget and is told it succeeded. Key them by something stable \
+                         about the item instead",
+                        numbers.len() - 1
+                    ),
+                )
+                .with_id(format!("{prefix}0")),
+            );
+        }
+    }
     out
 }
 

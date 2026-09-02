@@ -2708,6 +2708,11 @@ mod todo_agent_task {
         }
     }
 
+    /// The same application, for a test outside this module.
+    pub fn driver_for_lint() -> HeadlessDriver<App> {
+        driver()
+    }
+
     fn driver() -> HeadlessDriver<App> {
         let mut d = HeadlessDriver::new(
             App {
@@ -3784,5 +3789,125 @@ fn contrast_ratio_matches_the_published_formula() {
     assert!(
         green > blue * 3.0,
         "luminance must be weighted per channel: green {green:.2}, blue {blue:.2}"
+    );
+}
+
+/// An id that names a position is reported, because it does not stay put.
+///
+/// This is the one axis on which egui measurably beats this project. Its ids
+/// are generated, so a widget cannot be unaddressable or duplicated — but they
+/// follow position, and filtering one row out of a list left an id an agent
+/// had captured pointing at the next row down. `toggle_{i}` has exactly that
+/// failure, and this project's own TodoMVC sample is written that way.
+#[test]
+fn ids_numbered_by_position_are_reported() {
+    use dewey::agent::driver::HeadlessDriver;
+    use dewey::ontology::Severity;
+
+    struct App {
+        keyed: bool,
+        rows: Vec<(&'static str, &'static str)>,
+    }
+
+    impl Model for App {
+        type Msg = ();
+        fn update(&mut self, _m: ()) -> Command<()> {
+            Command::None
+        }
+        fn view(&self, frame: &mut Frame<'_>) {
+            for (i, (key, title)) in self.rows.iter().enumerate() {
+                let id = if self.keyed {
+                    format!("row_{key}")
+                } else {
+                    format!("row_{i}")
+                };
+                Button::new(*title)
+                    .on(id, |_: &mut App| {})
+                    .render(Rect::new(0.0, i as f32 * 24.0, 200.0, 24.0), frame);
+            }
+        }
+    }
+
+    let rows = vec![("a91", "milk"), ("b02", "bread"), ("c73", "eggs")];
+
+    let mut positional = HeadlessDriver::new(
+        App {
+            keyed: false,
+            rows: rows.clone(),
+        },
+        200.0,
+        100.0,
+    );
+    positional.init();
+    let found = positional.validate();
+    let flagged = found
+        .iter()
+        .find(|d| d.code == "positional_id")
+        .unwrap_or_else(|| panic!("row_0..row_2 must be reported: {found:?}"));
+    assert_eq!(flagged.severity, Severity::Warning, "a warning by default");
+    assert!(
+        flagged.message.contains("wrong widget"),
+        "the message should say what goes wrong: {}",
+        flagged.message
+    );
+
+    // Strict promotes it, because strict means the application is driven
+    // unattended and cannot notice that it acted on the wrong row.
+    assert!(
+        positional
+            .validate_strict()
+            .iter()
+            .any(|d| d.code == "positional_id" && d.severity == Severity::Error),
+        "strict must treat it as an error"
+    );
+
+    // Keyed by something stable about the item: nothing to report.
+    let mut keyed = HeadlessDriver::new(App { keyed: true, rows }, 200.0, 100.0);
+    keyed.init();
+    assert!(
+        !keyed.validate().iter().any(|d| d.code == "positional_id"),
+        "ids keyed by the item must pass: {:?}",
+        keyed.validate()
+    );
+}
+
+/// This project's own TodoMVC sample has positional ids.
+///
+/// The check is worth nothing if it does not fire on the code that motivated
+/// it. The sample in `tests` mirrors `benches/scaffold`, and both name their
+/// rows `toggle_{i}`, `item_{i}`, `delete_{i}`. Complete the first todo with a
+/// filter active and every id below it shifts by one.
+#[test]
+fn the_projects_own_todo_sample_is_flagged() {
+    use dewey::agent::driver::HeadlessDriver;
+    use dewey::agent::protocol::AgentRequest;
+
+    let mut d = todo_agent_task::driver_for_lint();
+    for text in ["write tests", "ship it", "and again"] {
+        d.process_request(&AgentRequest::ExecuteAction {
+            agent_id: "new_todo".into(),
+            action: "set_text".into(),
+            params: serde_json::json!({ "text": text }),
+        });
+        d.process_request(&AgentRequest::ExecuteAction {
+            agent_id: "add".into(),
+            action: "click".into(),
+            params: serde_json::Value::Null,
+        });
+    }
+
+    let found = d.validate();
+    let positional: Vec<&str> = found
+        .iter()
+        .filter(|f| f.code == "positional_id")
+        .map(|f| f.agent_id.as_deref().unwrap_or(""))
+        .collect();
+    assert!(
+        positional.len() >= 2,
+        "toggle_, item_ and delete_ are all positional here: {found:?}"
+    );
+    assert!(
+        positional.iter().any(|id| id.starts_with("toggle_")),
+        "the checkbox ids are the ones an agent acts on: {positional:?}"
     );
 }

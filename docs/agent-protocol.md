@@ -143,6 +143,7 @@ Codes:
 | `unadvertised_action` | error | a handler is bound to an action its widget does not publish, so an agent following the ontology would call a name that does nothing |
 | `unhandled_action` | warning | a widget wired for some of its actions accepts the rest and silently ignores them |
 | `unreadable_text` | error | text drawn at a WCAG contrast below 1.6 against the fill behind it |
+| `positional_id` | warning | sibling ids are numbered by position, so removing one renames the rest |
 
 Pass `strict` when the application is meant to be driven unattended:
 
