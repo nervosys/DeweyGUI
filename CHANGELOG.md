@@ -82,6 +82,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- MCP `initialize` returns `instructions`, and the tool descriptions say why
+  to call them rather than read the application's source. The performance case
+  for an ontology assumes the agent asks it; a model that has not been told
+  the application describes itself reads the source instead — slower, far
+  larger, and an answer about what the code could do rather than what is on
+  screen. This is the highest-leverage text in the project, because it is what
+  a client puts in front of the model before it decides anything, and a test
+  asserts it keeps saying so.
+
+
 - `HitMap::register_blocking` and `Frame::register_barrier`, for a widget
   that must take the input it covers.
 
@@ -261,6 +271,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   identical whether or not the ontology is built.
 
 ### Fixed
+
+- The MCP description of `batch_actions` still said "atomically". The protocol
+  reference stopped claiming that when it turned out a failing entry did not
+  even stop the ones after it; the same claim survived in the one place a
+  coding agent actually reads. No tool description may promise atomicity, and
+  a test enforces it.
+
 
 - **A modal dialog blocked nothing.** `Modal` dimmed what was behind it and
   registered no bounds at all, so a click went straight through the backdrop

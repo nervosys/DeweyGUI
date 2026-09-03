@@ -214,6 +214,35 @@ Agentic-first GUI framework for Rust with pluggable rendering backends.
 
 ---
 
+## Known limits
+
+### The ontology is only worth what the agent asks it
+
+Every performance figure in this project assumes the agent uses the protocol.
+A model that has not been told the application describes itself will read the
+source instead — slower, far larger, and an answer about what the code *could*
+do rather than what is on screen now. The ontology costs the same whether or
+not anyone asks it, so an unprompted model turns a measured win into pure
+overhead.
+
+This is a limit of adoption, not of the mechanism, and the levers are the text
+a model reads before it decides:
+
+- [x] MCP `initialize` returns `instructions` saying the application describes
+      itself, naming `get_tree` as the first call, and pointing at `since`,
+      `viewport` and `validate`. This is the highest-leverage text in the
+      project: it is what a client puts in front of the model.
+- [x] Tool descriptions say why to call them rather than reading the source,
+      and a test asserts they keep saying it
+- [ ] Measure the gap: tokens to answer "which widget do I press to add a
+      todo" from `get_tree` against reading the application's source. The
+      benchmarks compare Dewey to other frameworks and not to the failure mode
+      that actually costs money
+- [ ] A short prompt fragment applications can paste into an agent's system
+      prompt, for clients that surface no MCP instructions
+
+---
+
 ## Planned
 
 ### v2.0 — Ecosystem

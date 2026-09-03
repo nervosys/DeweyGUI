@@ -58,6 +58,33 @@ struct JsonRpcError {
     message: String,
 }
 
+/// What the client tells the model before it decides anything.
+///
+/// MCP surfaces this from `initialize`, and it is the highest-leverage text in
+/// this project: a model that has not been told the application describes
+/// itself will read the source instead, which is slower, larger, and answers a
+/// question about the code rather than about the running program. The ontology
+/// costs nothing if nobody asks it.
+const INSTRUCTIONS: &str = "\
+This is a running GUI application that describes itself. You do not need to \
+read its source code to drive it, and reading the source answers a different \
+question — what the program could do, rather than what is on screen now.
+
+Start with `get_tree`: it returns every widget currently displayed, with its \
+id, its state, its bounds, and the actions it accepts. Act with \
+`execute_action` using an id from that tree. `query_ontology` describes the \
+kinds of widget available and what each kind can do, which is what you want \
+before writing an interface rather than driving one.
+
+Three things worth knowing. `get_tree` takes `since`, the `version` from your \
+last reply, and answers `unchanged` without rendering anything — polling that \
+way costs about a hundredth of a full read. It also takes a `viewport`, and a \
+long list is a large reply without one. And `validate` reports faults you \
+cannot see in a screenshot: widgets that rendered with no id and so cannot be \
+clicked at all, duplicate ids, zero-size bounds, and text painted at a \
+contrast nobody can read.\
+";
+
 impl JsonRpcResponse {
     fn ok(id: serde_json::Value, result: serde_json::Value) -> Self {
         Self {
@@ -104,7 +131,12 @@ fn tool_definitions() -> serde_json::Value {
         },
         {
             "name": "query_ontology",
-            "description": "Query the widget ontology catalog. Returns matching widget types.",
+            "description": "What kinds of widget this application is built \
+                from, and what each one can be asked to do. Ask this \
+                rather than reading the source: the answer describes what \
+                the running program actually does, costs a few hundred \
+                tokens against a whole codebase, and cannot be out of \
+                date.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -126,7 +158,10 @@ fn tool_definitions() -> serde_json::Value {
         },
         {
             "name": "get_tree",
-            "description": "Get a snapshot of the current UI tree. Pass the \
+            "description": "What is on screen right now: every widget, its \
+                id, its state and where it is. This is how you find the id \
+                to act on — you need neither the source nor a screenshot. \
+                Pass the \
     version from a previous reply as 'since' to be told 'unchanged' instead of \
     being sent an identical tree.",
             "inputSchema": {
@@ -171,7 +206,9 @@ fn tool_definitions() -> serde_json::Value {
         },
         {
             "name": "get_state",
-            "description": "Get the state of a specific widget by its agent ID.",
+            "description": "The state of one widget, by id. Cheaper than \
+                `get_tree` when you already know which widget you care \
+                about.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -182,7 +219,10 @@ fn tool_definitions() -> serde_json::Value {
         },
         {
             "name": "execute_action",
-            "description": "Execute an action on a specific widget.",
+            "description": "Do something to a widget: press it, set its \
+                value, select an item. Action names come from \
+                `query_ontology` or `get_tree`; an action a widget does \
+                not advertise is refused rather than silently ignored.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -209,7 +249,10 @@ fn tool_definitions() -> serde_json::Value {
         },
         {
             "name": "batch_actions",
-            "description": "Execute multiple widget actions atomically in a single request.",
+            "description": "Run several actions in one request, in order. \
+                Not atomic: nothing is rolled back. Stops at the first \
+                failure and reports `applied` and `failed_at`, so you can \
+                tell how far it got.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -514,7 +557,8 @@ impl<M: Model + 'static> McpServer<M> {
                     "serverInfo": {
                         "name": "dewey",
                         "version": env!("CARGO_PKG_VERSION"),
-                    }
+                    },
+                    "instructions": INSTRUCTIONS,
                 }),
             ),
 
@@ -582,6 +626,72 @@ mod tests {
         assert!(names.contains(&"batch_actions"));
         assert!(names.contains(&"quit"));
         assert!(names.contains(&"validate"));
+    }
+
+    /// The tool descriptions are what a model reads before deciding anything.
+    ///
+    /// The performance case for an ontology assumes the agent asks it. A model
+    /// that has not been told the application describes itself reads the
+    /// source instead — slower, far larger, and an answer about what the code
+    /// could do rather than about what is on screen. So the descriptions and
+    /// the `initialize` instructions have to say it, and this asserts they do.
+    #[test]
+    fn the_tools_tell_a_model_not_to_read_the_source() {
+        assert!(
+            INSTRUCTIONS.contains("You do not need to")
+                && INSTRUCTIONS.contains("read its source code"),
+            "the MCP instructions no longer steer a model away from the source"
+        );
+        assert!(
+            INSTRUCTIONS.contains("get_tree"),
+            "the instructions must name the cheapest first call"
+        );
+
+        let defs = tool_definitions();
+        let described = |name: &str| -> String {
+            defs["tools"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|t| t["name"] == name)
+                .unwrap_or_else(|| panic!("{name} is not a tool"))["description"]
+                .as_str()
+                .unwrap()
+                .to_string()
+        };
+        for name in ["query_ontology", "get_tree"] {
+            let text = described(name);
+            assert!(
+                text.contains("source") || text.contains("screenshot"),
+                "`{name}` does not say why to use it instead of reading the \
+                 source, and the description is the only thing a model reads \
+                 before choosing: {text}"
+            );
+        }
+    }
+
+    /// No tool may promise atomicity, because nothing rolls back.
+    ///
+    /// The protocol reference stopped calling batches atomic when it turned
+    /// out that a failing entry did not even stop the ones after it. The MCP
+    /// description went on saying "atomically" — the same claim, in the one
+    /// place a coding agent actually reads.
+    #[test]
+    fn no_tool_claims_to_be_atomic() {
+        let defs = tool_definitions();
+        for tool in defs["tools"].as_array().unwrap() {
+            let text = tool["description"].as_str().unwrap_or_default();
+            let lower = text.to_lowercase();
+            // Saying it is *not* atomic is the point, so only the promise
+            // counts against a description.
+            let promises = lower.contains("atomic") && !lower.contains("not atomic");
+            assert!(
+                !promises,
+                "`{}` promises atomicity and nothing in this crate rolls \
+                 anything back: {text}",
+                tool["name"]
+            );
+        }
     }
 
     /// Every request the protocol understands and an agent would want should
