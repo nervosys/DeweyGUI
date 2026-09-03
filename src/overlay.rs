@@ -1,7 +1,13 @@
-//! Overlay and modal system for Dewey.
+//! An overlay stack, for an application to drive.
 //!
-//! Provides a stack-based overlay manager for modals, dialogs, tooltips,
-//! and other floating content rendered above the main UI.
+//! [`OverlayStack`] orders layers by z-index and answers which one owns a
+//! point, which is the bookkeeping floating content needs.
+//!
+//! **Nothing in this crate drives it.** No frame renders a stack and no
+//! backend consults one for hit-testing, so an overlay pushed here appears
+//! nowhere and blocks nothing. The `Modal` widget draws its own backdrop and
+//! is rendered by the application's `view` like any other widget; it does not
+//! go through this module.
 
 use crate::core::Rect;
 

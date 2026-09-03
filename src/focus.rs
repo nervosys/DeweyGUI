@@ -1,7 +1,18 @@
-//! Focus management for Dewey.
+//! A focus ring, for an application to drive.
 //!
-//! Provides ring-based Tab/Shift+Tab keyboard navigation between
-//! focusable widgets, mirroring Louie's TUI focus system.
+//! [`FocusManager`] keeps an ordered list of widget ids and moves a cursor
+//! around it, which is the bookkeeping Tab/Shift+Tab navigation needs.
+//!
+//! **Nothing in this crate drives it.** No backend registers a widget here, no
+//! key handler routes Tab to [`focus_next`](FocusManager::focus_next), and no
+//! widget draws a focus indicator or activates on Enter. Pressing Tab in a
+//! Dewey application therefore does nothing unless the application does all of
+//! that itself: build the ring from the ids it rendered, move it from
+//! `handle_event`, and style the focused widget.
+//!
+//! An agent is unaffected — it addresses a widget by id rather than by
+//! tabbing to it — but a keyboard user is not, and a screen reader reads the
+//! AccessKit tree without a focus ring behind it.
 
 /// Manages focus state across focusable widgets.
 pub struct FocusManager {

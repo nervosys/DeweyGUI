@@ -344,6 +344,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Documentation
 
+- Two more modules said they did a job nothing asks them to do. `focus`
+  offered "ring-based Tab/Shift+Tab keyboard navigation" and no backend
+  registers a widget in the ring, nothing routes Tab to `focus_next`, and no
+  widget draws a focus indicator — pressing Tab in a Dewey application does
+  nothing. `overlay` offered a stack "rendered above the main UI" and no frame
+  renders one, so a pushed overlay appears nowhere and blocks nothing; the
+  `Modal` widget draws its own backdrop and does not go through it. Both now
+  say so, are `[~]` on the roadmap, and are covered by the reachability test.
+  Agents are unaffected by the focus gap, since an agent addresses a widget by
+  id rather than tabbing to it. Keyboard users are not.
+
+
 - `Event::DragDrop` says that no backend emits one. The agpu backend converts
   an `agpu::Event::DragDrop`, and nothing in the agpu crate ever constructs
   one; the default backend has no drag-drop path; the agent protocol cannot

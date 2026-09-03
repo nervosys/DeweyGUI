@@ -115,6 +115,16 @@ const SUBSYSTEMS: &[Subsystem] = &[
         file: "src/theme.rs",
         requirement: Requirement::Undriven,
     },
+    Subsystem {
+        trait_name: "FocusManager",
+        file: "src/focus.rs",
+        requirement: Requirement::Undriven,
+    },
+    Subsystem {
+        trait_name: "OverlayStack",
+        file: "src/overlay.rs",
+        requirement: Requirement::Undriven,
+    },
 ];
 
 /// The phrase an undriven module must carry, verbatim.
