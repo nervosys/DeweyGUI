@@ -240,8 +240,9 @@ a model reads before it decides:
       this TodoMVC's entire source — the ontology wins on targeted reads, on
       change-polling, and on the three questions source cannot answer at any
       price, not on bulk. Run in CI
-- [ ] A short prompt fragment applications can paste into an agent's system
-      prompt, for clients that surface no MCP instructions
+- [x] `docs/agent-prompt.md`, for clients that surface no MCP instructions,
+      and `llms.txt`, the machine-readable index a model reads first. Both say
+      what they are not: a cheap and plausible measure, not a demonstrated one
 
 **The sibling project already ran the experiment, and it did not work.**
 HawkTUI's `benchmarks/agentic/` drives a real model over 184 recorded runs.
@@ -257,9 +258,11 @@ three arms, cost $0.78 / $0.79 / $0.78, and one task got monotonically worse
 added to `src/agent/mcp.rs` are cheap and worth keeping, and there is no
 evidence yet that they change what a model does.
 
-- [ ] Measure with a model in the loop. Every Dewey benchmark prices a
-      strategy; none observes a model choosing one, which is the only place
-      the question is actually settled
+- [~] `benches/agentic/` drives a real model at a task, scores what it built
+      by what it rendered, and reads the transcript for turns, cost, source
+      reads and ontology calls. Two conditions, `bare` and `mcp`. Everything
+      but the model run is checked by `runner/selftest.py` in CI; the run
+      itself costs money and has not happened, so there are no numbers yet
 
 ---
 

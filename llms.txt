@@ -1,0 +1,77 @@
+# Dewey
+
+A Rust GUI framework whose applications describe themselves. Every widget
+publishes a schema, a semantic role, and the actions it accepts, so an agent
+discovers and drives a running interface over a JSON Lines protocol — no
+screen-scraping, no pixel matching, no reading the application's source.
+
+## Start here
+
+- `README.md` — what it is, the widget table, and the measured numbers
+- `docs/agent-prompt.md` — paste this into an agent's system prompt
+- `docs/agent-protocol.md` — the full protocol reference
+- `examples/quickstart.rs` — the smallest complete application
+
+## Driving a running application
+
+Spawn the application and speak JSON Lines on its stdin and stdout. One
+document per line, one reply per request.
+
+```
+{"id": "1", "request": {"type": "get_tree"}}
+{"id": "2", "request": {"type": "execute_action", "agent_id": "inc", "action": "click"}}
+```
+
+`Program::with_agent()` serves this while the window is open, so a person and
+an agent can use the same application at once. `HeadlessDriver`, `RpcTransport`
+and the MCP server run it without a window.
+
+Fourteen request types: `ping`, `negotiate`, `query_ontology`, `get_schema`,
+`get_tree`, `get_state`, `execute_action`, `batch_actions`, `inject_event`,
+`subscribe`, `unsubscribe`, `screenshot`, `validate`, `quit`.
+
+Three worth knowing before you start:
+
+- `get_tree` takes `since`, the `version` from your last reply, and answers
+  `unchanged` without rendering anything. A re-poll costs about a hundredth of
+  a full read, and re-polling is the commonest thing an agent does.
+- `get_tree` takes a `viewport`. Without one the tree describes every widget
+  including those scrolled out of sight; at 1000 rows that is 401 kB against
+  11.7 kB clipped.
+- `validate` reports what a screenshot cannot: widgets that rendered with no
+  id and so cannot be clicked at all, duplicate ids, zero-size bounds,
+  offscreen bounds, and text painted at a contrast nobody can read.
+
+## Writing an application
+
+- `cargo run --release --example mcp_server` — an MCP server that answers
+  `query_ontology` and `get_schema` for all 29 built-in widget schemas. This is
+  the catalogue, and it is what you want before there is an interface to read.
+- `docs/agent-protocol.md` — the reference the server implements
+
+`query_ontology` returns the whole catalogue and is the most expensive call in
+the protocol; ask it once, or filter it by `query` or `role`.
+
+## Facts
+
+- crate `deweygui`, imported as `dewey`
+- Rust 2024, MSRV 1.85
+- AGPL-3.0-or-later
+- 30 widget modules; 29 register a schema (`VirtualList` renders through
+  `List`)
+- backends: egui/wgpu (default), agpu (Vulkan-first, opt-in), web/wasm,
+  software rasterizer, test recorder, null
+- `HeadlessDriver` needs no GPU and no display
+
+## Measured
+
+Numbers and their methodology are in `README.md`; the benchmarks that produce
+them are in `benches/`, and each asserts something about its result before it
+prints one.
+
+- discover → act → verify → validate, headless: 12.6 µs
+- polling an unchanged screen: 100 ns
+- a full `get_tree` observation: about 2000 tokens; one widget's state: 120;
+  an unchanged poll: 29
+- `benches/scaffold/src/bin/observation_cost.rs` prices asking the application
+  against reading its source, and reports where reading wins

@@ -390,3 +390,110 @@ fn no_doctest_is_silently_ignored() {
          compiles, or put `ignore: <reason>` on the line above the fence"
     );
 }
+
+/// `llms.txt` is read by machines and must describe this crate.
+///
+/// It is a claim sheet — request names, counts, facts about the crate — in the
+/// file most likely to be consulted and least likely to be reread by a person.
+/// Every other claim sheet in this repository has been wrong at least once.
+#[test]
+fn the_machine_readable_index_is_true() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let index = std::fs::read_to_string(root.join("llms.txt")).expect("llms.txt");
+    let manifest = std::fs::read_to_string(root.join("Cargo.toml")).expect("Cargo.toml");
+
+    // Every request name it lists must be one the protocol accepts, and every
+    // request the protocol accepts must be listed. A reader that trusts this
+    // and finds a name missing writes a request the server refuses.
+    let protocol =
+        std::fs::read_to_string(root.join("src/agent/protocol.rs")).expect("protocol.rs");
+    let start = protocol
+        .find("pub enum AgentRequest")
+        .expect("AgentRequest");
+    let end = protocol[start..].find("\n}").expect("end") + start;
+    let names: Vec<&str> = protocol[start..end]
+        .lines()
+        .filter_map(|l| l.trim().strip_prefix("#[serde(rename = \""))
+        .filter_map(|l| l.split('"').next())
+        .collect();
+    assert!(names.len() >= 14, "{names:?}");
+
+    // The list itself, not the file. The first version of this asked whether
+    // the name appeared anywhere in `llms.txt`, and passed with `validate`
+    // deleted from the list — because the paragraph below it mentions
+    // `validate` too. A claim sheet is checked against the claim.
+    // The paragraph, not the line: the list wraps, and reading one line of it
+    // found `validate` missing when it was two lines further down.
+    let at = index
+        .find("request types:")
+        .expect("llms.txt must list the request types");
+    let paragraph = index[at..]
+        .split("\n\n")
+        .next()
+        .expect("a paragraph after `request types:`");
+    let listed: Vec<&str> = paragraph.split('`').skip(1).step_by(2).collect();
+
+    for name in &names {
+        assert!(
+            listed.contains(name),
+            "llms.txt does not list the `{name}` request among its request \
+             types, so an agent reading it does not know the request exists"
+        );
+    }
+    for name in &listed {
+        assert!(
+            names.contains(name),
+            "llms.txt lists a `{name}` request that the protocol does not \n             accept"
+        );
+    }
+    assert_eq!(
+        listed.len(),
+        names.len(),
+        "llms.txt lists {} request types and the protocol has {}",
+        listed.len(),
+        names.len()
+    );
+
+    // Facts about the crate.
+    for (claim, truth) in [
+        ("crate `deweygui`", "name = \"deweygui\""),
+        ("MSRV 1.85", "rust-version = \"1.85\""),
+        ("AGPL-3.0-or-later", "license = \"AGPL-3.0-or-later\""),
+    ] {
+        assert!(index.contains(claim), "llms.txt no longer says `{claim}`");
+        assert!(
+            manifest.contains(truth),
+            "llms.txt says `{claim}` and Cargo.toml says otherwise"
+        );
+    }
+
+    // The schema count, which moved once already in this cycle.
+    let builtin =
+        std::fs::read_to_string(root.join("src/ontology/builtin.rs")).expect("builtin.rs");
+    let registered = builtin.matches("registry.register").count();
+    assert!(
+        index.contains(&format!("{registered} register a schema")),
+        "llms.txt does not say that {registered} widgets register a schema"
+    );
+
+    // Every file it points at must exist. A machine-readable index whose links
+    // are dead is worse than none: it spends a read to find out.
+    for line in index.lines() {
+        let Some(rest) = line.trim().strip_prefix("- `") else {
+            continue;
+        };
+        let Some(target) = rest.split('`').next() else {
+            continue;
+        };
+        if !target.contains('/') && !target.ends_with(".md") && !target.ends_with(".rs") {
+            continue;
+        }
+        if target.starts_with("cargo ") {
+            continue;
+        }
+        assert!(
+            root.join(target).exists(),
+            "llms.txt points at `{target}`, which does not exist"
+        );
+    }
+}

@@ -478,6 +478,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Documentation
 
+- `llms.txt`, the machine-readable index a model reads before anything else,
+  and `docs/agent-prompt.md`, the same instructions the MCP server returns from
+  `initialize` for clients that surface none. Doc conformance checks the index
+  against the crate: every request type listed must exist and every one that
+  exists must be listed, the counts and the licence must match Cargo.toml, and
+  every file it points at must be there. The first version of that check asked
+  whether a request name appeared anywhere in the file and passed with
+  `validate` deleted from the list, because a paragraph below mentions it too.
+
+
 - `examples/agent_demo.rs` told the reader to pipe three JSON Lines requests
   to a window that reads no stdin, and all three were in a format the protocol
   has never accepted: externally tagged, with a numeric `id`, naming
