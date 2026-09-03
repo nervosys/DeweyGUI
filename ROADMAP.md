@@ -243,6 +243,24 @@ a model reads before it decides:
 - [ ] A short prompt fragment applications can paste into an agent's system
       prompt, for clients that surface no MCP instructions
 
+**The sibling project already ran the experiment, and it did not work.**
+HawkTUI's `benchmarks/agentic/` drives a real model over 184 recorded runs.
+Its finding: agents read the implementation in **100% of Hawk TUI runs**, 16–22
+reads per run, the first at tool call #1 — against **6% of ratatui runs**, 0.1
+reads per run, first at call #8. A model reaches for source when the framework
+is one it was not trained on, and Dewey is in exactly that position.
+
+Adding MCP tools raised ontology consultation from 4% to 42%, and adding
+trigger prompts to 83% — and **the outcomes did not move**: score 1.000 in all
+three arms, cost $0.78 / $0.79 / $0.78, and one task got monotonically worse
+(19 → 37 → 53 turns). Consultation is not the metric. So the `instructions`
+added to `src/agent/mcp.rs` are cheap and worth keeping, and there is no
+evidence yet that they change what a model does.
+
+- [ ] Measure with a model in the loop. Every Dewey benchmark prices a
+      strategy; none observes a model choosing one, which is the only place
+      the question is actually settled
+
 ---
 
 ## Planned
