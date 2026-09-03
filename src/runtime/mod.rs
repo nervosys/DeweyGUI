@@ -767,6 +767,12 @@ struct DeweyApp<M: Model> {
     hit_map: crate::event::HitMap,
     /// The keyboard focus ring, rebuilt from the hit map after every frame.
     focus: crate::focus::FocusManager,
+    /// The widget a screen reader was last told about.
+    ///
+    /// Focus is announced on the frame it moves and not on every frame after,
+    /// because asking egui for focus repeatedly fights anything else that
+    /// wants it.
+    announced_focus: Option<String>,
     options: ProgramOptions,
     running: bool,
     last_tick: std::time::Instant,
@@ -851,6 +857,7 @@ impl<M: Model + 'static> DeweyApp<M> {
             agent_jobs,
             hit_map: crate::event::HitMap::new(),
             focus: crate::focus::FocusManager::new(),
+            announced_focus: None,
             options,
             running: true,
             last_tick: std::time::Instant::now(),
@@ -1190,6 +1197,20 @@ impl<M: Model + 'static> eframe::App for DeweyApp<M> {
         // The closure borrows `self.hit_map` through the frame, so the ring is
         // rebuilt on a value moved out of `self` and put back after.
         let mut focus = std::mem::take(&mut self.focus);
+        // A screen reader announces the focused node and nothing else, so the
+        // ring having moved is the thing it has to be told.
+        let newly_focused = match focus.focused_id() {
+            Some(id) if self.announced_focus.as_deref() != Some(id) => Some(id.to_string()),
+            _ => None,
+        };
+        match (&newly_focused, focus.focused_id()) {
+            (Some(id), _) => self.announced_focus = Some(id.clone()),
+            // Focus left the interface — because the widget holding it stopped
+            // rendering, say. Forgetting is what lets the same widget be
+            // announced again if it comes back.
+            (None, None) => self.announced_focus = None,
+            (None, Some(_)) => {}
+        }
         egui::CentralPanel::default().show(ctx, |ui| {
             let mut egui_painter = crate::backend::egui_backend::EguiPainter::new(ctx);
             let mut frame =
@@ -1216,7 +1237,7 @@ impl<M: Model + 'static> eframe::App for DeweyApp<M> {
             #[cfg(feature = "accesskit")]
             if self.accessibility {
                 if let Some(tree) = self.driver.ontology().tree() {
-                    crate::accesskit_bridge::publish(ui, tree);
+                    crate::accesskit_bridge::publish(ui, tree, newly_focused.as_deref());
                 }
             }
             let _ = ui;

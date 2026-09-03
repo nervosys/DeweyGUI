@@ -82,6 +82,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- The AccessKit tree carries which node has focus. A screen reader announces
+  the focused node and nothing else, so the tree the bridge published was a
+  list that could be read to a user but not walked — the same defect as Tab
+  doing nothing, seen from the other side. `accesskit_bridge::publish` takes
+  the widget the ring has just moved to and asks egui for focus on it, on the
+  frame it moves and not on every frame after.
+
+
 - **Keyboard focus works.** Tab and Shift+Tab walk the interactive widgets in
   render order, Enter and Space press the focused one by the same path a click
   takes, clicking a widget focuses it, and the runtime draws a focus ring. All

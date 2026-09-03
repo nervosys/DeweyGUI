@@ -116,13 +116,21 @@ pub fn to_accesskit_node(ui_node: &UiNode) -> accesskit::Node {
 /// Publish every addressable widget in `tree` to the platform accessibility
 /// API, through egui.
 ///
+/// `newly_focused` is the widget Dewey's focus ring has just moved to, or
+/// `None` when it has not moved. A screen reader announces the focused node
+/// and nothing else, so a tree published without one is a list that can be
+/// read to a user but not walked — which is what this published for as long as
+/// pressing Tab did nothing at all. It is passed only on a change, because
+/// asking egui for focus on every frame would fight anything else that wants
+/// it.
+///
 /// Does nothing when no assistive technology is attached: egui only builds an
 /// AccessKit tree when the platform has asked for one, and
 /// `accesskit_node_builder` returns `None` until then, so the per-widget cost
 /// is a rectangle allocation that is skipped in the ordinary case.
 #[cfg(feature = "egui-backend")]
-pub fn publish(ui: &mut egui::Ui, tree: &crate::ontology::UiTree) {
-    fn walk(ui: &mut egui::Ui, node: &UiNode) {
+pub fn publish(ui: &mut egui::Ui, tree: &crate::ontology::UiTree, newly_focused: Option<&str>) {
+    fn walk(ui: &mut egui::Ui, node: &UiNode, newly_focused: Option<&str>) {
         if let (Some(id), Some(bounds)) = (node.agent_id.as_deref(), node.bounds.as_ref()) {
             let rect = egui::Rect::from_min_size(
                 egui::pos2(bounds.x, bounds.y),
@@ -133,10 +141,12 @@ pub fn publish(ui: &mut egui::Ui, tree: &crate::ontology::UiTree) {
             ui.ctx().accesskit_node_builder(response.id, |target| {
                 *target = built;
             });
-            let _ = id;
+            if newly_focused == Some(id) {
+                response.request_focus();
+            }
         }
         for child in &node.children {
-            walk(ui, child);
+            walk(ui, child, newly_focused);
         }
     }
 
@@ -149,7 +159,7 @@ pub fn publish(ui: &mut egui::Ui, tree: &crate::ontology::UiTree) {
     {
         return;
     }
-    walk(ui, &tree.root);
+    walk(ui, &tree.root, newly_focused);
 }
 
 #[cfg(test)]

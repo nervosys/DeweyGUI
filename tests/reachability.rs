@@ -366,3 +366,32 @@ fn plugin_contributions_outlive_initialisation() {
         "the theme token a plugin set did not survive `initialise`"
     );
 }
+
+/// The accessibility tree must carry which node has focus.
+///
+/// A screen reader announces the focused node and nothing else, so a tree
+/// published without one is a list that can be read to a user but not walked.
+/// That is what the bridge published for as long as pressing Tab did nothing;
+/// the two defects looked separate and were the same one.
+#[test]
+fn the_accessibility_tree_is_told_where_focus_is() {
+    let bridge: String = source("src/accesskit_bridge.rs")
+        .chars()
+        .filter(|c| !c.is_whitespace())
+        .collect();
+    assert!(
+        bridge.contains("response.request_focus()"),
+        "the bridge never asks for focus on any node, so a screen reader is \
+         handed a tree with nothing focused in it"
+    );
+
+    let runtime: String = source("src/runtime/mod.rs")
+        .chars()
+        .filter(|c| !c.is_whitespace())
+        .collect();
+    assert!(
+        runtime.contains("publish(ui,tree,newly_focused.as_deref())"),
+        "the backend publishes an accessibility tree without telling it where \
+         focus is. The ring moves and the screen reader does not follow"
+    );
+}
