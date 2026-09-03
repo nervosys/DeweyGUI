@@ -240,21 +240,23 @@ fn documented_responses_match_what_the_server_sends() {
     );
 }
 
-/// Every complete Rust sample in the README must compile.
+/// The README's quick start is the checked-in example, character for
+/// character.
 ///
-/// The quick start — the first code a reader meets — did not. It returned
-/// `Result<(), eframe::Error>`, and `Result` in this crate's prelude is
-/// Dewey's own one-parameter alias, so the signature was rejected. Nothing
-/// compiled the README, so it had been wrong for as long as the alias has
-/// existed.
+/// It did not compile: it returned `Result<(), eframe::Error>`, and `Result`
+/// in this crate's prelude is Dewey's own one-parameter alias. Nothing had
+/// ever compiled the README.
 ///
-/// Fragments are marked ```rust,ignore and skipped: the agpu sample continues
-/// the one above it and needs a feature, and the logging line is one
-/// statement.
+/// The first fix shelled out to `cargo check` from inside a running `cargo
+/// test`, which contends for the build lock — flaky — and then, once given its
+/// own target directory, rebuilt every dependency and took the CI test job
+/// from 35 seconds to nearly two minutes. Comparing text against an example
+/// cargo already builds gives the same guarantee for the cost of a string
+/// comparison.
 #[test]
-fn every_complete_readme_sample_compiles() {
-    let readme = std::fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("README.md"))
-        .expect("README");
+fn the_readme_quick_start_is_the_checked_in_example() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let readme = std::fs::read_to_string(root.join("README.md")).expect("README");
 
     let mut samples = Vec::new();
     let mut current: Option<String> = None;
@@ -270,49 +272,33 @@ fn every_complete_readme_sample_compiles() {
         }
     }
 
-    assert!(
-        !samples.is_empty(),
-        "no checkable sample found; if they were all marked `ignore` this test \
-         would pass while proving nothing"
+    assert_eq!(
+        samples.len(),
+        1,
+        "one sample is checked as a compiled example; the rest are marked \
+         ```rust,ignore as fragments. A new one needs an example file of its \
+         own, or this check silently stops covering it"
     );
 
-    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
-    for (index, sample) in samples.iter().enumerate() {
-        assert!(
-            sample.contains("fn main"),
-            "sample {index} has no `fn main`, so it is a fragment and should be \
-             marked ```rust,ignore rather than presented as a program"
-        );
+    let example = std::fs::read_to_string(root.join("examples/quickstart.rs"))
+        .expect("examples/quickstart.rs");
+    // The example carries a header explaining why it exists, and the two
+    // files need not agree about line endings.
+    let body: String = example
+        .replace("\r\n", "\n")
+        .lines()
+        .skip_while(|l| l.starts_with("//!") || l.trim().is_empty())
+        .collect::<Vec<_>>()
+        .join("\n");
+    let sample = samples[0].replace("\r\n", "\n");
 
-        let name = format!("_readme_sample_{index}");
-        let path = root.join("examples").join(format!("{name}.rs"));
-        std::fs::write(&path, sample).expect("write sample");
-
-        // CI builds with `-Dwarnings`, so a sample that merely warns fails
-        // there and passes here. Holding the sample to the stricter of the two
-        // keeps the two honest — and a sample that warns is teaching the
-        // warning: the first version of the quick start declared two message
-        // variants and sent neither.
-        // A nested cargo contends with the one running this test for the
-        // build lock, which made the whole suite fail intermittently while
-        // this test passed on its own. Its own target directory removes the
-        // contention, and keeping it in one place means the dependencies are
-        // built once rather than per run.
-        let output = std::process::Command::new("cargo")
-            .args(["check", "--quiet", "--example", &name])
-            .env("RUSTFLAGS", "-Dwarnings")
-            .env("CARGO_TARGET_DIR", root.join("target/readme-samples"))
-            .current_dir(root)
-            .output();
-        let _ = std::fs::remove_file(&path);
-
-        let output = output.expect("run cargo");
-        assert!(
-            output.status.success(),
-            "README sample {index} does not compile:\n{}",
-            String::from_utf8_lossy(&output.stderr)
-        );
-    }
+    assert_eq!(
+        body.trim(),
+        sample.trim(),
+        "the README quick start and examples/quickstart.rs have drifted. \
+         Cargo compiles the example, so the README is only as correct as this \
+         comparison"
+    );
 }
 
 /// A doctest may not be silenced without saying why.
