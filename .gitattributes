@@ -1,0 +1,4 @@
+# A shell script committed with CRLF fails on Linux with a bare `` after
+# the shebang, and this repository is developed on Windows. `core.autocrlf`
+# is a local setting; this is not.
+*.sh text eol=lf
