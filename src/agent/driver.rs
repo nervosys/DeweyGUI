@@ -78,9 +78,44 @@ impl<M: Model + 'static> HeadlessDriver<M> {
         &self.model
     }
 
+    /// Access the model for update.
+    ///
+    /// A windowed backend holds its application inside a driver so that the
+    /// same code answers an agent whether or not there is a window open, and
+    /// it needs to run `update` on the model it is showing.
+    pub fn model_mut(&mut self) -> &mut M {
+        &mut self.model
+    }
+
     /// Access the ontology registry.
     pub fn ontology(&self) -> &OntologyRegistry {
         &self.ontology
+    }
+
+    /// Access the ontology registry for writing.
+    ///
+    /// A windowed backend has already built a tree with the real painter and
+    /// puts it here, rather than making the driver render the same frame a
+    /// second time.
+    pub fn ontology_mut(&mut self) -> &mut OntologyRegistry {
+        &mut self.ontology
+    }
+
+    /// Rebuild the ontology registry from the model.
+    ///
+    /// What `Command::ExportOntology` does, on a driver that owns both.
+    pub fn reregister_ontology(&mut self) {
+        self.model.register_ontology(&mut self.ontology);
+    }
+
+    /// Tell the driver how large the window actually is.
+    ///
+    /// Everything the driver reports — the tree, the bounds in it, whether a
+    /// widget is `offscreen_widget` — is measured against this. A windowed
+    /// backend must keep it in step with the window, or an agent is answered
+    /// about a window that does not exist.
+    pub fn set_window_size(&mut self, size: crate::core::Size) {
+        self.window_size = size;
     }
 
     /// Access the agent session.

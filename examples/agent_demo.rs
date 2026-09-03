@@ -1,21 +1,20 @@
-//! Agent Demo — an application built to be driven by an agent.
+//! Agent Demo — a window an agent drives while you watch.
 //!
-//! Run with: `cargo run --example agent_demo`
+//! Run with: `cargo run --example agent_demo`, then send JSON Lines on stdin:
 //!
-//! **This window does not read stdin.** It said it did: it logged "Pipe JSON
-//! Lines to stdin for agent control" and nothing anywhere read a line, and the
-//! three requests it printed were in a format the protocol has never accepted
-//! — externally tagged, with a numeric `id`, naming `GetWidgetState` and
-//! `PerformAction`, which do not exist.
+//! ```json
+//! {"id": "1", "request": {"type": "query_ontology"}}
+//! {"id": "2", "request": {"type": "get_tree"}}
+//! {"id": "3", "request": {"type": "execute_action", "agent_id": "increment_btn", "action": "click"}}
+//! ```
 //!
-//! `Program::run` opens a window and serves no agent endpoint; the protocol is
-//! served by `HeadlessDriver`, `RpcTransport` and the MCP server, which own the
-//! model themselves. See `examples/agent_headless.rs` for an application under
-//! agent control.
+//! The third one increments the counter you are looking at, on the next frame.
 //!
-//! What this example shows is the other half: a view written so that every
-//! widget carries an id and an action, which is what makes the same
-//! application drivable when it is run headless.
+//! This example used to log "Pipe JSON Lines to stdin for agent control" and
+//! read nothing at all, and the three requests it printed were in a format the
+//! protocol has never accepted. Both are fixed, and the second could not have
+//! been until `Program::with_agent` existed: until then a Dewey application was
+//! agent-driven or windowed and never both.
 
 use dewey::prelude::*;
 
@@ -51,8 +50,12 @@ impl Model for App {
             .agent_id("counter_label")
             .render(chunks[0], frame);
 
+        // `action` rather than `agent_id`: the id makes the button visible to
+        // an agent, and the action is what makes clicking it — by hand or over
+        // the protocol — do anything. The example had only the id, so the
+        // request in the header above would have been answered and ignored.
         Button::new("Increment")
-            .agent_id("increment_btn")
+            .action("increment_btn", Msg::Increment)
             .render(chunks[1], frame);
     }
 
@@ -76,9 +79,10 @@ impl Model for App {
 fn main() -> std::result::Result<(), eframe::Error> {
     env_logger::init();
     log::info!("Starting Dewey Agent Demo");
-    log::info!("Every widget here is addressable; run it headless to drive it");
+    log::info!("Send JSON Lines requests on stdin; the window answers them");
 
     Program::new(App { count: 0 })
+        .with_agent()
         .with_options(ProgramOptions {
             width: 400.0,
             height: 200.0,

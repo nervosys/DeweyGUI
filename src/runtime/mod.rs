@@ -652,6 +652,7 @@ pub struct Program<M: Model> {
     model: M,
     options: ProgramOptions,
     plugins: crate::plugin::PluginRegistry,
+    agent: bool,
 }
 
 #[cfg(feature = "egui-backend")]
@@ -662,7 +663,26 @@ impl<M: Model + 'static> Program<M> {
             model,
             options: ProgramOptions::default(),
             plugins: crate::plugin::PluginRegistry::new(),
+            agent: false,
         }
+    }
+
+    /// Serve the agent protocol on stdin/stdout while the window is open.
+    ///
+    /// Until this existed an application was agent-driven or windowed and
+    /// never both: `RpcTransport`, the WebSocket transport and the MCP server
+    /// each own the model, and so does `run`. The premise the project is built
+    /// on — one application, a person and an agent both using it — held only
+    /// if you picked one of them.
+    ///
+    /// A reader thread parses lines and hands each request to the frame loop,
+    /// which answers it between frames with the model it is showing. An agent
+    /// therefore sees what is on screen, and an action it takes is drawn on the
+    /// next frame.
+    #[must_use]
+    pub fn with_agent(mut self) -> Self {
+        self.agent = true;
+        self
     }
 
     /// Override the default program options.
@@ -719,11 +739,12 @@ impl<M: Model + 'static> Program<M> {
         eframe::run_native(
             &title,
             options,
-            Box::new(move |_cc| {
+            Box::new(move |cc| {
                 Ok(Box::new(DeweyApp::new(
                     self.model,
                     self.options,
                     self.plugins,
+                    self.agent.then(|| cc.egui_ctx.clone()),
                 )))
             }),
         )
@@ -733,9 +754,17 @@ impl<M: Model + 'static> Program<M> {
 /// Internal eframe app wrapper.
 #[cfg(feature = "egui-backend")]
 struct DeweyApp<M: Model> {
-    model: M,
+    /// The application, held inside the driver that answers agent requests.
+    ///
+    /// The driver owns the model, the ontology and the protocol's meaning, so
+    /// a windowed application and a headless one are answered by the same
+    /// code. Every previous attempt to answer requests somewhere else produced
+    /// a copy that fell behind: both network transports could read the
+    /// interface and change nothing for as long as they had their own loop.
+    driver: crate::agent::driver::HeadlessDriver<M>,
+    /// Requests waiting to be answered, when [`Program::with_agent`] was used.
+    agent_jobs: Option<std::sync::mpsc::Receiver<crate::agent::rpc::AgentJob>>,
     hit_map: crate::event::HitMap,
-    ontology: OntologyRegistry,
     options: ProgramOptions,
     running: bool,
     last_tick: std::time::Instant,
@@ -780,6 +809,7 @@ impl<M: Model + 'static> DeweyApp<M> {
         mut model: M,
         options: ProgramOptions,
         mut plugins: crate::plugin::PluginRegistry,
+        agent: Option<egui::Context>,
     ) -> Self {
         let initial_size = crate::core::Size::new(options.width, options.height);
         let mut ontology = OntologyRegistry::new();
@@ -790,10 +820,34 @@ impl<M: Model + 'static> DeweyApp<M> {
         model.plugins_ready(&contributions);
         let init_cmd = model.init();
 
-        let mut app = Self {
+        let mut driver = crate::agent::driver::HeadlessDriver::new(
             model,
+            initial_size.width,
+            initial_size.height,
+        );
+        *driver.ontology_mut() = ontology;
+
+        // The reader thread parses stdin and waits on the frame loop for each
+        // answer; it holds no part of the model. It also holds an
+        // `egui::Context` so it can wake a window that has nothing to redraw —
+        // without that, a request to an idle application is never answered,
+        // because `update` only runs when something asks it to.
+        let agent_jobs = agent.map(|ctx| {
+            let (jobs, receiver) = std::sync::mpsc::channel();
+            std::thread::spawn(move || {
+                let wake = Box::new(move || ctx.request_repaint());
+                let mut sink = crate::agent::rpc::ChannelSink::new(jobs, wake);
+                if let Err(e) = crate::agent::rpc::serve_stdio(&mut sink) {
+                    log::warn!("agent transport stopped: {e}");
+                }
+            });
+            receiver
+        });
+
+        let mut app = Self {
+            driver,
+            agent_jobs,
             hit_map: crate::event::HitMap::new(),
-            ontology,
             options,
             running: true,
             last_tick: std::time::Instant::now(),
@@ -808,6 +862,25 @@ impl<M: Model + 'static> DeweyApp<M> {
         };
         app.process_command(init_cmd);
         app
+    }
+
+    /// Answer every agent request the transport thread has queued.
+    ///
+    /// Non-blocking: whatever has arrived is answered, and the frame carries
+    /// on. The reader thread is the one that waits.
+    fn answer_agent_jobs(&mut self) {
+        let Some(jobs) = self.agent_jobs.as_ref() else {
+            return;
+        };
+        // Collected first: `answer_job` needs the driver mutably, and the
+        // receiver lives beside it in `self`.
+        let waiting: Vec<_> = jobs.try_iter().collect();
+        for job in waiting {
+            crate::agent::rpc::answer_job(job, &mut self.driver);
+        }
+        if !self.driver.is_running() {
+            self.running = false;
+        }
     }
 
     /// Run the plugin shutdown hook once, however the application is ending.
@@ -836,14 +909,14 @@ impl<M: Model + 'static> DeweyApp<M> {
                 }
             }
             Command::Message(msg) => {
-                let cmd = self.model.update(msg);
+                let cmd = self.driver.model_mut().update(msg);
                 self.process_command(cmd);
             }
             Command::SetTickRate(_duration) => {
                 // Handled by egui's repaint scheduling
             }
             Command::ExportOntology => {
-                self.model.register_ontology(&mut self.ontology);
+                self.driver.reregister_ontology();
             }
             Command::AgentAction {
                 agent_id,
@@ -855,9 +928,9 @@ impl<M: Model + 'static> DeweyApp<M> {
                 // WebSocket transports unable to act. A model returning this
                 // command reached its own widget under agpu and reached
                 // nothing here.
-                if let Some(cmd) = self
-                    .handlers
-                    .apply(&agent_id, &action, &params, &mut self.model)
+                if let Some(cmd) =
+                    self.handlers
+                        .apply(&agent_id, &action, &params, self.driver.model_mut())
                 {
                     self.process_command(cmd);
                     return;
@@ -866,14 +939,15 @@ impl<M: Model + 'static> DeweyApp<M> {
                 // frame loop never pays for it.
                 if self.options.ontology == OntologyMode::OnDemand {
                     let area = Rect::new(0.0, 0.0, self.last_size.width, self.last_size.height);
-                    let tree = build_ontology_tree(&self.model, area);
-                    self.ontology.set_tree(tree);
+                    let tree = build_ontology_tree(self.driver.model(), area);
+                    self.driver.ontology_mut().set_tree(tree);
                 }
-                if let Some(node) = self.ontology.find_node(&agent_id) {
-                    if let Err(e) =
-                        self.ontology
-                            .validate_action_params(&node.widget_type, &action, &params)
-                    {
+                if let Some(node) = self.driver.ontology().find_node(&agent_id) {
+                    if let Err(e) = self.driver.ontology().validate_action_params(
+                        &node.widget_type,
+                        &action,
+                        &params,
+                    ) {
                         log::warn!("AgentAction validation failed for {agent_id}.{action}: {e}");
                         return;
                     }
@@ -921,7 +995,7 @@ impl<M: Model + 'static> DeweyApp<M> {
                 // Execute the task synchronously in the update cycle.
                 // For truly async I/O, wrap with tokio::task::spawn_blocking externally.
                 let msg = task();
-                let cmd = self.model.update(msg);
+                let cmd = self.driver.model_mut().update(msg);
                 self.process_command(cmd);
             }
             Command::TaskWithTimeout {
@@ -939,12 +1013,12 @@ impl<M: Model + 'static> DeweyApp<M> {
                     Ok(result) => result,
                     Err(_) => on_timeout,
                 };
-                let cmd = self.model.update(msg);
+                let cmd = self.driver.model_mut().update(msg);
                 self.process_command(cmd);
             }
             Command::TaskCancellable { task, token } => {
                 let msg = task(token);
-                let cmd = self.model.update(msg);
+                let cmd = self.driver.model_mut().update(msg);
                 self.process_command(cmd);
             }
         }
@@ -967,6 +1041,11 @@ impl<M: Model + 'static> eframe::App for DeweyApp<M> {
         }
 
         self.plugins.on_frame();
+
+        // Answer whatever the agent transport has waiting, with the model as
+        // it is now. Before rendering, so an action taken here is drawn on
+        // this frame rather than the next one.
+        self.answer_agent_jobs();
 
         // Convert egui input events to Dewey events and dispatch
         let mut events = convert_egui_events(ctx);
@@ -1006,6 +1085,10 @@ impl<M: Model + 'static> eframe::App for DeweyApp<M> {
             || (size.height - self.last_size.height).abs() > f32::EPSILON
         {
             self.last_size = size;
+            // Everything the driver reports to an agent is measured against
+            // its own window size, so a real resize has to reach it or an
+            // agent is answered about a window that no longer exists.
+            self.driver.set_window_size(size);
             events.push(crate::event::Event::Resize(size));
         }
 
@@ -1038,14 +1121,15 @@ impl<M: Model + 'static> eframe::App for DeweyApp<M> {
             if let crate::event::Event::Mouse(m) = &event {
                 if m.is_click() {
                     if let Some(id) = self.hit_map.hit_test(m.position).map(str::to_owned) {
-                        if let Some(cmd) = self.handlers.apply_primary(&id, &mut self.model) {
+                        if let Some(cmd) = self.handlers.apply_primary(&id, self.driver.model_mut())
+                        {
                             self.process_command(cmd);
                         }
                     }
                 }
             }
-            if let Some(msg) = self.model.handle_event(event) {
-                let cmd = self.model.update(msg);
+            if let Some(msg) = self.driver.model().handle_event(event) {
+                let cmd = self.driver.model_mut().update(msg);
                 self.process_command(cmd);
             }
         }
@@ -1054,8 +1138,8 @@ impl<M: Model + 'static> eframe::App for DeweyApp<M> {
         if let Some(tick_rate) = self.options.tick_rate {
             if self.last_tick.elapsed() >= tick_rate {
                 self.last_tick = std::time::Instant::now();
-                if let Some(msg) = self.model.handle_event(crate::event::Event::Tick) {
-                    let cmd = self.model.update(msg);
+                if let Some(msg) = self.driver.model().handle_event(crate::event::Event::Tick) {
+                    let cmd = self.driver.model_mut().update(msg);
                     self.process_command(cmd);
                 }
             }
@@ -1085,7 +1169,7 @@ impl<M: Model + 'static> eframe::App for DeweyApp<M> {
             let mut egui_painter = crate::backend::egui_backend::EguiPainter::new(ctx);
             let mut frame =
                 Frame::with_ontology(area, &mut self.hit_map, &mut egui_painter, build_tree);
-            self.model.view(&mut frame);
+            self.driver.model().view(&mut frame);
             handlers = Handlers::take_from(&mut frame);
 
             // Collect UI tree
@@ -1095,12 +1179,14 @@ impl<M: Model + 'static> eframe::App for DeweyApp<M> {
                     crate::ontology::UiNode::new("root", crate::ontology::SemanticRole::Container);
                 let mut root = root;
                 root.children = nodes;
-                self.ontology.set_tree(crate::ontology::UiTree::new(root));
+                self.driver
+                    .ontology_mut()
+                    .set_tree(crate::ontology::UiTree::new(root));
             }
 
             #[cfg(feature = "accesskit")]
             if self.accessibility {
-                if let Some(tree) = self.ontology.tree() {
+                if let Some(tree) = self.driver.ontology().tree() {
                     crate::accesskit_bridge::publish(ui, tree);
                 }
             }

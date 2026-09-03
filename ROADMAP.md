@@ -130,6 +130,10 @@ Agentic-first GUI framework for Rust with pluggable rendering backends.
 - [x] `hello_agpu` — minimal agpu GPU backend window (agpu crate)
 
 ### v1.1 — Agent Protocol Enhancements
+- [x] `Program::with_agent` — a windowed application answers the protocol on
+      stdin/stdout while the window is open. Every transport owns the model
+      and so does `run`, so until this an application was agent-driven or
+      windowed and never both
 - [x] WebSocket transport (`WsTransport`) alternative to stdin/stdout (feature-gated `ws-transport`)
 - [x] Protocol versioning (v2) with backward compatibility (min v1, server capabilities)
 

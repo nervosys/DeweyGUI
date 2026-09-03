@@ -82,6 +82,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `Program::with_agent` serves the agent protocol on stdin/stdout while the
+  window is open. `RpcTransport`, the WebSocket transport and the MCP server
+  each own the model, and so does `Program::run`, so an application was
+  agent-driven or windowed and never both — the premise the project is built
+  on held only if you picked one. A reader thread parses lines and hands each
+  request to the frame loop, which answers it between frames with the model it
+  is showing; an action an agent takes is drawn on that same frame.
+- `agent::rpc::RequestSink`, `ChannelSink`, `answer_job` and `serve_stdio`.
+  The reading, the line cap and the rate limit are the same whether or not
+  there is a window, so they are now one loop rather than a second copy — the
+  last two copies of that loop both answered `execute_action` with a
+  `log::debug!`.
+- `HeadlessDriver::model_mut`, `ontology_mut`, `reregister_ontology` and
+  `set_window_size`, which is what the windowed backend needs to keep the
+  driver in step with the window it is showing.
+
+
 - `Program::with_plugin`, and `Model::plugins_ready`, which hands an
   application what its plugins contributed. See below: the plugin system had
   never run under the default backend.
@@ -346,6 +363,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Re-measured with the interleaved minimum-time harness.
 
 ### Changed
+
+- The default backend holds its application inside a `HeadlessDriver` rather
+  than owning the model directly. Nothing about an application changes; it is
+  what lets the same code answer an agent with or without a window, instead of
+  the fourth copy of request handling being written for the windowed case.
+
 
 - `UiNode.accessibility` is `Option<Box<Accessibility>>` rather than
   `Accessibility`. Read it with `UiNode::accessibility()`, which returns an
