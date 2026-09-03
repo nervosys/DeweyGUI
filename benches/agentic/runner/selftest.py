@@ -24,6 +24,7 @@ TASKS = ROOT / "tasks"
 REFERENCE = ROOT / "reference"
 
 sys.path.insert(0, str(HERE))
+from run import summarise  # noqa: E402
 from verify import verify  # noqa: E402
 
 
@@ -106,6 +107,39 @@ def main():
     else:
         print("  FAIL t1_counter_broken was not built")
         ok = False
+
+    # The transcript reader, against a recording whose answers are known
+    # before it runs. `run.py` needs a model and a paid API call; the part of
+    # it that turns a transcript into numbers does not, and it is the part
+    # that decides what the benchmark reports.
+    fixture = HERE / "fixtures" / "transcript.jsonl"
+    events = [
+        json.loads(line)
+        for line in fixture.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    got = summarise(events)
+    want = {
+        # Five assistant messages, one of them pure text.
+        "turns": 5,
+        "cost_usd": 0.2137,
+        # A `Read` and a `Grep` inside Dewey's own src; the `Write` of the
+        # agent's own file is work, not going around the ontology.
+        "source_reads": 2,
+        "ontology_calls": 1,
+        # 100 + 25 + 50 + 2, so a miscounted result shows up as a wrong total.
+        "tool_result_chars": 177,
+        "source_result_chars": 150,
+        "ontology_result_chars": 25,
+    }
+    wrong = {k: (got.get(k), v) for k, v in want.items() if got.get(k) != v}
+    if wrong:
+        print("  FAIL the transcript reader")
+        for key, (g, w) in wrong.items():
+            print(f"         {key}: got {g}, expected {w}")
+        ok = False
+    else:
+        print("  ok   the transcript reader counts what it claims")
 
     # A program that does not exist is a contract failure and not a score of
     # zero on the interface, because the two mean different things about an

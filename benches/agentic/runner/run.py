@@ -29,6 +29,7 @@ turns did not move. Consultation is not the metric.
 import argparse
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -91,15 +92,46 @@ def run_agent(prompt, workdir, condition, model):
     return events, {"wall_seconds": wall, "agent_exit": proc.returncode}
 
 
+def classify(name, args):
+    """What a tool call was looking for: `source`, `ontology`, or neither.
+
+    Reading the framework's own source is the behaviour the whole question is
+    about, so it is worth being precise about what counts. A `Read` of the
+    application the agent is writing is work; a `Read` of Dewey's `src/` is the
+    model going around the ontology.
+    """
+    lowered = args.lower()
+    if name.startswith("mcp__dewey"):
+        return "ontology"
+    if name in ("Read", "Grep", "Glob"):
+        looks_like_dewey = "dewey" in lowered
+        # A `src` path segment, however the path is spelled. Matching `/src/`
+        # missed `"path": "/repo/deweygui/src"` — a directory-wide grep, which
+        # is the most source-reading a single call can be.
+        segments = lowered.replace("\\", "/").split("/")
+        in_the_crate = any(re.sub(r"\W", "", s) == "src" for s in segments)
+        if looks_like_dewey and in_the_crate:
+            return "source"
+    return None
+
+
 def summarise(events):
-    """Turns, cost, and where the model looked, from the transcript."""
+    """Turns, cost, and where the model looked, from the transcript.
+
+    The token split is what the sibling project found mattered most: source
+    reads put 10,664 tokens per run into HawkTUI's context against 1,989 for
+    ontology answers, and source reading was 42% of everything its tools
+    returned. Counting calls alone would miss that a source read is several
+    times larger than an ontology answer.
+    """
     turns = 0
     cost = 0.0
-    source_reads = 0
-    ontology_calls = 0
-    tool_result_chars = 0
-    source_result_chars = 0
-    ontology_result_chars = 0
+    counts = {"source": 0, "ontology": 0}
+    chars = {"source": 0, "ontology": 0}
+    total_result_chars = 0
+    # Which call each result belongs to, since the result arrives in a later
+    # event than the call that asked for it.
+    kind_of = {}
 
     for event in events:
         if event.get("type") == "assistant":
@@ -108,27 +140,31 @@ def summarise(events):
             cost = event["total_cost_usd"]
 
         for block in event.get("message", {}).get("content", []) or []:
-            if block.get("type") != "tool_use":
-                continue
-            name = block.get("name", "")
-            args = json.dumps(block.get("input", {}))
-            # Reading the framework's own source, which is the behaviour the
-            # whole question is about.
-            if name in ("Read", "Grep", "Glob") and "deweygui" in args.lower():
-                source_reads += 1
-            elif name in ("Read", "Grep") and "/src/" in args and "dewey" in args:
-                source_reads += 1
-            if name.startswith("mcp__dewey"):
-                ontology_calls += 1
+            kind = block.get("type")
+            if kind == "tool_use":
+                what = classify(block.get("name", ""), json.dumps(block.get("input", {})))
+                if what:
+                    counts[what] += 1
+                    kind_of[block.get("id")] = what
+            elif kind == "tool_result":
+                content = block.get("content")
+                if isinstance(content, list):
+                    size = sum(len(str(p.get("text", ""))) for p in content)
+                else:
+                    size = len(str(content or ""))
+                total_result_chars += size
+                what = kind_of.get(block.get("tool_use_id"))
+                if what:
+                    chars[what] += size
 
     return {
         "turns": turns,
         "cost_usd": round(cost, 4),
-        "source_reads": source_reads,
-        "ontology_calls": ontology_calls,
-        "tool_result_chars": tool_result_chars,
-        "source_result_chars": source_result_chars,
-        "ontology_result_chars": ontology_result_chars,
+        "source_reads": counts["source"],
+        "ontology_calls": counts["ontology"],
+        "tool_result_chars": total_result_chars,
+        "source_result_chars": chars["source"],
+        "ontology_result_chars": chars["ontology"],
     }
 
 
