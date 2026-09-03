@@ -70,6 +70,31 @@ fn json_blocks() -> Vec<String> {
         text.push('\n');
     }
 
+    // And the examples' own headers. `agent_demo.rs` told the reader to pipe
+    // three requests to a window that reads no stdin, and all three were in a
+    // format the protocol has never accepted: externally tagged, numeric `id`,
+    // naming `GetWidgetState` and `PerformAction`, neither of which exists.
+    // Checking two files and not the examples meant the worst protocol
+    // documentation in the repository was the only kind nothing read.
+    let examples = Path::new(env!("CARGO_MANIFEST_DIR")).join("examples");
+    let mut paths: Vec<_> = std::fs::read_dir(&examples)
+        .expect("examples")
+        .flatten()
+        .map(|e| e.path())
+        .filter(|p| p.extension().and_then(|e| e.to_str()) == Some("rs"))
+        .collect();
+    paths.sort();
+    for path in paths {
+        let source = std::fs::read_to_string(&path).expect("example");
+        for line in source.lines() {
+            if let Some(doc) = line.trim_start().strip_prefix("//!") {
+                text.push_str(doc.strip_prefix(' ').unwrap_or(doc));
+                text.push('\n');
+            }
+        }
+        text.push('\n');
+    }
+
     let mut blocks = Vec::new();
     let mut current: Option<String> = None;
     for line in text.lines() {

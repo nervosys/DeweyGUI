@@ -216,6 +216,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `Command::AgentAction` was a `log::debug!` and nothing else under the
+  default backend — the same line, in the same position, as the one that left
+  both network transports unable to act. A model returning it to drive one of
+  its own widgets reached the widget under agpu and reached nothing here. It
+  now dispatches through the handlers and validates parameters against the
+  ontology, as agpu does. The existing command-parity test passed throughout,
+  because it asks whether each backend *mentions* every variant, and
+  mentioning it is exactly what the log line did.
+
+
 - **Clicking a widget did nothing under the default backend.** It converted a
   mouse click into an `Event::Mouse`, handed it to `Model::handle_event`, and
   stopped: it never called `HitMap::hit_test` and held no `Handlers` at all.
@@ -359,6 +369,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   through JSON.
 
 ### Documentation
+
+- `examples/agent_demo.rs` told the reader to pipe three JSON Lines requests
+  to a window that reads no stdin, and all three were in a format the protocol
+  has never accepted: externally tagged, with a numeric `id`, naming
+  `GetWidgetState` and `PerformAction`, neither of which exists. Doc
+  conformance now reads every example's header as well as the README and the
+  protocol reference — the worst protocol documentation in the repository was
+  the only kind nothing checked.
+
+- The README claimed "Focus Management — Ring-buffer tab navigation" and
+  "Overlay System — Modal dialogs and overlay stacking". Both name real types
+  that nothing drives; the entries now say what they are and what an
+  application still has to do.
+
 
 - Two more modules said they did a job nothing asks them to do. `focus`
   offered "ring-based Tab/Shift+Tab keyboard navigation" and no backend

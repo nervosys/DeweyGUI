@@ -772,7 +772,10 @@ struct DeweyApp<M: Model> {
 }
 
 #[cfg(feature = "egui-backend")]
-impl<M: Model> DeweyApp<M> {
+// `+ 'static`: `Handlers<M>` boxes a message as `dyn Any + Send`, so every
+// host that dispatches through it needs the bound. `DeweyApp` is only ever
+// constructed for an `M` that eframe already requires to be `'static`.
+impl<M: Model + 'static> DeweyApp<M> {
     fn new(
         mut model: M,
         options: ProgramOptions,
@@ -847,6 +850,34 @@ impl<M: Model> DeweyApp<M> {
                 action,
                 params,
             } => {
+                // This arm was a `log::debug!` and nothing else — the same
+                // line, in the same shape, as the one that made the stdio and
+                // WebSocket transports unable to act. A model returning this
+                // command reached its own widget under agpu and reached
+                // nothing here.
+                if let Some(cmd) = self
+                    .handlers
+                    .apply(&agent_id, &action, &params, &mut self.model)
+                {
+                    self.process_command(cmd);
+                    return;
+                }
+                // On demand: refresh the tree just before it is read, so the
+                // frame loop never pays for it.
+                if self.options.ontology == OntologyMode::OnDemand {
+                    let area = Rect::new(0.0, 0.0, self.last_size.width, self.last_size.height);
+                    let tree = build_ontology_tree(&self.model, area);
+                    self.ontology.set_tree(tree);
+                }
+                if let Some(node) = self.ontology.find_node(&agent_id) {
+                    if let Err(e) =
+                        self.ontology
+                            .validate_action_params(&node.widget_type, &action, &params)
+                    {
+                        log::warn!("AgentAction validation failed for {agent_id}.{action}: {e}");
+                        return;
+                    }
+                }
                 log::debug!("AgentAction: {agent_id}.{action}({params})");
             }
             Command::SetWindowVisible(visible) => {

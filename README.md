@@ -15,8 +15,13 @@
 - **Backend-Agnostic Rendering** — Abstract `Painter` trait with pluggable backends (egui/wgpu, web/wasm32, software rasterizer, test/headless)
 - **Full Semantic Ontology** — Every widget exposes its schema, capabilities, actions, and semantic role
 - **Layout Engine** — Constraint-based layout with flex distribution
-- **Focus Management** — Ring-buffer tab navigation
-- **Overlay System** — Modal dialogs and overlay stacking
+- **Focus ring** — `FocusManager` keeps the ordered list and moves a cursor
+  around it. Nothing in the framework drives it: no backend registers a
+  widget, nothing routes Tab, and no widget draws a focus indicator, so
+  keyboard navigation is the application's to build on top of it
+- **Overlay stack** — `OverlayStack` orders layers and answers which owns a
+  point. Nothing renders one; the `Modal` widget draws its own backdrop and
+  is rendered from `view` like any other widget
 
 ### Agent & AI Integration
 

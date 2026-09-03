@@ -1,13 +1,21 @@
-//! Agent Demo — demonstrates the agent protocol integration.
+//! Agent Demo — an application built to be driven by an agent.
 //!
 //! Run with: `cargo run --example agent_demo`
-//! Then pipe JSON Lines commands to stdin:
 //!
-//! ```json
-//! {"id":1,"request":"QueryOntology"}
-//! {"id":2,"request":{"GetWidgetState":{"agent_id":"counter_label"}}}
-//! {"id":3,"request":{"PerformAction":{"agent_id":"increment_btn","action":"click","params":{}}}}
-//! ```
+//! **This window does not read stdin.** It said it did: it logged "Pipe JSON
+//! Lines to stdin for agent control" and nothing anywhere read a line, and the
+//! three requests it printed were in a format the protocol has never accepted
+//! — externally tagged, with a numeric `id`, naming `GetWidgetState` and
+//! `PerformAction`, which do not exist.
+//!
+//! `Program::run` opens a window and serves no agent endpoint; the protocol is
+//! served by `HeadlessDriver`, `RpcTransport` and the MCP server, which own the
+//! model themselves. See `examples/agent_headless.rs` for an application under
+//! agent control.
+//!
+//! What this example shows is the other half: a view written so that every
+//! widget carries an id and an action, which is what makes the same
+//! application drivable when it is run headless.
 
 use dewey::prelude::*;
 
@@ -68,7 +76,7 @@ impl Model for App {
 fn main() -> std::result::Result<(), eframe::Error> {
     env_logger::init();
     log::info!("Starting Dewey Agent Demo");
-    log::info!("Pipe JSON Lines to stdin for agent control");
+    log::info!("Every widget here is addressable; run it headless to drive it");
 
     Program::new(App { count: 0 })
         .with_options(ProgramOptions {

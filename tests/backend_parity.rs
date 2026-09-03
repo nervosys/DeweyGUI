@@ -256,3 +256,42 @@ fn a_click_reaches_a_handler_on_every_host() {
         );
     }
 }
+
+/// `Command::AgentAction` must reach a widget, not a log line.
+///
+/// The default backend's arm was a single `log::debug!` — the same line, in
+/// the same shape, as the one that made the stdio and WebSocket transports
+/// unable to act. A model returning this command to drive one of its own
+/// widgets reached the widget under agpu and reached nothing under the backend
+/// `Program::run` uses.
+///
+/// The existing command-parity test passed throughout, because it asks whether
+/// each backend *mentions* every variant. Mentioning it is what the log line
+/// did.
+#[test]
+fn agent_action_is_dispatched_and_not_merely_logged() {
+    for (name, file) in [
+        ("the default backend", "src/runtime/mod.rs"),
+        ("the agpu backend", "src/backend/agpu_backend.rs"),
+    ] {
+        let text = source(file);
+        let start = text
+            .find("Command::AgentAction {")
+            .unwrap_or_else(|| panic!("{name} does not handle Command::AgentAction"));
+        // The arm runs until the next one.
+        let rest = &text[start + 1..];
+        let end = rest.find("\n            Command::").unwrap_or(rest.len());
+        // rustfmt breaks a long call across lines, so `handlers.apply(`
+        // is not contiguous in the source. Collapse the whitespace first:
+        // the first version of this check failed against the fix itself.
+        let arm: String = rest[..end].chars().filter(|c| !c.is_whitespace()).collect();
+
+        assert!(
+            arm.contains("handlers.apply(") || arm.contains("self.dispatch("),
+            "{name} handles `Command::AgentAction` without dispatching it to a \
+             handler. A log line is not an action: this arm is where a model \
+             drives its own widget, and the same `log::debug!` in the same \
+             position is what left both network transports unable to act"
+        );
+    }
+}
