@@ -143,3 +143,11 @@ jobs:
       # lives in `run.py`, which CI never calls.
       - name: The agentic verifier scores what it claims to
         run: python benches/agentic/runner/selftest.py
+
+      # And the path a real attempt takes: a scratch crate holding the
+      # `src/contract.rs` the prompt hands out, built and scored by the same
+      # code `run.py` uses. Three paid runs were spoiled by defects that lived
+      # only here — a contract runner nothing compiled in a fresh crate, and a
+      # binary looked for where `CARGO_TARGET_DIR` had not put it.
+      - name: A perfect attempt still scores 1.000
+        run: python benches/agentic/runner/selftest_pipeline.py

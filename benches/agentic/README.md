@@ -130,6 +130,13 @@ ones that could recur silently now cannot.
 | a transcript shape crashed the reader after the model had been paid for | 1 run | transcripts are written before anything parses them |
 | the binary was looked for at `workdir/target/release/app`, and `CARGO_TARGET_DIR` had put it elsewhere, so a run that built fine scored `program not found` | 1 run | the path comes from cargo's own output |
 
+`selftest_pipeline.py` now closes the question those defects left open. It
+builds what a perfect attempt would have written — the `src/contract.rs` the
+prompt hands out, a `main.rs`, a `Cargo.toml` naming the injected crate path —
+and runs it through `run.py`'s own build-and-verify code. It scores **1.000,
+6/6, 3 frames**. The task is passable and the plumbing is correct, so the zeros
+above are the model's and not the harness's. It runs in CI and costs a compile.
+
 Two threats to validity remain. The agent inherits the operator's Claude
 configuration: one `warned` run spent turns grepping an unrelated repository
 that happened to be on the operator's allowed-directory list, and
