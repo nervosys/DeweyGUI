@@ -21,3 +21,5 @@ CHAT-SUMMARY.md
 # Benchmark crate build artifacts
 benches/*/target/
 target/readme-samples
+__pycache__/
+*.pyc
