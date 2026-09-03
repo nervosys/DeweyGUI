@@ -48,10 +48,49 @@ from verify import verify  # noqa: E402
 
 
 def build_prompt(task_dir):
-    """The task prompt with the contract spliced in, as the agent sees it."""
+    """The task prompt with the contract spliced in, as the agent sees it.
+
+    `{{CRATE}}` becomes the absolute path to this checkout. The agent works in
+    a scratch directory and cannot be expected to guess where the framework
+    lives; without it every attempt fails at `cargo build` for a reason that
+    has nothing to do with the task.
+    """
     prompt = (Path(task_dir) / "prompt.md").read_text(encoding="utf-8")
     contract = (TASKS / "contract.md").read_text(encoding="utf-8")
-    return prompt.replace("{{CONTRACT}}", contract)
+    return prompt.replace("{{CONTRACT}}", contract).replace(
+        "{{CRATE}}", CRATE.as_posix()
+    )
+
+
+def mcp_binary():
+    """Build `examples/mcp_server.rs` and return the path to it."""
+    proc = subprocess.run(
+        [
+            "cargo",
+            "build",
+            "--release",
+            "--example",
+            "mcp_server",
+            "--message-format",
+            "json-render-diagnostics",
+        ],
+        cwd=CRATE,
+        capture_output=True,
+        text=True,
+    )
+    if proc.returncode != 0:
+        sys.stderr.write(proc.stderr)
+        raise SystemExit("run.py: the MCP server example does not build")
+    for line in proc.stdout.splitlines():
+        try:
+            message = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if message.get("executable") and message.get("target", {}).get(
+            "name"
+        ) == "mcp_server":
+            return message["executable"]
+    raise SystemExit("run.py: cargo did not say where it put the MCP server")
 
 
 def run_agent(prompt, workdir, condition, model):
@@ -70,8 +109,31 @@ def run_agent(prompt, workdir, condition, model):
         cmd += ["--model", model]
     if condition == "mcp":
         # The server is the point of this condition: it is what puts the
-        # instructions in front of the model.
-        cmd += ["--mcp-config", str(HERE / "mcp.json")]
+        # instructions in front of the model. The config is written here with
+        # an absolute `cwd`, because the client resolves a relative one from
+        # the agent's scratch directory — a checked-in `../../..` produced
+        # `{"name": "dewey", "status": "failed"}` and a run that was silently
+        # the `bare` condition wearing the `mcp` label.
+        config = workdir / "mcp.json"
+        config.write_text(
+            json.dumps(
+                {
+                    "mcpServers": {
+                        "dewey": {
+                            # The built binary, not `cargo run`: cargo
+                            # compiles on first use and the client gives up
+                            # waiting for the handshake, which is the second
+                            # way this arm silently became the other one.
+                            "command": mcp_binary(),
+                            "args": [],
+                            "cwd": str(CRATE),
+                        }
+                    }
+                }
+            ),
+            encoding="utf-8",
+        )
+        cmd += ["--mcp-config", str(config)]
 
     started = time.time()
     proc = subprocess.run(
@@ -89,7 +151,18 @@ def run_agent(prompt, workdir, condition, model):
             events.append(json.loads(line))
         except json.JSONDecodeError:
             continue
-    return events, {"wall_seconds": wall, "agent_exit": proc.returncode}
+    # Whether the server actually attached. A failed one turns this arm into
+    # the other arm without saying so.
+    servers = {}
+    for event in events:
+        for entry in event.get("mcp_servers") or []:
+            servers[entry.get("name")] = entry.get("status")
+
+    return events, {
+        "wall_seconds": wall,
+        "agent_exit": proc.returncode,
+        "mcp_status": servers.get("dewey"),
+    }
 
 
 def classify(name, args):
@@ -139,7 +212,19 @@ def summarise(events):
         if "total_cost_usd" in event:
             cost = event["total_cost_usd"]
 
-        for block in event.get("message", {}).get("content", []) or []:
+        # A real transcript carries shapes the obvious reading does not
+        # survive: `message` is sometimes a string, and so is `content`. The
+        # first paid run of this crashed here and its transcript was lost,
+        # which is why `one_run` now writes the transcript before parsing it.
+        message = event.get("message")
+        if not isinstance(message, dict):
+            continue
+        blocks = message.get("content")
+        if isinstance(blocks, str) or blocks is None:
+            continue
+        for block in blocks:
+            if not isinstance(block, dict):
+                continue
             kind = block.get("type")
             if kind == "tool_use":
                 what = classify(block.get("name", ""), json.dumps(block.get("input", {})))
@@ -174,7 +259,36 @@ def one_run(task, condition, model, keep):
     workdir = Path(tempfile.mkdtemp(prefix=f"dewey-{task}-"))
     try:
         events, meta = run_agent(prompt, workdir, condition, model)
-        record = {"task": task, "condition": condition, **meta, **summarise(events)}
+
+        # Before anything that can fail: an attempt costs money, and a reader
+        # that throws must not be able to lose one. The first run of this
+        # crashed on a transcript shape and there was nothing left to debug.
+        transcripts = RESULTS / "transcripts"
+        transcripts.mkdir(parents=True, exist_ok=True)
+        stamp = time.strftime("%Y%m%d-%H%M%S")
+        raw = transcripts / f"{task}-{condition}-{stamp}.jsonl"
+        with raw.open("w", encoding="utf-8") as f:
+            for event in events:
+                f.write(json.dumps(event) + "\n")
+
+        record = {
+            "task": task,
+            "condition": condition,
+            "transcript": raw.name,
+            **meta,
+            **summarise(events),
+        }
+
+        # An `mcp` run whose server did not attach is a `bare` run wearing the
+        # wrong label, and averaging it into the comparison would answer the
+        # question with the arms swapped. Two paid runs were recorded that way
+        # before this check existed.
+        if condition == "mcp" and meta.get("mcp_status") != "connected":
+            raise SystemExit(
+                f"run.py: the MCP server reported `{meta.get('mcp_status')}`, so "
+                "this run is not the condition it claims to be. Nothing was "
+                f"recorded; the transcript is at {raw}."
+            )
 
         built = subprocess.run(
             ["cargo", "build", "--release"],
@@ -183,6 +297,16 @@ def one_run(task, condition, model, keep):
             text=True,
         )
         record["built"] = built.returncode == 0
+        # A failed build with no error recorded is a paid run that taught
+        # nothing. The first one of these came back `built: false` and there
+        # was no way to tell whose fault it was.
+        if not record["built"]:
+            record["build_error"] = (built.stderr or built.stdout)[-1500:]
+            record["wrote"] = sorted(
+                str(f.relative_to(workdir))
+                for f in workdir.rglob("*")
+                if f.is_file() and "target" not in f.parts
+            )[:40]
         binary = workdir / "target" / "release" / (
             "app.exe" if os.name == "nt" else "app"
         )
@@ -193,6 +317,15 @@ def one_run(task, condition, model, keep):
                 "checks_passed": result["checks_passed"] if result else 0,
                 "checks_total": result["checks_total"] if result else 0,
                 "contract_failed": result["contract_failed"] if result else True,
+                # Why it scored what it scored. Without this a run that built
+                # and scored zero says only that something went wrong, which
+                # is what the first three attempts said.
+                "verify_error": result["error"] if result else "did not build",
+                "failed_checks": (
+                    [c["id"] for c in result["checks"] if not c["passed"]]
+                    if result
+                    else []
+                ),
             }
         )
         return record
@@ -211,6 +344,8 @@ def main():
     parser.add_argument("--keep", action="store_true", help="keep the work tree")
     args = parser.parse_args()
 
+    if args.condition == "mcp":
+        print("checking the MCP server attaches before spending anything ...")
     if shutil.which("claude") is None:
         raise SystemExit(
             "run.py needs the `claude` CLI on PATH. This is the one part of the "

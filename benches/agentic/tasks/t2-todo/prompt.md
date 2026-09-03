@@ -1,7 +1,13 @@
 Build a GUI program in Rust using the **dewey** crate.
 
 The program is a single binary named `app`. Its Cargo.toml must depend on
-`dewey` by path.
+Dewey by path:
+
+```toml
+[dependencies]
+dewey = { package = "deweygui", path = "{{CRATE}}", default-features = false }
+serde_json = "1"
+```
 
 ## What it must display
 

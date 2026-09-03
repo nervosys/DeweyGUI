@@ -9,3 +9,5 @@
 {"type": "user", "message": {"content": [{"type": "tool_result", "tool_use_id": "t4", "content": "ok"}]}}
 {"type": "assistant", "message": {"content": [{"type": "text", "text": "Done."}]}}
 {"type": "result", "subtype": "success", "total_cost_usd": 0.2137, "num_turns": 5}
+{"type": "assistant", "message": "a bare string where an object was expected"}
+{"type": "user", "message": {"content": "a bare string where a block list was expected"}}

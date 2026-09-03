@@ -120,8 +120,10 @@ def main():
     ]
     got = summarise(events)
     want = {
-        # Five assistant messages, one of them pure text.
-        "turns": 5,
+        # Six assistant messages: five ordinary ones and a malformed one
+        # whose `message` is a bare string. A real transcript carries those
+        # and the first paid run crashed on one.
+        "turns": 6,
         "cost_usd": 0.2137,
         # A `Read` and a `Grep` inside Dewey's own src; the `Write` of the
         # agent's own file is work, not going around the ontology.
@@ -140,6 +142,23 @@ def main():
         ok = False
     else:
         print("  ok   the transcript reader counts what it claims")
+
+    # The runner pasted into the contract must be the one the reference
+    # compiles. If they drift, every attempt is given code that does not build
+    # while the reference quietly keeps working, and the benchmark blames the
+    # model for it.
+    lib = (REFERENCE / "src" / "lib.rs").read_text(encoding="utf-8")
+    lib = lib.replace("\r\n", "\n")
+    body = "\n".join(
+        line for line in lib.split("\n") if not line.startswith("//!")
+    ).strip()
+    contract = (TASKS / "contract.md").read_text(encoding="utf-8")
+    contract = contract.replace("\r\n", "\n")
+    if body in contract:
+        print("  ok   the contract ships the runner the reference compiles")
+    else:
+        print("  FAIL the contract's runner has drifted from reference/src/lib.rs")
+        ok = False
 
     # A program that does not exist is a contract failure and not a score of
     # zero on the interface, because the two mean different things about an

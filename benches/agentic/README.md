@@ -78,6 +78,52 @@ else. If it moves `cost_usd` or `turns` and the interval excludes zero, that
 is a result worth having; if it does not, that is the honest answer and it
 belongs in the ROADMAP next to the rest.
 
+## First runs, 2026-09-03
+
+Four attempts at `t1-counter`, three usable. Not a result — n=1 per arm, and
+`analyze.py` would report every interval as spanning zero. A smoke test that
+produced one qualitative finding worth writing down.
+
+| arm | turns | cost | source reads | ontology calls | built | score |
+|---|---|---|---|---|---|---|
+| bare | 33 | $0.66 | 1 | 0 | no | 0.000 |
+| bare | 48 | $0.94 | 1 | 0 | no | 0.000 |
+| mcp | 34 | $0.66 | 0 | 1 (`ping`) | yes | 0.000 |
+
+**The failure mode is not the one this was built to measure.** The concern was
+that a model would read the source instead of asking the ontology. It did
+neither. Across 115 turns it made two source reads and one `ping`, and wrote
+an API that does not exist:
+
+    fn view(&self) -> View<Msg>              // bare
+    fn view(&self) -> Element<Self::Message> // mcp — iced's signature verbatim
+    Command::none()                          // iced's constructor
+
+`Element<Self::Message>` and `Command::none()` are iced. The model recognised
+the shape — an Elm-architecture Rust GUI crate — and wrote the framework it
+already knew, confidently, without checking. Reading beats guessing; guessing
+is what actually happened.
+
+That reframes the mitigation. HawkTUI's finding was that consultation can be
+raised without improving outcomes. This one is worse: with fourteen ontology
+tools attached and named in the tool list, the model called `ping`. Making the
+catalogue available is not the binding constraint when the model does not
+believe it needs one.
+
+Three harness defects had to be fixed to get even this far, and two of them
+cost a paid run each:
+
+- the prompt told the agent to depend on Dewey "by path" and never said which
+  path; the crate path is now injected
+- the MCP config's `cwd` was relative and the client resolved it from the
+  agent's scratch directory, so `mcp_servers` reported `failed` and the run
+  was the `bare` condition wearing the `mcp` label. Then `cargo run` was too
+  slow for the handshake and it failed a second way. It now points at the
+  built binary, and a run whose server is not `connected` is refused rather
+  than recorded
+- a transcript shape crashed the reader after the model had already been paid
+  for; transcripts are now written before anything parses them
+
 ## Layout
 
 ```
