@@ -9,6 +9,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Performance
 
+- `get_tree` builds the reply as bytes rather than as a `serde_json::Value`
+  that is then serialised. For a 100-row interface the intermediate `Value`
+  cost 379 µs of 557. The transports use `process_request_json`, which skips
+  it: the reply an agent receives went **557 µs → 87 µs**, against egui's
+  AccessKit tree at 264 µs. `process_request` still returns a `Value`, since an
+  in-process caller wants to inspect the reply rather than send it.
+
+- `get_tree` takes a `viewport` and describes only the widgets whose bounds
+  intersect it. The tree previously described every widget in the interface,
+  including those scrolled out of sight — measured against a screenshot of the
+  same 1000-row application it was 24× larger and 3.7× slower, the one axis
+  where a structured observation lost outright to a picture. Windowed, the same
+  list is **11.7 kB against a screenshot's 16.7 kB, and 971 µs against
+  1.53 ms**. The reply carries `total_nodes` and `shown_nodes` so an agent can
+  tell a short list from a window onto a long one, and a container is kept when
+  any descendant is visible. Clipping happens after the frame is built, so a
+  list long enough for that to matter still wants `VirtualList` in the view.
+
+- `query_ontology` serves the widget catalogue from cached bytes rather than
+  cloning a `serde_json::Value` per request.
+
+
 - `get_tree` accepts `since`, the `version` from a previous reply, and answers
   `unchanged` without rendering or serialising anything when the interface has
   not moved: **11.0 µs → 100 ns, 110× less**. Polling until something changes
@@ -60,6 +82,52 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   3210 → 598 bytes (−81%). Hit-testing and painting are unaffected.
 
 ### Added
+
+- `Command` gained eight window operations — `SetWindowVisible`,
+  `FocusWindow`, `MinimiseWindow`, `SetWindowPosition`, `SetWindowSize`,
+  `SetAlwaysOnTop`, `SetFullscreen` and `SetWindowTitle`. `Model::update` gets
+  no `egui::Context` by design, and `Command` had no window operation but
+  `Quit`, so "click the tray icon, show the window" could not be expressed at
+  all. The egui backend queues them onto `ViewportCommand` and flushes them at
+  the top of the next frame, before the running check, so a model that hid its
+  window is not raced by one that quit; the agpu backend carries them out
+  against its winit window immediately.
+- `ProgramOptions` gained `always_on_top`, `decorated`, `position`, `min_size`
+  and `max_size`. These existed in `WindowConfig` and never reached a window.
+
+- `Validate { strict: true }` promotes every warning to an error and adds
+  `unwired_widget`: a widget that publishes actions and has a handler for none
+  of them. That stays silent by default, because answering through
+  `Model::execute_action` is a different style rather than a fault — and it is
+  also exactly how `Canvas`, `Chart` and `RichText` came to accept `clear` and
+  do nothing. The test is not that strict passes; it is that every defect from
+  this week fails it.
+- `unreadable_text`, which computes the WCAG contrast ratio of painted text
+  against what is behind it and reports what no structural check can see: a
+  label painted white on white validates perfectly and cannot be read.
+- `positional_id`, which reports agent ids naming a position rather than a
+  thing (`button_3`, `row_0`), since such an id stops addressing the same
+  widget the moment anything is inserted above it.
+
+- The AccessKit bridge publishes the ontology to the platform accessibility
+  tree, behind the `accesskit` feature, so a screen reader and an agent read
+  the same interface. Widget text is taken from the `label`, `text`, `title`
+  and `placeholder` properties rather than from a `label` field alone, which is
+  where the widgets actually store it.
+
+- MCP exposes `validate`, and `get_tree` accepts and declares `since`. Both
+  were in the protocol and tested through the headless driver, and neither
+  could be called by the client they were built for. `screenshot`'s `format`
+  documents that `text` returns the golden-comparable rendering.
+
+- `ontology::builtin::register_all` registers all 29 widget schemas in one
+  call, with a module-count guard so a new widget module cannot be added
+  without it.
+
+- `scripts/check.sh` runs what CI runs, in fail-fastest order; `--all` adds the
+  sibling `agpu` crate and both benchmark workspaces, which live outside this
+  workspace and which `cargo check` here never compiles.
+
 
 - Handlers on the remaining common interactive widgets, each bound to the
   action it advertises: `List::on_select`, `Select::on_select`,
@@ -142,6 +210,71 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The stdio and WebSocket transports could not act.** `RpcTransport` and
+  `WsTransport` each carried their own copy of the request loop, written before
+  `HeadlessDriver` grew most of what it knows. Both turned an `execute_action`
+  into a `Command::AgentAction`, and both command loops answered it with a
+  `log::debug!`. An agent connected over stdio or a WebSocket could read the
+  interface and change nothing: no handler dispatch, no `Model::execute_action`,
+  no version, no conditional `get_tree`, no `validate`, no refusal of an
+  unadvertised action. Every feature of the preceding week existed only for the
+  in-process driver. Both are now a frame around `HeadlessDriver`: they own the
+  socket, the line cap and the rate limit, and the driver owns what a request
+  means.
+
+- `batch_actions` called `Model::execute_action` directly and never reached the
+  handler a widget registers - the path every widget builder here produces — so
+  a batch against a normal interface reported success and changed nothing. Each
+  entry now takes the same path a single `execute_action` does. The protocol
+  also called batches atomic: nothing rolled back, and a failing entry did not
+  stop the ones after it, so an agent got a success and a half-applied change
+  with no way to tell which half. A batch now stops at the first failure and
+  reports `applied` and `failed_at`; it is still not atomic, and the reference
+  says so and says why. A batch entry naming a widget that does not exist was
+  also skipped in silence while a single `execute_action` refused it; the two
+  now agree.
+
+- `subscribe` accepted any event name at all, so an agent could subscribe to
+  `render_update`, hold a success, and wait for something nothing was ever
+  going to emit. Undeliverable names are refused with the list of what does
+  arrive. `app_quit` is now delivered, announced once. A request over the cap
+  of 100 names previously took as many as fit and returned success, subscribing
+  an agent to some of what it asked for with no way to tell which; it is now a
+  refusal naming the limit.
+
+- `negotiate` reported `compatible: false` inside a *successful* response, so an
+  incompatible client sailed past its own handshake. It now fails, with the
+  version range in the error and `compatible` still in the data.
+
+- `SERVER_CAPABILITIES` had not moved since before `validate`, strict
+  validation, the tree viewport, conditional reads and the AccessKit bridge
+  existed. A handshake that does not mention a feature is a feature that goes
+  unused.
+
+- An agent-injected `Resize` left the driver's own `window_size` unchanged, so
+  the next `get_tree` rendered against the old window and `validate` measured
+  `offscreen_widget` against it too. An agent testing a responsive layout was
+  given answers about a window that had never changed.
+
+- `Event::Resize` was emitted on every frame by the default backend, because
+  `screen_rect` is set every frame whether or not it changed; it fired sixty
+  times a second. It is now change-detected.
+
+- The default backend emitted five of the twelve event kinds, and never
+  delivered a dropped file at all. Both backends now emit all twelve, including
+  `FileDrop`, `FileHover` and `FileHoverCancelled`, pinned by a backend-parity
+  test.
+
+- `ProgramOptions::fullscreen` was honoured by agpu and silently dropped by the
+  default backend; the five newer window options were added to the default
+  backend and not to agpu. The parity test now covers both directions.
+
+- `agpu` advertised a complete ontology and registered none of it.
+  `register_gpu_ontology` registers the five GPU schemas that were written and
+  never wired up. Its `multiwindow`, `accessibility` and `plugin` modules now
+  say plainly that nothing in the crate drives them.
+
+
 - `Checkbox`'s handler answered `click`, but its ontology advertises `toggle`.
   An agent following the ontology called the name the widget published and
   nothing happened. Handlers are now bound to the advertised action, a mouse
@@ -186,6 +319,56 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   for a `serde_json::Value`. `Properties` compares by content, not key order,
   so `StateChanged` is not emitted for a state that merely round-tripped
   through JSON.
+
+### Documentation
+
+- The README's headline protocol example — the one showing that any language
+  able to write lines of JSON can drive a Dewey application — never parsed. It
+  used a numeric `id` where the envelope takes a string, externally-tagged
+  requests where the protocol is internally tagged, and three request names
+  that never existed. It is the first thing a reader sees and the last thing
+  anything checked; `tests/docs_conformance.rs` now deserialises every JSON
+  block in the README and the protocol reference, and compares documented
+  responses against what the server actually sends.
+
+- The README quick start did not compile: it returned
+  `Result<(), eframe::Error>`, where `Result` in this crate's prelude is
+  Dewey's own one-parameter alias, and it declared two messages and sent
+  neither. It now lives in `examples/quickstart.rs`, which cargo compiles on
+  every build, and a test asserts the README block and the file are the same
+  text.
+
+- All three ignored doctests were hiding code that does not compile. The two
+  `Widget` trait examples called `Painter::draw_text`, which has never existed,
+  and passed a two-argument `fill_rect` that takes three; the web backend's
+  example imported and called `WebRunner`, a type nobody ever wrote. A test now
+  refuses a doctest marked `ignore` without a stated reason.
+
+- The protocol reference's handshake example showed `min_version` where the
+  field is `min_protocol_version`, omitted `compatible` and
+  `supported_capabilities`, and listed five server capabilities where there are
+  ten.
+
+- Recorded the `wgpu` validation warning, its `wgpu_hal=off` workaround, and
+  why the eframe pin cannot move: wgpu-hal 30 needs `windows 0.62` and agpu
+  pins wgpu 24, which needs `windows 0.58`.
+
+- `CONTRIBUTING.md` said to branch from and open pull requests against `main`.
+  The branch is `master` — the same mismatch meant the CI workflow triggered on
+  a branch that does not exist, so CI had never run.
+
+### Internal
+
+- CI runs. It was configured to trigger on `main` in a repository whose branch
+  is `master`, and had never executed; the crate did not build on Linux when it
+  was first switched on. The workflow now covers the sibling `agpu` crate and
+  both benchmark workspaces, which are excluded from the package and so were
+  never compiled by anything, and gates on allocation budgets and on three
+  benchmarks that assert their own correctness before they time anything.
+- New standing checks, each verified by breaking the thing it catches: strict
+  validation, reachability in both crates, backend parity, protocol property
+  tests, an example audit, and doc conformance.
+
 
 ## [1.0.0] - 2025-07-05
 

@@ -51,16 +51,17 @@ cargo run --example agent_demo
 
 ## Development Workflow
 
-1. Fork the repository and create a feature branch from `main`.
+1. Fork the repository and create a feature branch from `master`.
 2. Make your changes with clear, atomic commits.
-3. Ensure all checks pass:
+3. Run the checks:
    ```bash
-   cargo fmt --check
-   cargo clippy --all-targets -- -D warnings
-   cargo test
-   cargo doc --no-deps
+   scripts/check.sh          # fmt, clippy, test, doc — what CI runs on a push
+   scripts/check.sh --all    # and the sibling crate and benchmark workspaces
    ```
-4. Open a pull request against `main`.
+   `agpu/` and `benches/*` are separate workspaces, so the plain `cargo check`
+   here never compiles them; both benchmark crates had silently stopped
+   building before CI started covering them.
+4. Open a pull request against `master`.
 
 ## Code Style
 
