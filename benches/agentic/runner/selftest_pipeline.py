@@ -19,7 +19,6 @@ same prompt text a real one is given, and runs it through `run.py`'s own
 plumbing. It costs a compile and no money.
 """
 import json
-import re
 import shutil
 import subprocess
 import sys
@@ -32,18 +31,13 @@ TASKS = ROOT / "tasks"
 REFERENCE = ROOT / "reference"
 
 sys.path.insert(0, str(HERE))
-from run import CRATE, build_prompt  # noqa: E402
+from run import CRATE, contract_source  # noqa: E402
 from verify import verify  # noqa: E402
 
 
 def contract_module():
-    """The `src/contract.rs` the prompt tells an attempt to paste."""
-    prompt = build_prompt(TASKS / "t1-counter")
-    blocks = re.findall(r"```rust\n(.*?)```", prompt, re.S)
-    for block in blocks:
-        if "fn run_contract" in block:
-            return block
-    raise SystemExit("selftest_pipeline: the prompt carries no contract runner")
+    """The `src/contract.rs` the harness places in every work tree."""
+    return contract_source()
 
 
 def solution_main():

@@ -123,6 +123,14 @@ def run_agent(prompt, workdir, condition, model):
         "--verbose",
         "--permission-mode",
         "acceptEdits",
+        # The crate has to be readable, or the benchmark measures an agent
+        # that was denied rather than one that chose not to look. Twelve runs
+        # were spent before a transcript said so in as many words: "I'm
+        # blocked on two things I need, and both require your approval:
+        # reading the Dewey crate". `acceptEdits` permits writes in the work
+        # tree and no reads outside it.
+        "--add-dir",
+        str(CRATE),
         # Only the servers this benchmark attaches. Without it a run inherits
         # whatever the operator has configured, and the first `warned` run
         # spent turns grepping an unrelated repository that happened to be on
@@ -280,11 +288,30 @@ def summarise(events):
     }
 
 
+def contract_source():
+    """The runner every attempt is given, from the file the reference builds."""
+    lib = (ROOT / "reference" / "src" / "lib.rs").read_text(encoding="utf-8")
+    lib = lib.replace("\r\n", "\n")
+    return "\n".join(
+        line for line in lib.split("\n") if not line.startswith("//!")
+    ).lstrip()
+
+
 def one_run(task, condition, model, keep):
     task_dir = TASKS / task
     prompt = build_prompt(task_dir, condition)
     workdir = Path(tempfile.mkdtemp(prefix=f"dewey-{task}-"))
     try:
+        # The contract runner is placed, not transcribed. Asking for it to be
+        # copied verbatim cost an attempt most of its turns and two runs ended
+        # with a `Cargo.toml` naming a `src/main.rs` that was never written —
+        # which measures typing stamina rather than whether the model can find
+        # out what a Dewey widget is.
+        (workdir / "src").mkdir(exist_ok=True)
+        (workdir / "src" / "contract.rs").write_text(
+            contract_source(), encoding="utf-8"
+        )
+
         events, meta = run_agent(prompt, workdir, condition, model)
 
         # Before anything that can fail: an attempt costs money, and a reader

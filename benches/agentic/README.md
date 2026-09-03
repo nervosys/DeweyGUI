@@ -78,71 +78,49 @@ else. If it moves `cost_usd` or `turns` and the interval excludes zero, that
 is a result worth having; if it does not, that is the honest answer and it
 belongs in the ROADMAP next to the rest.
 
-## First runs, 2026-09-03
+## First runs, 2026-09-03 — all discarded
 
-Seven paid attempts at `t1-counter`, about $4.60. **No run has scored above
-zero**, and n=1–3 per arm settles nothing statistically. Two things are worth
-recording anyway: what the model did, which was consistent across arms, and
-that five of the seven were spoiled by defects in this harness rather than by
-the model.
+Twenty paid attempts at `t1-counter`, about $10, **none valid**. Every one is
+quarantined in `results/*/runs.*.jsonl` rather than deleted, because what they
+recorded is a list of defects in this harness.
 
-| arm | n | turns | cost | source reads | ontology calls | built |
-|---|---|---|---|---|---|---|
-| bare | 2 | 33, 48 | $0.66, $0.94 | 1, 1 | 0, 0 | no, no |
-| mcp | 1 | 34 | $0.66 | 0 | 1 (`ping`) | yes |
-| warned | 3 | 32, 29, 29 | $0.60, $0.47, $0.55 | 0, 0, 0 | 3, 2, 2 | no, yes, yes |
+The last of them explains the rest. A transcript said it in as many words:
 
-**The failure this was built to measure is not the failure that happened.**
-The concern was that a model would read the source rather than ask the
-ontology. In the `bare` and `mcp` arms it did neither — two source reads and
-one `ping` across 115 turns — and wrote an API that does not exist:
+> I'm blocked on two things I need, and both require your approval:
+> 1. **Reading the Dewey crate** at `C:/…/DeweyGUI`
 
-    fn view(&self) -> View<Msg>              // bare
-    fn view(&self) -> Element<Self::Message> // mcp — iced's signature verbatim
-    Command::none()                          // iced's constructor
+`--permission-mode acceptEdits` permits writes in the work tree and **no reads
+outside it**. The agent could not read the framework at all. So every arm
+measured an agent that was denied access, not one that chose not to look — and
+the earlier conclusion drawn from those runs, that the model prefers guessing
+to consulting, is not supported by them. It could not consult. `--add-dir` is
+now passed.
 
-`Element<Self::Message>` and `Command::none()` are iced. The model recognised
-the shape — an Elm-architecture Rust GUI crate — and confidently wrote the
-framework it already knew. Guessing beat both reading and asking.
+The other defects, in the order they cost a run:
 
-**The `warned` arm changed that, and tool availability alone did not.** Its
-prompt adds four sentences: Dewey is not iced, ratatui or egui, signatures you
-remember will not compile, look at `examples/` and the attached tools first. It
-states no part of the API — giving away the thing the model got wrong would
-measure spec-following rather than discovery. Under it the model globbed the
-examples, called `query_ontology` and `get_schema`, made no source reads, and
-built successfully twice out of three. The iced signatures stopped appearing.
-
-That is the opposite of what HawkTUI's triggers arm found, where consultation
-rose and outcomes did not move. It is also one run per arm at a task nobody
-has yet passed, so it is a hypothesis with a result attached, not a finding.
-
-### The harness was the bigger problem
-
-Five defects, three of which spoiled a paid run each. All are fixed, and the
-ones that could recur silently now cannot.
-
-| defect | cost | fix |
+| defect | runs lost | fix |
 |---|---|---|
-| the prompt said to depend on Dewey "by path" and never said which path | 1 run | the crate path is injected |
-| the MCP config's `cwd` was relative; the client resolved it from the agent's scratch directory and reported `failed`, so an `mcp` run was `bare` wearing the wrong label | 2 runs | absolute path, and a run whose server is not `connected` is refused rather than recorded |
-| `cargo run` was too slow for the MCP handshake, failing the same way a second time | — | it points at the built binary |
-| a transcript shape crashed the reader after the model had been paid for | 1 run | transcripts are written before anything parses them |
-| the binary was looked for at `workdir/target/release/app`, and `CARGO_TARGET_DIR` had put it elsewhere, so a run that built fine scored `program not found` | 1 run | the path comes from cargo's own output |
+| the prompt said "depend by path" and named no path | 1 | the crate path is injected |
+| the MCP `cwd` was relative; the client resolved it from the agent's scratch directory and reported `failed`, so an `mcp` run was `bare` mislabelled | 2 | absolute path; a run whose server is not `connected` is refused |
+| `cargo run` was too slow for the MCP handshake | — | it points at the built binary |
+| a transcript shape crashed the reader after payment | 1 | transcripts are written before parsing |
+| the binary was sought at `workdir/target/release/app` and `CARGO_TARGET_DIR` had moved it | 1 | the path comes from cargo's output |
+| the agent had to transcribe the 90-line contract runner, and two runs ended with a `Cargo.toml` naming a `src/main.rs` never written | 2 | the harness places `src/contract.rs`; the prompt fell from ~9,000 to ~2,950 characters |
+| the crate was unreadable | 12 | `--add-dir` |
 
-`selftest_pipeline.py` now closes the question those defects left open. It
-builds what a perfect attempt would have written — the `src/contract.rs` the
-prompt hands out, a `main.rs`, a `Cargo.toml` naming the injected crate path —
-and runs it through `run.py`'s own build-and-verify code. It scores **1.000,
-6/6, 3 frames**. The task is passable and the plumbing is correct, so the zeros
-above are the model's and not the harness's. It runs in CI and costs a compile.
+Placing the runner did move one number that is worth keeping: **9 of 12 runs
+built**, against 1 of 8 before it. That is a fact about the task being
+writable, not about the ontology.
 
-Two threats to validity remain. The agent inherits the operator's Claude
-configuration: one `warned` run spent turns grepping an unrelated repository
-that happened to be on the operator's allowed-directory list, and
-`--strict-mcp-config` only fixes half of that. And `t1-counter` has not been
-passed by any arm, so nothing here distinguishes a model that cannot do the
-task from a task specification that is wrong.
+Nothing else here should be quoted. There is no result yet.
+
+### Before spending again
+
+`selftest.py` and `selftest_pipeline.py` both pass, and the pipeline test
+scores a perfect attempt 1.000 through the same code a real run uses, so the
+next batch is the first that can measure anything. It costs roughly $5 for
+four runs in each of three arms — and the account it draws on was at 94% of
+its seven-day limit when these stopped.
 
 ## Layout
 

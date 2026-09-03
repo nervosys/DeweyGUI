@@ -24,7 +24,7 @@ TASKS = ROOT / "tasks"
 REFERENCE = ROOT / "reference"
 
 sys.path.insert(0, str(HERE))
-from run import summarise  # noqa: E402
+from run import contract_source, summarise  # noqa: E402
 from verify import verify  # noqa: E402
 
 
@@ -143,7 +143,7 @@ def main():
     else:
         print("  ok   the transcript reader counts what it claims")
 
-    # The runner pasted into the contract must be the one the reference
+    # The runner placed in every work tree must be the one the reference
     # compiles. If they drift, every attempt is given code that does not build
     # while the reference quietly keeps working, and the benchmark blames the
     # model for it.
@@ -153,12 +153,19 @@ def main():
         line for line in lib.split("\n") if not line.startswith("//!")
     ).strip()
     contract = (TASKS / "contract.md").read_text(encoding="utf-8")
-    contract = contract.replace("\r\n", "\n")
-    if body in contract:
-        print("  ok   the contract ships the runner the reference compiles")
-    else:
-        print("  FAIL the contract's runner has drifted from reference/src/lib.rs")
+    if contract_source().strip() != body:
+        print("  FAIL the runner placed in the work tree is not the one the "
+              "reference compiles")
         ok = False
+    elif "fn run_contract" in contract:
+        # It used to be pasted into the prompt for the agent to transcribe.
+        # That cost an attempt most of its turns, and two runs ended with a
+        # `Cargo.toml` naming a `src/main.rs` that was never written.
+        print("  FAIL contract.md asks for the runner to be transcribed again; "
+              "the harness places it instead")
+        ok = False
+    else:
+        print("  ok   the placed runner is what the reference compiles")
 
     # A program that does not exist is a contract failure and not a score of
     # zero on the interface, because the two mean different things about an
