@@ -7,6 +7,8 @@ screen-scraping, no pixel matching, no reading the application's source.
 
 ## Start here
 
+- `HANDOFF.md` — the current state: what is fixed, what is knowingly not,
+  and the one open question
 - `README.md` — what it is, the widget table, and the measured numbers
 - `docs/agent-prompt.md` — paste this into an agent's system prompt
 - `docs/agent-protocol.md` — the full protocol reference
