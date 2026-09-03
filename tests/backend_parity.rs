@@ -216,3 +216,43 @@ fn state_derived_events_are_compared_against_the_last_frame() {
         "a drop is a single moment and should be converted directly"
     );
 }
+
+/// A click must reach a widget's handler on every host that has clicks.
+///
+/// This is the fifth and worst of the shape this file exists for. The default
+/// backend converted a mouse click into an `Event::Mouse`, handed it to
+/// `Model::handle_event`, and stopped. It never called `hit_test` and held no
+/// `Handlers` at all — so `Button::action`, `Button::on`, `Checkbox::on` and
+/// the eleven other widget handlers did nothing under the backend that
+/// `Program::run` uses, which is the backend the README's quick start runs on.
+///
+/// It worked headless, so every test passed, and it worked under `agpu`, which
+/// is opt-in and off by default. The one configuration nobody could test
+/// automatically was the one everybody ships.
+#[test]
+fn a_click_reaches_a_handler_on_every_host() {
+    for (name, file) in [
+        ("the default backend", "src/runtime/mod.rs"),
+        ("the agpu backend", "src/backend/agpu_backend.rs"),
+        ("the headless driver", "src/agent/driver.rs"),
+    ] {
+        let text = source(file);
+        assert!(
+            text.contains("hit_test"),
+            "{name} never hit-tests a click, so it cannot know which widget \
+             was pressed. Converting the click into an event and handing it to \
+             `handle_event` leaves every `Button::action` inert"
+        );
+        // `handlers.apply_primary(`, not the bare name: `Handlers` is defined
+        // in src/runtime/mod.rs, so the bare name is satisfied there by the
+        // definition. The first version of this check passed with the default
+        // backend's only call site renamed away.
+        assert!(
+            text.contains("handlers.apply_primary("),
+            "{name} does not activate a widget through \
+             `Handlers::apply_primary`, which is the one path from a physical \
+             click to the action a widget advertises. Three hosts had three \
+             copies of it; the copies are what diverge"
+        );
+    }
+}

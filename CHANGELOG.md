@@ -216,6 +216,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Clicking a widget did nothing under the default backend.** It converted a
+  mouse click into an `Event::Mouse`, handed it to `Model::handle_event`, and
+  stopped: it never called `HitMap::hit_test` and held no `Handlers` at all.
+  `Button::action`, `Button::on`, `Checkbox::on`, `TextInput::on_input`,
+  `Slider::on_change` and the nine other widget handlers were therefore inert
+  under the backend `Program::run` uses — the one the README's quick start
+  runs on. The same wiring worked through the headless driver, so every test
+  passed, and under `agpu`, which is opt-in and off by default. The default
+  backend now hit-tests a click and activates the widget under it.
+
+- All three hosts activate a widget through the new
+  `Handlers::apply_primary`. Each had its own copy of "look up the primary
+  action, then apply it", and a divergent third copy is how a handler came to
+  be bound to the wrong action name earlier in this cycle.
+
+
 - **The plugin system existed only under a backend that is not the default.**
   It shipped as a v1.2 framework feature and the lifecycle was driven solely by
   `AgpuProgram`, which is opt-in and off by default. `Program` had no

@@ -775,10 +775,11 @@ impl<M: Model + 'static> RunningApp<M> {
     /// particular action name. A `Checkbox` advertises `toggle`, a `Button`
     /// advertises `click`, and pressing either must work.
     fn dispatch_primary(&mut self, agent_id: &str) -> bool {
-        let Some(action) = self.handlers.primary_action(agent_id) else {
+        let Some(cmd) = self.handlers.apply_primary(agent_id, &mut self.model) else {
             return false;
         };
-        self.dispatch(agent_id, action, &serde_json::Value::Null)
+        self.process_command(cmd);
+        true
     }
 
     fn dispatch(&mut self, agent_id: &str, action: &str, params: &serde_json::Value) -> bool {

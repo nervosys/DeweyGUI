@@ -480,6 +480,18 @@ impl<M: Model + 'static> Handlers<M> {
             .collect()
     }
 
+    /// Activate `agent_id` the way a click on it does, and return the command.
+    ///
+    /// Every host that turns a physical click into a widget's action goes
+    /// through here — the headless driver, the agpu backend and the default
+    /// one. Each had its own copy of "look up the primary action, then apply
+    /// it", and this project has now twice watched the third copy of something
+    /// be the one that disagreed.
+    pub fn apply_primary(&mut self, agent_id: &str, model: &mut M) -> Option<Command<M::Msg>> {
+        let action = self.primary_action(agent_id)?;
+        self.apply(agent_id, action, &serde_json::Value::Null, model)
+    }
+
     /// The action a click on `agent_id` should fire: the first one registered.
     ///
     /// A click is physical — it means "activate this widget", not any
@@ -746,6 +758,13 @@ struct DeweyApp<M: Model> {
     /// moves the window is queued here and flushed when the frame that has a
     /// context comes round.
     pending_viewport: Vec<egui::ViewportCommand>,
+    /// What the widgets registered while rendering the last frame.
+    ///
+    /// A click is hit-tested against `hit_map` and activated through this, so
+    /// a `Button::action` fires without the application doing coordinate
+    /// arithmetic in `handle_event`. Both are from the previous frame, which
+    /// is the frame the user was looking at when they pressed the button.
+    handlers: Handlers<M>,
     /// Plugins, initialised before the first frame and ticked on every one.
     plugins: crate::plugin::PluginRegistry,
     /// Whether the plugin shutdown hook has run, so it runs exactly once.
@@ -780,6 +799,7 @@ impl<M: Model> DeweyApp<M> {
             last_size: initial_size,
             hovering_files: false,
             pending_viewport: Vec::new(),
+            handlers: Handlers::default(),
             plugins,
             shut_down: false,
         };
@@ -977,6 +997,22 @@ impl<M: Model + 'static> eframe::App for DeweyApp<M> {
             if matches!(event, crate::event::Event::CloseRequested) {
                 self.shutdown();
             }
+            // A click goes to whatever the hit map says is under it. This
+            // backend converted the click into an `Event::Mouse`, handed it to
+            // `handle_event` and stopped: it never hit-tested and held no
+            // handlers, so `Button::action` — the wiring the README's quick
+            // start is built on — did nothing under the backend `Program::run`
+            // actually uses. It worked headless and under agpu, so every test
+            // passed.
+            if let crate::event::Event::Mouse(m) = &event {
+                if m.is_click() {
+                    if let Some(id) = self.hit_map.hit_test(m.position).map(str::to_owned) {
+                        if let Some(cmd) = self.handlers.apply_primary(&id, &mut self.model) {
+                            self.process_command(cmd);
+                        }
+                    }
+                }
+            }
             if let Some(msg) = self.model.handle_event(event) {
                 let cmd = self.model.update(msg);
                 self.process_command(cmd);
@@ -1011,11 +1047,15 @@ impl<M: Model + 'static> eframe::App for DeweyApp<M> {
         // frame, so accessibility forces it back on.
         let build_tree = self.options.ontology == OntologyMode::EveryFrame || self.accessibility;
 
+        // The closure borrows `self.hit_map` through the frame, so what the
+        // widgets registered comes out here and is stored after it returns.
+        let mut handlers = Handlers::default();
         egui::CentralPanel::default().show(ctx, |ui| {
             let mut egui_painter = crate::backend::egui_backend::EguiPainter::new(ctx);
             let mut frame =
                 Frame::with_ontology(area, &mut self.hit_map, &mut egui_painter, build_tree);
             self.model.view(&mut frame);
+            handlers = Handlers::take_from(&mut frame);
 
             // Collect UI tree
             let nodes = frame.take_nodes();
@@ -1035,6 +1075,7 @@ impl<M: Model + 'static> eframe::App for DeweyApp<M> {
             }
             let _ = ui;
         });
+        self.handlers = handlers;
 
         // Schedule next repaint at the tick rate to avoid overwhelming the swapchain
         if let Some(tick_rate) = self.options.tick_rate {
