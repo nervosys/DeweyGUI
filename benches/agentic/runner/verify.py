@@ -156,6 +156,10 @@ def score(task, frames, error):
     passed = sum(1 for r in results if r["passed"])
     return {
         "task": task["id"],
+        # The first frame, so a run that scores zero says what it drew. Three
+        # paid attempts came back with every check failed and no way to tell
+        # whether the interface was wrong or the harness was.
+        "first_frame": frames[0][:600] if frames else None,
         "score": passed / len(results) if results else 0.0,
         "checks_passed": passed,
         "checks_total": len(results),

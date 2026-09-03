@@ -80,49 +80,62 @@ belongs in the ROADMAP next to the rest.
 
 ## First runs, 2026-09-03
 
-Four attempts at `t1-counter`, three usable. Not a result — n=1 per arm, and
-`analyze.py` would report every interval as spanning zero. A smoke test that
-produced one qualitative finding worth writing down.
+Seven paid attempts at `t1-counter`, about $4.60. **No run has scored above
+zero**, and n=1–3 per arm settles nothing statistically. Two things are worth
+recording anyway: what the model did, which was consistent across arms, and
+that five of the seven were spoiled by defects in this harness rather than by
+the model.
 
-| arm | turns | cost | source reads | ontology calls | built | score |
+| arm | n | turns | cost | source reads | ontology calls | built |
 |---|---|---|---|---|---|---|
-| bare | 33 | $0.66 | 1 | 0 | no | 0.000 |
-| bare | 48 | $0.94 | 1 | 0 | no | 0.000 |
-| mcp | 34 | $0.66 | 0 | 1 (`ping`) | yes | 0.000 |
+| bare | 2 | 33, 48 | $0.66, $0.94 | 1, 1 | 0, 0 | no, no |
+| mcp | 1 | 34 | $0.66 | 0 | 1 (`ping`) | yes |
+| warned | 3 | 32, 29, 29 | $0.60, $0.47, $0.55 | 0, 0, 0 | 3, 2, 2 | no, yes, yes |
 
-**The failure mode is not the one this was built to measure.** The concern was
-that a model would read the source instead of asking the ontology. It did
-neither. Across 115 turns it made two source reads and one `ping`, and wrote
-an API that does not exist:
+**The failure this was built to measure is not the failure that happened.**
+The concern was that a model would read the source rather than ask the
+ontology. In the `bare` and `mcp` arms it did neither — two source reads and
+one `ping` across 115 turns — and wrote an API that does not exist:
 
     fn view(&self) -> View<Msg>              // bare
     fn view(&self) -> Element<Self::Message> // mcp — iced's signature verbatim
     Command::none()                          // iced's constructor
 
 `Element<Self::Message>` and `Command::none()` are iced. The model recognised
-the shape — an Elm-architecture Rust GUI crate — and wrote the framework it
-already knew, confidently, without checking. Reading beats guessing; guessing
-is what actually happened.
+the shape — an Elm-architecture Rust GUI crate — and confidently wrote the
+framework it already knew. Guessing beat both reading and asking.
 
-That reframes the mitigation. HawkTUI's finding was that consultation can be
-raised without improving outcomes. This one is worse: with fourteen ontology
-tools attached and named in the tool list, the model called `ping`. Making the
-catalogue available is not the binding constraint when the model does not
-believe it needs one.
+**The `warned` arm changed that, and tool availability alone did not.** Its
+prompt adds four sentences: Dewey is not iced, ratatui or egui, signatures you
+remember will not compile, look at `examples/` and the attached tools first. It
+states no part of the API — giving away the thing the model got wrong would
+measure spec-following rather than discovery. Under it the model globbed the
+examples, called `query_ontology` and `get_schema`, made no source reads, and
+built successfully twice out of three. The iced signatures stopped appearing.
 
-Three harness defects had to be fixed to get even this far, and two of them
-cost a paid run each:
+That is the opposite of what HawkTUI's triggers arm found, where consultation
+rose and outcomes did not move. It is also one run per arm at a task nobody
+has yet passed, so it is a hypothesis with a result attached, not a finding.
 
-- the prompt told the agent to depend on Dewey "by path" and never said which
-  path; the crate path is now injected
-- the MCP config's `cwd` was relative and the client resolved it from the
-  agent's scratch directory, so `mcp_servers` reported `failed` and the run
-  was the `bare` condition wearing the `mcp` label. Then `cargo run` was too
-  slow for the handshake and it failed a second way. It now points at the
-  built binary, and a run whose server is not `connected` is refused rather
-  than recorded
-- a transcript shape crashed the reader after the model had already been paid
-  for; transcripts are now written before anything parses them
+### The harness was the bigger problem
+
+Five defects, three of which spoiled a paid run each. All are fixed, and the
+ones that could recur silently now cannot.
+
+| defect | cost | fix |
+|---|---|---|
+| the prompt said to depend on Dewey "by path" and never said which path | 1 run | the crate path is injected |
+| the MCP config's `cwd` was relative; the client resolved it from the agent's scratch directory and reported `failed`, so an `mcp` run was `bare` wearing the wrong label | 2 runs | absolute path, and a run whose server is not `connected` is refused rather than recorded |
+| `cargo run` was too slow for the MCP handshake, failing the same way a second time | — | it points at the built binary |
+| a transcript shape crashed the reader after the model had been paid for | 1 run | transcripts are written before anything parses them |
+| the binary was looked for at `workdir/target/release/app`, and `CARGO_TARGET_DIR` had put it elsewhere, so a run that built fine scored `program not found` | 1 run | the path comes from cargo's own output |
+
+Two threats to validity remain. The agent inherits the operator's Claude
+configuration: one `warned` run spent turns grepping an unrelated repository
+that happened to be on the operator's allowed-directory list, and
+`--strict-mcp-config` only fixes half of that. And `t1-counter` has not been
+passed by any arm, so nothing here distinguishes a model that cannot do the
+task from a task specification that is wrong.
 
 ## Layout
 

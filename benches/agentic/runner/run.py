@@ -47,7 +47,24 @@ sys.path.insert(0, str(HERE))
 from verify import verify  # noqa: E402
 
 
-def build_prompt(task_dir):
+# A behavioural nudge, not an answer. It does not state the trait shape —
+# giving away the thing the model got wrong would measure spec-following
+# rather than discovery. It says only that guessing will not work and where to
+# look, which is the intervention worth testing after the first runs showed a
+# model writing iced's signatures from memory without consulting anything.
+WARNING = """
+## Before you write any Dewey code
+
+Dewey is not iced, not ratatui, and not egui. Signatures you remember from
+those crates will not compile here, and the compiler errors will not tell you
+which crate you are thinking of. Look at what this crate actually provides
+before writing against it: `{{CRATE}}/examples/` holds working programs, and
+the tools attached to this session describe every widget and every action it
+accepts.
+"""
+
+
+def build_prompt(task_dir, condition="bare"):
     """The task prompt with the contract spliced in, as the agent sees it.
 
     `{{CRATE}}` becomes the absolute path to this checkout. The agent works in
@@ -57,6 +74,8 @@ def build_prompt(task_dir):
     """
     prompt = (Path(task_dir) / "prompt.md").read_text(encoding="utf-8")
     contract = (TASKS / "contract.md").read_text(encoding="utf-8")
+    if condition == "warned":
+        prompt = prompt + WARNING
     return prompt.replace("{{CONTRACT}}", contract).replace(
         "{{CRATE}}", CRATE.as_posix()
     )
@@ -104,17 +123,25 @@ def run_agent(prompt, workdir, condition, model):
         "--verbose",
         "--permission-mode",
         "acceptEdits",
+        # Only the servers this benchmark attaches. Without it a run inherits
+        # whatever the operator has configured, and the first `warned` run
+        # spent turns grepping an unrelated repository that happened to be on
+        # the operator's allowed-directory list.
+        "--strict-mcp-config",
     ]
     if model:
         cmd += ["--model", model]
-    if condition == "mcp":
-        # The server is the point of this condition: it is what puts the
+    if condition in ("mcp", "warned"):
+        # The server is the point of these conditions: it is what puts the
         # instructions in front of the model. The config is written here with
         # an absolute `cwd`, because the client resolves a relative one from
         # the agent's scratch directory — a checked-in `../../..` produced
         # `{"name": "dewey", "status": "failed"}` and a run that was silently
         # the `bare` condition wearing the `mcp` label.
-        config = workdir / "mcp.json"
+        # Outside the work tree: written inside it, the file shows up in
+        # the agent's own directory listing and the first `warned` run read
+        # it, which is the benchmark leaking into what it measures.
+        config = Path(tempfile.mkdtemp(prefix="dewey-mcp-")) / "mcp.json"
         config.write_text(
             json.dumps(
                 {
@@ -255,7 +282,7 @@ def summarise(events):
 
 def one_run(task, condition, model, keep):
     task_dir = TASKS / task
-    prompt = build_prompt(task_dir)
+    prompt = build_prompt(task_dir, condition)
     workdir = Path(tempfile.mkdtemp(prefix=f"dewey-{task}-"))
     try:
         events, meta = run_agent(prompt, workdir, condition, model)
@@ -283,7 +310,7 @@ def one_run(task, condition, model, keep):
         # wrong label, and averaging it into the comparison would answer the
         # question with the arms swapped. Two paid runs were recorded that way
         # before this check existed.
-        if condition == "mcp" and meta.get("mcp_status") != "connected":
+        if condition in ("mcp", "warned") and meta.get("mcp_status") != "connected":
             raise SystemExit(
                 f"run.py: the MCP server reported `{meta.get('mcp_status')}`, so "
                 "this run is not the condition it claims to be. Nothing was "
@@ -291,7 +318,13 @@ def one_run(task, condition, model, keep):
             )
 
         built = subprocess.run(
-            ["cargo", "build", "--release"],
+            [
+                "cargo",
+                "build",
+                "--release",
+                "--message-format",
+                "json-render-diagnostics",
+            ],
             cwd=workdir,
             capture_output=True,
             text=True,
@@ -307,9 +340,23 @@ def one_run(task, condition, model, keep):
                 for f in workdir.rglob("*")
                 if f.is_file() and "target" not in f.parts
             )[:40]
-        binary = workdir / "target" / "release" / (
-            "app.exe" if os.name == "nt" else "app"
-        )
+        # Where cargo says it put the binary, not where it would go by
+        # default. `CARGO_TARGET_DIR` is commonly set to a shared directory,
+        # and guessing `workdir/target/release/app` reported `program not
+        # found` for a run that had built perfectly well — a paid attempt
+        # scored zero for the harness's mistake.
+        binary = None
+        for line in built.stdout.splitlines():
+            try:
+                message = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if message.get("executable"):
+                binary = message["executable"]
+        if binary is None:
+            binary = workdir / "target" / "release" / (
+                "app.exe" if os.name == "nt" else "app"
+            )
         result = verify(task_dir, binary, cwd=workdir) if record["built"] else None
         record.update(
             {
@@ -321,6 +368,7 @@ def one_run(task, condition, model, keep):
                 # and scored zero says only that something went wrong, which
                 # is what the first three attempts said.
                 "verify_error": result["error"] if result else "did not build",
+                "first_frame": result["first_frame"] if result else None,
                 "failed_checks": (
                     [c["id"] for c in result["checks"] if not c["passed"]]
                     if result
@@ -337,14 +385,16 @@ def one_run(task, condition, model, keep):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--task", required=True)
-    parser.add_argument("--condition", default="bare", choices=["bare", "mcp"])
+    parser.add_argument(
+        "--condition", default="bare", choices=["bare", "mcp", "warned"]
+    )
     parser.add_argument("--runs", type=int, default=1)
     parser.add_argument("--model", default=None)
     parser.add_argument("--label", default=None)
     parser.add_argument("--keep", action="store_true", help="keep the work tree")
     args = parser.parse_args()
 
-    if args.condition == "mcp":
+    if args.condition in ("mcp", "warned"):
         print("checking the MCP server attaches before spending anything ...")
     if shutil.which("claude") is None:
         raise SystemExit(
