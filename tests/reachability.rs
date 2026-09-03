@@ -56,61 +56,130 @@ fn references_outside(name: &str, own_file: &str) -> usize {
     count
 }
 
-/// A subsystem trait, the file that owns it, and whether the crate drives it.
+/// What a module must be able to say for itself.
+#[derive(PartialEq)]
+enum Requirement {
+    /// The crate drives it, and something outside its own file says so.
+    Driven,
+    /// The crate ships no implementation, and the module says so.
+    TypesOnly,
+    /// The implementation works and nothing here calls it. That is a fine
+    /// thing for a utility an application reaches for, and a lie when the
+    /// module's own summary describes it doing its job inside this crate:
+    /// "arena-based allocation for per-frame temporaries" when no frame
+    /// allocates from it, or a batch that "minimises draw calls" when nothing
+    /// submits one.
+    Undriven,
+}
+
+/// A subsystem, the file that owns it, and what that file has to say.
 struct Subsystem {
     trait_name: &'static str,
     file: &'static str,
-    /// Set when the crate ships no implementation and the module says so.
-    types_only: bool,
+    requirement: Requirement,
 }
 
 const SUBSYSTEMS: &[Subsystem] = &[
     Subsystem {
         trait_name: "TrayBackend",
         file: "src/tray.rs",
-        types_only: true,
+        requirement: Requirement::TypesOnly,
     },
     Subsystem {
         trait_name: "DialogBackend",
         file: "src/dialog.rs",
-        types_only: true,
+        requirement: Requirement::TypesOnly,
     },
     Subsystem {
         trait_name: "Painter",
         file: "src/paint.rs",
-        types_only: false,
+        requirement: Requirement::Driven,
     },
     Subsystem {
         trait_name: "Plugin",
         file: "src/plugin.rs",
-        types_only: false,
+        requirement: Requirement::Driven,
+    },
+    Subsystem {
+        trait_name: "Arena",
+        file: "src/memory.rs",
+        requirement: Requirement::Undriven,
+    },
+    Subsystem {
+        trait_name: "RenderBatch",
+        file: "src/gpu.rs",
+        requirement: Requirement::Undriven,
+    },
+    Subsystem {
+        trait_name: "ThemeWatcher",
+        file: "src/theme.rs",
+        requirement: Requirement::Undriven,
     },
 ];
+
+/// The phrase an undriven module must carry, verbatim.
+const UNDRIVEN: &str = "Nothing in this crate drives it.";
+
+/// A module's doc comments as running prose, with the markers, the emphasis
+/// and the line wrapping taken out.
+///
+/// A required sentence must be searchable without the author having to keep it
+/// on one line — where rustfmt will not leave it anyway.
+fn unwrapped_docs(module: &str) -> String {
+    let words: Vec<&str> = module
+        .lines()
+        .map(str::trim_start)
+        .filter_map(|l| l.strip_prefix("//!").or_else(|| l.strip_prefix("///")))
+        .flat_map(str::split_whitespace)
+        .collect();
+    words.join(" ").replace("**", "")
+}
 
 #[test]
 fn a_subsystem_is_either_driven_or_declared_types_only() {
     for system in SUBSYSTEMS {
         let uses = references_outside(system.trait_name, system.file);
         let module = source(system.file);
-        let declared =
-            module.contains("types only") || module.contains("**This module is types only.**");
 
-        if system.types_only {
-            assert!(
-                declared,
-                "`{}` ships no implementation, so `{}` must say so at the top \
-                 of the module — a downstream team built a tray around a trait \
-                 the runtime never touches",
-                system.trait_name, system.file
-            );
-        } else {
-            assert!(
-                uses > 0,
-                "`{}` is advertised as a working subsystem but nothing outside \
-                 {} refers to it",
-                system.trait_name,
-                system.file
-            );
+        match system.requirement {
+            Requirement::TypesOnly => {
+                let declared = module.contains("types only")
+                    || module.contains("**This module is types only.**");
+                assert!(
+                    declared,
+                    "`{}` ships no implementation, so `{}` must say so at the \
+                     top of the module — a downstream team built a tray around \
+                     a trait the runtime never touches",
+                    system.trait_name, system.file
+                );
+            }
+            Requirement::Driven => {
+                assert!(
+                    uses > 0,
+                    "`{}` is advertised as a working subsystem but nothing \
+                     outside {} refers to it",
+                    system.trait_name,
+                    system.file
+                );
+            }
+            Requirement::Undriven => {
+                assert!(
+                    unwrapped_docs(&module).contains(UNDRIVEN),
+                    "nothing in this crate calls `{}`, so `{}` must carry the \
+                     line \"{UNDRIVEN}\". A working implementation nobody \
+                     invokes optimises nothing, and its module summary should \
+                     not read as though it does",
+                    system.trait_name,
+                    system.file
+                );
+                assert_eq!(
+                    uses, 0,
+                    "`{}` is now driven from somewhere, so drop the \
+                     \"{UNDRIVEN}\" line from {} and move it to \
+                     `Requirement::Driven` here",
+                    system.trait_name, system.file
+                );
+            }
         }
     }
 }

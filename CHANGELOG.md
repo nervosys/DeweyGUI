@@ -344,6 +344,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Documentation
 
+- Three modules described themselves doing a job they do not do. `memory`
+  offered "arena-based allocation for per-frame temporaries" and no allocation
+  in Dewey goes through it; `gpu` offered a batch that "minimises draw calls"
+  and nothing builds or submits one; `theme` said tokens let widgets be
+  "theme-switched at runtime" when no widget reads an ambient theme at all.
+  Each now says plainly that nothing in this crate drives it, and the roadmap
+  marks all three `[~]`. The reachability test grew a third state for exactly
+  this: a working implementation nobody calls, which is neither driven nor
+  types-only.
+
+
 - The README's headline protocol example — the one showing that any language
   able to write lines of JSON can drive a Dewey application — never parsed. It
   used a numeric `id` where the envelope takes a string, externally-tagged

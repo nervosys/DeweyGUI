@@ -1,8 +1,20 @@
 //! Theme system for Dewey.
 //!
-//! Provides a token-based theming system with built-in light and dark themes.
-//! Theme tokens map to concrete colors, allowing widgets to be styled
-//! consistently and theme-switched at runtime.
+//! A token-based palette with built-in light and dark themes, for an
+//! application to resolve into the [`Style`](crate::core::Style) values its
+//! widgets take.
+//!
+//! **No widget reads an ambient theme.** Every widget is styled by the `Style`
+//! it is given, so switching themes means an application resolving its own
+//! tokens again — the runtime holds no current theme to switch. `Theme` is
+//! also what plugins extend through
+//! [`PluginContext`](crate::plugin::PluginContext), and it reaches the
+//! application from there via
+//! [`Model::plugins_ready`](crate::runtime::Model::plugins_ready).
+//!
+//! [`ThemeWatcher`] reloads a theme file when it changes on disk. Nothing in
+//! this crate drives it. An application polls [`check()`](ThemeWatcher::check)
+//! itself, from `update` or a tick.
 
 use crate::core::Color;
 use crate::ontology::*;

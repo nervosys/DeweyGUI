@@ -1,7 +1,15 @@
-//! Memory optimization utilities for Dewey.
+//! Memory utilities, offered to applications.
 //!
-//! Provides arena-based allocation for per-frame temporaries and
-//! a pool for reusable buffers to reduce heap churn.
+//! An [`Arena`] for per-frame temporaries, a [`VecPool`] for reusable buffers,
+//! and an [`InlineString`] that keeps short strings off the heap.
+//!
+//! **Nothing in this crate drives it.** This module was listed on the roadmap
+//! as "memory optimization" and no allocation in Dewey goes through any of it:
+//! the frame path allocates with `Vec` and `String` like anything else, so
+//! these types optimise nothing until an application reaches for them. The
+//! per-frame allocation counts that did come down — 18.0 to 4.0 per row — came
+//! from not building the nodes in the first place, and from borrowing the keys
+//! that were being copied, which is a different technique entirely.
 
 use std::cell::RefCell;
 

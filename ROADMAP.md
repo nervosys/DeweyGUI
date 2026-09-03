@@ -134,7 +134,10 @@ Agentic-first GUI framework for Rust with pluggable rendering backends.
 - [x] Chart widget (`Chart` with `Line`/`Bar`/`Pie` kinds via `Series` data)
 
 ### v1.2 — Framework Features
-- [x] Hot-reload support for theme changes (`ThemeWatcher`, `load_from_json`, `save_to_json`)
+- [~] Hot-reload support for theme changes (`ThemeWatcher`, `load_from_json`,
+      `save_to_json`) — an application polls `check()` itself; nothing in the
+      runtime drives the watcher, and no widget reads an ambient theme, so
+      applying a reloaded theme is the application's job too
 - [x] Internationalization framework (`I18n`, `MessageCatalog`, locale fallback, `t_fmt()`)
 - [x] Plugin system (`Plugin` trait, `PluginRegistry`, `PluginContext`,
       `plugin::initialise`) on both backends. It was listed as complete here
@@ -164,13 +167,20 @@ Agentic-first GUI framework for Rust with pluggable rendering backends.
       `SaveFileDialog`, `MessageBox`) — types only, no platform backend
 
 ### v1.3 — Performance & Polish
-- [x] GPU-accelerated canvas rendering (`RenderBatch`, `RenderPrimitive`, quad merging optimization)
+- [~] GPU-accelerated canvas rendering (`RenderBatch`, `RenderPrimitive`, quad
+      merging) — no `Painter` builds a batch and nothing submits one, so no
+      draw call has been saved by it. The agpu backend paints through agpu's
+      own `ShapeRenderer` and `TextEngine` and does not pass through it
 - [~] Profiling instrumentation (`Profiler`, `FrameProfile`, FPS/timing/widget
       count tracking) — driven only by the agpu backend, which is opt-in; the
       default backend has no profiling at all. Nothing reads `last_frame()` or
       `history()` either, so what agpu measures goes nowhere. Surfacing it
       wants a protocol request an agent can ask, which is not written
-- [x] Memory optimization (`Arena` bump allocator, `VecPool` buffer reuse, `InlineString`)
+- [~] Memory optimization (`Arena` bump allocator, `VecPool` buffer reuse,
+      `InlineString`) — offered to applications; no allocation in Dewey goes
+      through any of them. The per-frame counts that did come down (18.0 to
+      4.0 per row) came from not building the nodes and from borrowing keys
+      that were being copied
 
 ### v1.4 — agpu GPU Backend
 - [x] `AgpuBridgePainter` implementing Dewey's `Painter` via agpu's `ShapeRenderer` + `TextEngine`

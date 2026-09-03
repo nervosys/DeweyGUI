@@ -1,8 +1,14 @@
-//! GPU-accelerated canvas rendering.
+//! Batching for GPU submission, offered to a backend that wants it.
 //!
-//! Provides a `RenderBatch` that collects and optimizes drawing commands
-//! for efficient GPU submission. Commands are sorted by type and merged
-//! where possible to minimize draw calls.
+//! [`RenderBatch`] collects [`RenderPrimitive`]s, sorts them by type and
+//! merges adjacent quads, which is the shape a renderer wants before it
+//! submits.
+//!
+//! **Nothing in this crate drives it.** No `Painter` builds a `RenderBatch`
+//! and nothing submits one, so no draw call has ever been saved by it. The
+//! agpu backend paints through agpu's own `ShapeRenderer` and `TextEngine` and
+//! does not pass through this module; the roadmap listed it as
+//! "GPU-accelerated canvas rendering" all the same.
 
 use crate::core::{Color, Position, Rect};
 
