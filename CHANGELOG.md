@@ -344,6 +344,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Documentation
 
+- `Event::DragDrop` says that no backend emits one. The agpu backend converts
+  an `agpu::Event::DragDrop`, and nothing in the agpu crate ever constructs
+  one; the default backend has no drag-drop path; the agent protocol cannot
+  inject one. `handle_event` is therefore never called with it, and the types
+  are vocabulary for an application tracking a drag out of mouse events
+  itself. File drops are a different event and do work on both backends.
+
+
 - Three modules described themselves doing a job they do not do. `memory`
   offered "arena-based allocation for per-frame temporaries" and no allocation
   in Dewey goes through it; `gpu` offered a batch that "minimises draw calls"

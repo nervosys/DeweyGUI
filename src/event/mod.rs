@@ -31,7 +31,19 @@ pub enum Event {
     FileHover(Vec<String>),
     /// File hover cancelled.
     FileHoverCancelled,
-    /// Drag-and-drop event.
+    /// A widget-to-widget drag-and-drop event.
+    ///
+    /// **No backend emits one.** The agpu backend converts an
+    /// `agpu::Event::DragDrop` into this, and nothing in the agpu crate ever
+    /// constructs one; winit reports file drops, which arrive as
+    /// [`FileDrop`](Event::FileDrop) and are a different thing. The default
+    /// backend has no drag-drop path at all, and the agent protocol cannot
+    /// inject one.
+    ///
+    /// So this variant, [`DragDropEvent`] and [`DragPayload`] are the vocabulary
+    /// for an application that tracks a drag itself out of
+    /// [`Mouse`](Event::Mouse) events. They are not a drag-and-drop
+    /// implementation, and `handle_event` will not be called with one.
     DragDrop(DragDropEvent),
 }
 
