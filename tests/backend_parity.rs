@@ -295,3 +295,36 @@ fn agent_action_is_dispatched_and_not_merely_logged() {
         );
     }
 }
+
+/// Keyboard focus must work on every host, not just the testable one.
+///
+/// `FocusManager` shipped as a complete feature and no host drove it, so
+/// pressing Tab did nothing anywhere. The behaviour now lives in `focus.rs`
+/// and every host calls it — which is the only reason the headless tests in
+/// `tests/keyboard_focus.rs` say anything about the two that open a window.
+#[test]
+fn every_host_drives_the_focus_ring() {
+    for (name, file) in [
+        ("the default backend", "src/runtime/mod.rs"),
+        ("the agpu backend", "src/backend/agpu_backend.rs"),
+        ("the headless driver", "src/agent/driver.rs"),
+    ] {
+        let text: String = source(file)
+            .chars()
+            .filter(|c| !c.is_whitespace())
+            .collect();
+        for (what, call) in [
+            ("route keys to the ring", "focus::handle_key("),
+            ("rebuild the ring after a frame", ".rebuild("),
+            ("draw the focus indicator", "focus::draw_ring("),
+            ("focus what was clicked", ".focus_on(&id)"),
+        ] {
+            assert!(
+                text.contains(call),
+                "{name} does not {what}. Focus that works on one host is the \
+                 shape that left `Button::action` inert under the backend \
+                 everybody ships"
+            );
+        }
+    }
+}

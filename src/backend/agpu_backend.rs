@@ -469,6 +469,8 @@ struct RunningApp<M: Model> {
     shapes: agpu::ShapeRenderer,
     text: agpu::TextEngine,
     hit_map: HitMap,
+    /// The keyboard focus ring, rebuilt from the hit map after every frame.
+    focus: crate::focus::FocusManager,
     /// Changes registered by widgets during the last rendered frame.
     handlers: crate::runtime::Handlers<M>,
     ontology: OntologyRegistry,
@@ -602,6 +604,7 @@ impl<M: Model + 'static> RunningApp<M> {
             shapes,
             text,
             hit_map: HitMap::new(),
+            focus: crate::focus::FocusManager::new(),
             handlers: crate::runtime::Handlers::default(),
             ontology,
             ontology_mode: options.ontology,
@@ -703,6 +706,11 @@ impl<M: Model + 'static> RunningApp<M> {
                 self.ontology_mode == crate::runtime::OntologyMode::EveryFrame,
             );
             self.model.view(&mut dewey_frame);
+
+            // Render order is tab order, and a widget registers a hitbox
+            // exactly when it is interactive and addressable.
+            self.focus.rebuild(dewey_frame.hit_map.focusables());
+            crate::focus::draw_ring(&mut dewey_frame, &self.focus);
 
             self.handlers = crate::runtime::Handlers::take_from(&mut dewey_frame);
 
@@ -996,6 +1004,21 @@ impl<M: Model + 'static> ApplicationHandler for AppHandler<M> {
                 if let crate::event::Event::Mouse(m) = &dewey_ev {
                     if m.is_click() {
                         if let Some(id) = app.hit_map.hit_test(m.position).map(str::to_owned) {
+                            // Clicking a widget focuses it, so a keyboard user
+                            // continues from where the pointer left off.
+                            app.focus.focus_on(&id);
+                            app.dispatch_primary(&id);
+                        }
+                    }
+                }
+                // Tab, Shift+Tab, Enter and Space, through the one
+                // implementation every host shares. The event is still
+                // delivered to the model afterwards.
+                if let crate::event::Event::Key(k) = &dewey_ev {
+                    if k.kind == crate::event::KeyEventKind::Press {
+                        if let crate::focus::FocusAction::Activate(id) =
+                            crate::focus::handle_key(k, &mut app.focus)
+                        {
                             app.dispatch_primary(&id);
                         }
                     }

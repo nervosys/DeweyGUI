@@ -19,6 +19,8 @@ pub struct HeadlessDriver<M: Model> {
     running: bool,
     window_size: crate::core::Size,
     hit_map: crate::event::HitMap,
+    /// The keyboard focus ring, rebuilt from the hit map after every render.
+    focus: crate::focus::FocusManager,
     /// Changes registered by widgets during the last render.
     handlers: crate::runtime::Handlers<M>,
     /// Interactive widgets that rendered without an id in the last frame.
@@ -53,6 +55,7 @@ impl<M: Model + 'static> HeadlessDriver<M> {
             running: true,
             window_size: crate::core::Size::new(width, height),
             hit_map: crate::event::HitMap::new(),
+            focus: crate::focus::FocusManager::new(),
             handlers: crate::runtime::Handlers::default(),
             unaddressable: Vec::new(),
             version: 0,
@@ -116,6 +119,23 @@ impl<M: Model + 'static> HeadlessDriver<M> {
     /// about a window that does not exist.
     pub fn set_window_size(&mut self, size: crate::core::Size) {
         self.window_size = size;
+    }
+
+    /// What the last render drew.
+    ///
+    /// The draw commands rather than the structure: whether a label can be
+    /// read against its background, and whether the focused widget was given
+    /// a ring, are questions a tree cannot answer.
+    pub fn painted(&self) -> &[crate::backend::test::RenderOp] {
+        &self.painted
+    }
+
+    /// The widget that currently has keyboard focus, if any.
+    ///
+    /// The ring is rebuilt from the hit map after each render, so this is
+    /// meaningful only once something has been rendered.
+    pub fn focused_id(&self) -> Option<&str> {
+        self.focus.focused_id()
     }
 
     /// Access the agent session.
@@ -300,7 +320,23 @@ impl<M: Model + 'static> HeadlessDriver<M> {
                 if let crate::event::Event::Mouse(m) = &ev {
                     if m.is_click() {
                         if let Some(id) = self.hit_map.hit_test(m.position).map(str::to_owned) {
+                            // Clicking a widget focuses it, so a keyboard user
+                            // continues from where the pointer left off.
+                            self.focus.focus_on(&id);
                             self.dispatch_primary(&id);
+                        }
+                    }
+                }
+                // Tab, Shift+Tab, Enter and Space, through the one
+                // implementation every host shares.
+                if let crate::event::Event::Key(k) = &ev {
+                    if k.kind == crate::event::KeyEventKind::Press {
+                        match crate::focus::handle_key(k, &mut self.focus) {
+                            crate::focus::FocusAction::Activate(id) => {
+                                self.dispatch_primary(&id);
+                            }
+                            crate::focus::FocusAction::Moved
+                            | crate::focus::FocusAction::Ignored => {}
                         }
                     }
                 }
@@ -451,6 +487,12 @@ impl<M: Model + 'static> HeadlessDriver<M> {
         self.model.view(&mut frame);
 
         self.unaddressable = frame.take_unaddressable();
+        // Render order is tab order, and a widget registers a hitbox exactly
+        // when it is interactive and addressable — which is the condition for
+        // being focusable, so the ring needs no second registration to fall
+        // out of step with.
+        self.focus.rebuild(frame.hit_map.focusables());
+        crate::focus::draw_ring(&mut frame, &self.focus);
         self.handlers = crate::runtime::Handlers::take_from(&mut frame);
 
         let skipped = frame.skipped();

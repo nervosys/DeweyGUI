@@ -20,11 +20,10 @@ Agentic-first GUI framework for Rust with pluggable rendering backends.
 - [x] All 30 widgets decoupled from egui — render exclusively through Painter
 - [x] `Rect` geometry type with hit-testing, splitting, padding
 - [x] Layout engine (Horizontal/Vertical, Constraint-based splits)
-- [~] Focus management (`FocusManager` ring) — the bookkeeping only. No
-      backend registers a widget in it, nothing routes Tab to `focus_next`,
-      and no widget draws a focus indicator or activates on Enter, so pressing
-      Tab in a Dewey application does nothing. An agent is unaffected, since
-      it addresses a widget by id; a keyboard user is not
+- [x] Focus management — Tab/Shift+Tab in render order, Enter and Space to
+      activate, and a focus ring the runtime draws. Driven by the default
+      backend, agpu and the headless driver through one implementation, so an
+      agent can Tab through an interface exactly as a person does
 - [x] Theme system (semantic tokens, dark/light presets, custom themes)
 - [~] Overlay manager for layered rendering (`OverlayStack`) — no frame
       renders a stack and no backend hit-tests against one, so an overlay

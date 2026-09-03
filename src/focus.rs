@@ -1,18 +1,22 @@
-//! A focus ring, for an application to drive.
+//! Keyboard focus: Tab between widgets, Enter to press one.
 //!
-//! [`FocusManager`] keeps an ordered list of widget ids and moves a cursor
-//! around it, which is the bookkeeping Tab/Shift+Tab navigation needs.
+//! Every host drives this — the default backend, agpu and the headless driver
+//! — through [`handle_key`] and [`draw_ring`], so Tab means the same thing
+//! wherever an application runs.
 //!
-//! **Nothing in this crate drives it.** No backend registers a widget here, no
-//! key handler routes Tab to [`focus_next`](FocusManager::focus_next), and no
-//! widget draws a focus indicator or activates on Enter. Pressing Tab in a
-//! Dewey application therefore does nothing unless the application does all of
-//! that itself: build the ring from the ids it rendered, move it from
-//! `handle_event`, and style the focused widget.
+//! The ring is rebuilt from the hit map after every frame, so **render order
+//! is tab order** and a widget is focusable exactly when it is interactive and
+//! has an id. There is no second registration to fall out of step with, and a
+//! `Label` is not a stop.
 //!
-//! An agent is unaffected — it addresses a widget by id rather than by
-//! tabbing to it — but a keyboard user is not, and a screen reader reads the
-//! AccessKit tree without a focus ring behind it.
+//! [`draw_ring`] paints the indicator centrally rather than each widget
+//! rendering its own focused state: 29 widgets would otherwise be 29 chances
+//! to forget, and a widget that forgot would be invisibly unreachable.
+//!
+//! This shipped as "Focus Management — Ring-buffer tab navigation" with
+//! [`FocusManager`] complete and nothing calling it, so pressing Tab did
+//! nothing at all. An agent never noticed, because it addresses a widget by
+//! id.
 
 /// Manages focus state across focusable widgets.
 pub struct FocusManager {
@@ -156,4 +160,75 @@ mod tests {
         assert!(fm.is_focused("y"));
         assert!(!fm.is_focused("x"));
     }
+}
+
+/// What a key press did to the focus ring.
+#[derive(Debug, PartialEq, Eq)]
+pub enum FocusAction {
+    /// Focus moved. Redraw; nothing else to do.
+    Moved,
+    /// Activate this widget, exactly as a click on it would.
+    Activate(String),
+    /// Not a focus key.
+    Ignored,
+}
+
+/// The colour of the focus indicator.
+///
+/// A ring the runtime draws, rather than a state each widget renders itself:
+/// every widget would otherwise need to know about focus, and the ones that
+/// forgot would be invisibly unreachable — which is the failure this whole
+/// module was in before it was driven at all.
+pub const RING_COLOUR: crate::core::Color = crate::core::Color::rgba(0.35, 0.6, 1.0, 1.0);
+
+/// How thick the focus indicator is drawn.
+pub const RING_WIDTH: f32 = 2.0;
+
+/// Apply a key press to the ring.
+///
+/// Every host calls this, so Tab means the same thing headless, under the
+/// default backend and under agpu. `Space` is `Char(' ')`, which is what a
+/// text field also receives — a widget that consumes typing is why activation
+/// is offered on `Enter` as well.
+///
+/// Shift+Tab goes backwards whether it arrives as `BackTab` or as `Tab` with
+/// the shift modifier. Both happen: winit and egui report the first, and the
+/// protocol's `inject_event` produces the second, because an agent writes
+/// `{"code": "tab", "modifiers": ["shift"]}`.
+pub fn handle_key(key: &crate::event::KeyEvent, focus: &mut FocusManager) -> FocusAction {
+    use crate::event::{KeyCode, KeyModifiers};
+    let shifted = key.modifiers.contains(KeyModifiers::SHIFT);
+    match key.code {
+        KeyCode::Tab if shifted => {
+            focus.focus_prev();
+            FocusAction::Moved
+        }
+        KeyCode::Tab => {
+            focus.focus_next();
+            FocusAction::Moved
+        }
+        KeyCode::BackTab => {
+            focus.focus_prev();
+            FocusAction::Moved
+        }
+        KeyCode::Enter | KeyCode::Char(' ') => match focus.focused_id() {
+            Some(id) => FocusAction::Activate(id.to_string()),
+            None => FocusAction::Ignored,
+        },
+        _ => FocusAction::Ignored,
+    }
+}
+
+/// Draw the focus indicator around the focused widget.
+///
+/// Call after `Model::view`, while the frame still holds the hit map the view
+/// filled in. Draws nothing when nothing is focused.
+pub fn draw_ring(frame: &mut crate::runtime::Frame<'_>, focus: &FocusManager) {
+    let Some(id) = focus.focused_id() else { return };
+    let Some(bounds) = frame.hit_map.bounds_of(id) else {
+        return;
+    };
+    frame
+        .painter()
+        .stroke_rect(bounds, RING_COLOUR, RING_WIDTH, 2.0);
 }

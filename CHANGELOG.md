@@ -82,6 +82,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Keyboard focus works.** Tab and Shift+Tab walk the interactive widgets in
+  render order, Enter and Space press the focused one by the same path a click
+  takes, clicking a widget focuses it, and the runtime draws a focus ring. All
+  three hosts drive it through `focus::handle_key` and `focus::draw_ring`, so
+  an agent can Tab through an interface exactly as a person does.
+  `FocusManager` had shipped as "Focus Management — Ring-buffer tab
+  navigation" with nothing calling it, so pressing Tab did nothing at all.
+- The ring is rebuilt from the hit map after every frame, so a widget is
+  focusable exactly when it is interactive and has an id — there is no second
+  registration to fall out of step with, and a `Label` is not a stop. The
+  indicator is drawn centrally rather than by each widget: 29 widgets would be
+  29 chances to forget, and a widget that forgot would be invisibly
+  unreachable.
+- `HitMap::focusables` and `HitMap::bounds_of`; `HeadlessDriver::focused_id`
+  and `HeadlessDriver::painted`.
+
+
 - `Program::with_agent` serves the agent protocol on stdin/stdout while the
   window is open. `RpcTransport`, the WebSocket transport and the MCP server
   each own the model, and so does `Program::run`, so an application was

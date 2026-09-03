@@ -118,7 +118,7 @@ const SUBSYSTEMS: &[Subsystem] = &[
     Subsystem {
         trait_name: "FocusManager",
         file: "src/focus.rs",
-        requirement: Requirement::Undriven,
+        requirement: Requirement::Driven,
     },
     Subsystem {
         trait_name: "OverlayStack",

@@ -765,6 +765,8 @@ struct DeweyApp<M: Model> {
     /// Requests waiting to be answered, when [`Program::with_agent`] was used.
     agent_jobs: Option<std::sync::mpsc::Receiver<crate::agent::rpc::AgentJob>>,
     hit_map: crate::event::HitMap,
+    /// The keyboard focus ring, rebuilt from the hit map after every frame.
+    focus: crate::focus::FocusManager,
     options: ProgramOptions,
     running: bool,
     last_tick: std::time::Instant,
@@ -848,6 +850,7 @@ impl<M: Model + 'static> DeweyApp<M> {
             driver,
             agent_jobs,
             hit_map: crate::event::HitMap::new(),
+            focus: crate::focus::FocusManager::new(),
             options,
             running: true,
             last_tick: std::time::Instant::now(),
@@ -1121,6 +1124,25 @@ impl<M: Model + 'static> eframe::App for DeweyApp<M> {
             if let crate::event::Event::Mouse(m) = &event {
                 if m.is_click() {
                     if let Some(id) = self.hit_map.hit_test(m.position).map(str::to_owned) {
+                        // Clicking a widget focuses it, so a keyboard user
+                        // continues from where the pointer left off.
+                        self.focus.focus_on(&id);
+                        if let Some(cmd) = self.handlers.apply_primary(&id, self.driver.model_mut())
+                        {
+                            self.process_command(cmd);
+                        }
+                    }
+                }
+            }
+            // Tab, Shift+Tab, Enter and Space, through the one implementation
+            // every host shares. The event is still delivered to the model
+            // afterwards, so an application that wants Tab for something of its
+            // own still receives it.
+            if let crate::event::Event::Key(k) = &event {
+                if k.kind == crate::event::KeyEventKind::Press {
+                    if let crate::focus::FocusAction::Activate(id) =
+                        crate::focus::handle_key(k, &mut self.focus)
+                    {
                         if let Some(cmd) = self.handlers.apply_primary(&id, self.driver.model_mut())
                         {
                             self.process_command(cmd);
@@ -1165,11 +1187,18 @@ impl<M: Model + 'static> eframe::App for DeweyApp<M> {
         // The closure borrows `self.hit_map` through the frame, so what the
         // widgets registered comes out here and is stored after it returns.
         let mut handlers = Handlers::default();
+        // The closure borrows `self.hit_map` through the frame, so the ring is
+        // rebuilt on a value moved out of `self` and put back after.
+        let mut focus = std::mem::take(&mut self.focus);
         egui::CentralPanel::default().show(ctx, |ui| {
             let mut egui_painter = crate::backend::egui_backend::EguiPainter::new(ctx);
             let mut frame =
                 Frame::with_ontology(area, &mut self.hit_map, &mut egui_painter, build_tree);
             self.driver.model().view(&mut frame);
+            // Render order is tab order, and a widget registers a hitbox
+            // exactly when it is interactive and addressable.
+            focus.rebuild(frame.hit_map.focusables());
+            crate::focus::draw_ring(&mut frame, &focus);
             handlers = Handlers::take_from(&mut frame);
 
             // Collect UI tree
@@ -1193,6 +1222,7 @@ impl<M: Model + 'static> eframe::App for DeweyApp<M> {
             let _ = ui;
         });
         self.handlers = handlers;
+        self.focus = focus;
 
         // Schedule next repaint at the tick rate to avoid overwhelming the swapchain
         if let Some(tick_rate) = self.options.tick_rate {

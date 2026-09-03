@@ -230,6 +230,32 @@ impl HitMap {
         });
     }
 
+    /// The widgets that can take keyboard focus, in the order they rendered.
+    ///
+    /// A widget registers here when it is interactive and has an id, which is
+    /// exactly the condition for being focusable — so the ring needs no second
+    /// registration to fall out of step with. Render order is tab order.
+    ///
+    /// Duplicates are dropped: a widget that registers twice is one stop.
+    pub fn focusables(&self) -> Vec<String> {
+        let mut seen: Vec<String> = Vec::with_capacity(self.entries.len());
+        for entry in &self.entries {
+            let id = entry.agent_id.as_ref();
+            if !seen.iter().any(|s| s == id) {
+                seen.push(id.to_string());
+            }
+        }
+        seen
+    }
+
+    /// Where a widget rendered, if it did.
+    pub fn bounds_of(&self, agent_id: &str) -> Option<crate::core::rect::Rect> {
+        self.entries
+            .iter()
+            .find(|e| e.agent_id.as_ref() == agent_id)
+            .map(|e| e.bounds)
+    }
+
     /// Find the widget at the given position (highest z-order wins).
     pub fn hit_test(&self, pos: Position) -> Option<&str> {
         self.entries
