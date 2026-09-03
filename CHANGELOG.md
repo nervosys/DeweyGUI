@@ -30,7 +30,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `query_ontology` serves the widget catalogue from cached bytes rather than
   cloning a `serde_json::Value` per request.
 
-
 - `get_tree` accepts `since`, the `version` from a previous reply, and answers
   `unchanged` without rendering or serialising anything when the interface has
   not moved: **11.0 µs → 100 ns, 110× less**. Polling until something changes
@@ -83,6 +82,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `Program::with_plugin`, and `Model::plugins_ready`, which hands an
+  application what its plugins contributed. See below: the plugin system had
+  never run under the default backend.
+- `plugin::initialise`, the shared initialisation both backends call. It is a
+  free function because a backend that opens a window cannot be driven by a
+  test, which is how the agpu version came to discard two of its three outputs
+  unnoticed.
+
 - `Command` gained eight window operations — `SetWindowVisible`,
   `FocusWindow`, `MinimiseWindow`, `SetWindowPosition`, `SetWindowSize`,
   `SetAlwaysOnTop`, `SetFullscreen` and `SetWindowTitle`. `Model::update` gets
@@ -127,7 +134,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `scripts/check.sh` runs what CI runs, in fail-fastest order; `--all` adds the
   sibling `agpu` crate and both benchmark workspaces, which live outside this
   workspace and which `cargo check` here never compiles.
-
 
 - Handlers on the remaining common interactive widgets, each bound to the
   action it advertises: `List::on_select`, `Select::on_select`,
@@ -210,6 +216,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The plugin system existed only under a backend that is not the default.**
+  It shipped as a v1.2 framework feature and the lifecycle was driven solely by
+  `AgpuProgram`, which is opt-in and off by default. `Program` had no
+  `with_plugin` at all, so under the backend nearly everyone uses a plugin
+  could not be registered, `init` / `on_frame` / `on_shutdown` were never
+  called, and a plugin's ontology registrations never reached an agent. Both
+  backends now drive it, and a test asserts both do — neither opens a window in
+  a test, which is why nothing noticed.
+
+- A plugin's theme and message-catalogue contributions were dropped as soon as
+  `init` returned. The agpu backend built an `I18n` and a `Theme`, lent them to
+  every plugin, and let both fall out of scope at the end of the block; only
+  the ontology survived, because that borrow outlived it. Two of the four
+  contributions the module advertises were discarded before the first frame.
+  `initialise` returns them and both backends pass them to
+  `Model::plugins_ready`.
+
 - **The stdio and WebSocket transports could not act.** `RpcTransport` and
   `WsTransport` each carried their own copy of the request loop, written before
   `HeadlessDriver` grew most of what it knows. Both turned an `execute_action`
@@ -273,7 +296,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `register_gpu_ontology` registers the five GPU schemas that were written and
   never wired up. Its `multiwindow`, `accessibility` and `plugin` modules now
   say plainly that nothing in the crate drives them.
-
 
 - `Checkbox`'s handler answered `click`, but its ontology advertises `toggle`.
   An agent following the ontology called the name the widget published and
@@ -368,7 +390,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - New standing checks, each verified by breaking the thing it catches: strict
   validation, reachability in both crates, backend parity, protocol property
   tests, an example audit, and doc conformance.
-
 
 ## [1.0.0] - 2025-07-05
 

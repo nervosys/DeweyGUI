@@ -7,9 +7,55 @@ use crate::i18n::I18n;
 use crate::ontology::*;
 use crate::theme::Theme;
 
+/// What plugins wrote during initialisation, kept for the application.
+///
+/// The agpu backend built an `I18n` and a `Theme`, lent them to every plugin,
+/// and dropped both at the end of the block — so a plugin that registered a
+/// message catalogue or extended the theme, two of the four contributions this
+/// module advertises, had its work discarded before the first frame. Only the
+/// ontology survived, because that borrow outlived the block.
+///
+/// [`initialise`] returns this instead, and both backends hand it to
+/// [`Model::plugins_ready`](crate::runtime::Model::plugins_ready).
+#[derive(Debug)]
+pub struct PluginContributions {
+    /// Messages plugins registered.
+    pub i18n: I18n,
+    /// The theme as plugins left it.
+    pub theme: Theme,
+}
+
+/// Initialise every plugin against `ontology`, and keep what they write.
+///
+/// Both backends call this. It is a free function because a backend that opens
+/// a window cannot be driven by a test, which is how the agpu version came to
+/// throw two of its three outputs away unnoticed.
+pub fn initialise(
+    plugins: &mut PluginRegistry,
+    ontology: &mut OntologyRegistry,
+) -> PluginContributions {
+    let mut i18n = I18n::new("en");
+    let mut theme = Theme::dark();
+    {
+        let mut ctx = PluginContext {
+            ontology,
+            i18n: &mut i18n,
+            theme: &mut theme,
+        };
+        plugins.init_all(&mut ctx);
+    }
+    PluginContributions { i18n, theme }
+}
+
 /// Host context passed to plugins during initialization.
 ///
-/// Plugins use this to register their contributions.
+/// Plugins use this to register their contributions. Widgets take a
+/// [`Style`](crate::core::Style) rather than reading an ambient theme, and no
+/// widget looks a string up in the catalogue, so what a plugin writes to
+/// `theme` and `i18n` is for the *application* to use — it arrives through
+/// [`Model::plugins_ready`](crate::runtime::Model::plugins_ready) and is not
+/// consulted by the framework itself. `ontology` is read by every agent
+/// request.
 pub struct PluginContext<'a> {
     /// The ontology registry.
     pub ontology: &'a mut OntologyRegistry,

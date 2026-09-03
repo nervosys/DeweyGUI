@@ -175,6 +175,15 @@ pub trait Model: Sized {
     /// Called when the agent ontology is exported. Override to customize.
     fn register_ontology(&self, _registry: &mut OntologyRegistry) {}
 
+    /// Called once after plugins have initialised, with what they contributed.
+    ///
+    /// A plugin's ontology registrations reach the agent protocol on their
+    /// own. Its theme and message-catalogue contributions have nowhere else to
+    /// go: widgets take a [`Style`](crate::core::Style) rather than reading an
+    /// ambient theme, so the application is what consumes them. They were
+    /// previously dropped as soon as `init` returned.
+    fn plugins_ready(&mut self, _contributions: &crate::plugin::PluginContributions) {}
+
     /// Perform an agent-requested action and return its result.
     ///
     /// The ontology lets an agent *discover* an application; this is what lets
@@ -630,6 +639,7 @@ impl Default for ProgramOptions {
 pub struct Program<M: Model> {
     model: M,
     options: ProgramOptions,
+    plugins: crate::plugin::PluginRegistry,
 }
 
 #[cfg(feature = "egui-backend")]
@@ -639,12 +649,24 @@ impl<M: Model + 'static> Program<M> {
         Self {
             model,
             options: ProgramOptions::default(),
+            plugins: crate::plugin::PluginRegistry::new(),
         }
     }
 
     /// Override the default program options.
     pub fn with_options(mut self, options: ProgramOptions) -> Self {
         self.options = options;
+        self
+    }
+
+    /// Register a plugin. Plugins are initialised before the first frame.
+    ///
+    /// This existed only on `AgpuProgram`, which is the opt-in backend. Under
+    /// the default one a plugin could not be registered at all, so `init`,
+    /// `on_frame` and `on_shutdown` were never called and a plugin's ontology
+    /// registrations never reached an agent.
+    pub fn with_plugin(mut self, plugin: impl crate::plugin::Plugin + 'static) -> Self {
+        self.plugins.register(plugin);
         self
     }
 
@@ -685,7 +707,13 @@ impl<M: Model + 'static> Program<M> {
         eframe::run_native(
             &title,
             options,
-            Box::new(move |_cc| Ok(Box::new(DeweyApp::new(self.model, self.options)))),
+            Box::new(move |_cc| {
+                Ok(Box::new(DeweyApp::new(
+                    self.model,
+                    self.options,
+                    self.plugins,
+                )))
+            }),
         )
     }
 }
@@ -718,14 +746,26 @@ struct DeweyApp<M: Model> {
     /// moves the window is queued here and flushed when the frame that has a
     /// context comes round.
     pending_viewport: Vec<egui::ViewportCommand>,
+    /// Plugins, initialised before the first frame and ticked on every one.
+    plugins: crate::plugin::PluginRegistry,
+    /// Whether the plugin shutdown hook has run, so it runs exactly once.
+    shut_down: bool,
 }
 
 #[cfg(feature = "egui-backend")]
 impl<M: Model> DeweyApp<M> {
-    fn new(model: M, options: ProgramOptions) -> Self {
+    fn new(
+        mut model: M,
+        options: ProgramOptions,
+        mut plugins: crate::plugin::PluginRegistry,
+    ) -> Self {
         let initial_size = crate::core::Size::new(options.width, options.height);
         let mut ontology = OntologyRegistry::new();
         model.register_ontology(&mut ontology);
+        // Before `init`: a plugin registers widgets and capabilities that the
+        // model's first command may already depend on.
+        let contributions = crate::plugin::initialise(&mut plugins, &mut ontology);
+        model.plugins_ready(&contributions);
         let init_cmd = model.init();
 
         let mut app = Self {
@@ -740,9 +780,25 @@ impl<M: Model> DeweyApp<M> {
             last_size: initial_size,
             hovering_files: false,
             pending_viewport: Vec::new(),
+            plugins,
+            shut_down: false,
         };
         app.process_command(init_cmd);
         app
+    }
+
+    /// Run the plugin shutdown hook once, however the application is ending.
+    ///
+    /// `eframe::App::on_exit` would be the obvious place, and its signature
+    /// gains a `glow::Context` parameter when anything in the dependency graph
+    /// enables eframe's `glow` feature — as `benches/scaffold` does through
+    /// egui — so implementing it breaks the build for a downstream crate and
+    /// not for this one.
+    fn shutdown(&mut self) {
+        if !self.shut_down {
+            self.shut_down = true;
+            self.plugins.on_shutdown();
+        }
     }
 
     fn process_command(&mut self, cmd: Command<M::Msg>) {
@@ -854,9 +910,12 @@ impl<M: Model + 'static> eframe::App for DeweyApp<M> {
         }
 
         if !self.running {
+            self.shutdown();
             ctx.send_viewport_cmd(egui::ViewportCommand::Close);
             return;
         }
+
+        self.plugins.on_frame();
 
         // Convert egui input events to Dewey events and dispatch
         let mut events = convert_egui_events(ctx);
@@ -912,6 +971,12 @@ impl<M: Model + 'static> eframe::App for DeweyApp<M> {
         }
 
         for event in events {
+            // The window closing is the end of the application whether or not
+            // the model turns it into a `Quit`; a plugin that holds a file
+            // handle should hear about it either way.
+            if matches!(event, crate::event::Event::CloseRequested) {
+                self.shutdown();
+            }
             if let Some(msg) = self.model.handle_event(event) {
                 let cmd = self.model.update(msg);
                 self.process_command(cmd);

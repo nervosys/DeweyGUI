@@ -183,3 +183,107 @@ fn documented_features_exist() {
         }
     }
 }
+
+/// A subsystem driven by one backend and not the other is declared as such.
+///
+/// The plugin system shipped as a v1.2 framework feature and ran only under
+/// `agpu-backend`, which is opt-in and off by default: `Program` had no
+/// `with_plugin` at all, so `init`, `on_frame` and `on_shutdown` were never
+/// called and a plugin's ontology registrations never reached an agent.
+/// Neither backend opens a window in a test, which is why nothing noticed.
+///
+/// So the check is textual, and it is the same bargain the test above strikes:
+/// drive it from both, or say in the roadmap that you do not. The profiler is
+/// the one that currently says so.
+#[test]
+fn a_subsystem_is_driven_by_both_backends_or_declared_partial() {
+    const DEFAULT: &str = "src/runtime/mod.rs";
+    const AGPU: &str = "src/backend/agpu_backend.rs";
+
+    /// A subsystem, and the symbol that shows a backend drives it.
+    const DRIVEN: [(&str, &str); 4] = [
+        ("plugin registration", "with_plugin"),
+        ("plugin initialisation", "plugin::initialise"),
+        ("the per-frame plugin hook", "on_frame()"),
+        ("the plugin shutdown hook", "on_shutdown()"),
+    ];
+
+    let default = source(DEFAULT);
+    let agpu = source(AGPU);
+
+    for (name, symbol) in DRIVEN {
+        for (backend, text) in [
+            ("the default backend", &default),
+            ("the agpu backend", &agpu),
+        ] {
+            assert!(
+                text.contains(symbol),
+                "{backend} never mentions `{symbol}`, so {name} does not \
+                 happen there. A subsystem is only as real as the backend that \
+                 drives it: drive it from both, or mark it `[~]` in ROADMAP.md \
+                 and say which backend it works under"
+            );
+        }
+    }
+
+    // The known asymmetry, kept honest rather than silent.
+    let roadmap = source("ROADMAP.md");
+    assert!(
+        !default.contains("Profiler"),
+        "the default backend now drives the profiler, so the roadmap's `[~]` \
+         for it is stale"
+    );
+    assert!(
+        roadmap.contains("- [~] Profiling instrumentation"),
+        "the profiler is driven by the agpu backend alone and the roadmap must \
+         say so"
+    );
+}
+
+/// A plugin's contributions survive the call that asks for them.
+///
+/// `initialise` builds an `I18n` and a `Theme` for plugins to write to. The
+/// agpu backend built both in a block and dropped them at its end, so a
+/// message catalogue or a theme extension — two of the four contributions the
+/// module advertises — was discarded before the first frame.
+#[test]
+fn plugin_contributions_outlive_initialisation() {
+    use dewey::core::Color;
+    use dewey::i18n::MessageCatalog;
+    use dewey::ontology::*;
+    use dewey::plugin::{Plugin, PluginContext, PluginRegistry};
+    use dewey::theme::ThemeToken;
+
+    struct Contributor;
+
+    impl Plugin for Contributor {
+        fn name(&self) -> &str {
+            "contributor"
+        }
+
+        fn init(&mut self, ctx: &mut PluginContext<'_>) {
+            let mut catalogue = MessageCatalog::new();
+            catalogue.insert("greeting", "hello");
+            ctx.i18n.add_catalog("en", catalogue);
+            ctx.theme
+                .set(ThemeToken::Accent, Color::rgba(1.0, 0.0, 0.0, 1.0));
+        }
+    }
+
+    let mut plugins = PluginRegistry::new();
+    plugins.register(Contributor);
+    let mut ontology = OntologyRegistry::new();
+
+    let contributions = dewey::plugin::initialise(&mut plugins, &mut ontology);
+
+    assert_eq!(
+        contributions.i18n.t("greeting"),
+        "hello",
+        "the message catalogue a plugin registered did not survive `initialise`"
+    );
+    assert_eq!(
+        contributions.theme.get(ThemeToken::Accent),
+        Color::rgba(1.0, 0.0, 0.0, 1.0),
+        "the theme token a plugin set did not survive `initialise`"
+    );
+}

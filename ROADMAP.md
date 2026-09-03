@@ -136,7 +136,14 @@ Agentic-first GUI framework for Rust with pluggable rendering backends.
 ### v1.2 — Framework Features
 - [x] Hot-reload support for theme changes (`ThemeWatcher`, `load_from_json`, `save_to_json`)
 - [x] Internationalization framework (`I18n`, `MessageCatalog`, locale fallback, `t_fmt()`)
-- [x] Plugin system (`Plugin` trait, `PluginRegistry`, `PluginContext`)
+- [x] Plugin system (`Plugin` trait, `PluginRegistry`, `PluginContext`,
+      `plugin::initialise`) on both backends. It was listed as complete here
+      while `Program` had no way to register a plugin at all, so the whole
+      lifecycle ran only under the opt-in `agpu-backend`. What a plugin
+      contributes to the theme and the message catalogue arrives at the
+      application through `Model::plugins_ready`; no widget reads an ambient
+      theme or looks a string up in the catalogue, so the framework itself
+      consumes neither
 
 ### v1.2 — Backend & Platform
 - [x] Web backend (`WebPainter` with `WebRenderOp` for wasm32/Canvas 2D)
@@ -158,7 +165,11 @@ Agentic-first GUI framework for Rust with pluggable rendering backends.
 
 ### v1.3 — Performance & Polish
 - [x] GPU-accelerated canvas rendering (`RenderBatch`, `RenderPrimitive`, quad merging optimization)
-- [x] Profiling instrumentation (`Profiler`, `FrameProfile`, FPS/timing/widget count tracking)
+- [~] Profiling instrumentation (`Profiler`, `FrameProfile`, FPS/timing/widget
+      count tracking) — driven only by the agpu backend, which is opt-in; the
+      default backend has no profiling at all. Nothing reads `last_frame()` or
+      `history()` either, so what agpu measures goes nowhere. Surfacing it
+      wants a protocol request an agent can ask, which is not written
 - [x] Memory optimization (`Arena` bump allocator, `VecPool` buffer reuse, `InlineString`)
 
 ### v1.4 — agpu GPU Backend
@@ -171,7 +182,8 @@ Agentic-first GUI framework for Rust with pluggable rendering backends.
 - [x] Backend preference selection (Vulkan-first, OpenGL, platform default)
 - [x] Feature-gated `agpu-backend` (no default, opt-in via `--features agpu-backend`)
 - [x] Plugin lifecycle (PluginRegistry init/on_frame/on_shutdown hooks)
-- [x] Profiler integration (begin_frame/start/stop/end_frame timing in render loop)
+- [~] Profiler integration (begin_frame/start/stop/end_frame timing in render
+      loop) — the timings are collected and never read
 - [x] ProgramOptions parity (fullscreen, transparent window support)
 - [x] Unit tests (24 tests — type conversion, event conversion, builder API)
 

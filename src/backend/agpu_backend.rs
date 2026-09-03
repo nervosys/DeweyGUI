@@ -20,13 +20,11 @@ use winit::window::{Window, WindowId};
 use crate::core::rect::{Position, Rect, Size};
 use crate::core::style::{Color, FontWeight, TextStyle};
 use crate::event::HitMap;
-use crate::i18n::I18n;
 use crate::ontology::{OntologyRegistry, SemanticRole, UiNode, UiTree};
 use crate::paint::Painter;
-use crate::plugin::{PluginContext, PluginRegistry};
+use crate::plugin::PluginRegistry;
 use crate::profiling::Profiler;
 use crate::runtime::{Command, Frame, Model, ProgramOptions};
-use crate::theme::Theme;
 
 // ── Type conversion helpers ─────────────────────────────────────────
 
@@ -487,7 +485,7 @@ struct RunningApp<M: Model> {
 
 impl<M: Model + 'static> RunningApp<M> {
     fn new(
-        model: M,
+        mut model: M,
         options: &ProgramOptions,
         backend: agpu::BackendPreference,
         msaa_samples: u32,
@@ -581,17 +579,10 @@ impl<M: Model + 'static> RunningApp<M> {
         let mut ontology = OntologyRegistry::new();
         model.register_ontology(&mut ontology);
 
-        // Initialise plugins
-        let mut i18n = I18n::new("en");
-        let mut theme = Theme::dark();
-        {
-            let mut ctx = PluginContext {
-                ontology: &mut ontology,
-                i18n: &mut i18n,
-                theme: &mut theme,
-            };
-            plugins.init_all(&mut ctx);
-        }
+        // Initialise plugins. This block used to drop the theme and the
+        // message catalogue on the floor; `initialise` hands them back.
+        let contributions = crate::plugin::initialise(&mut plugins, &mut ontology);
+        model.plugins_ready(&contributions);
 
         let profiler = if profiling {
             Some(Profiler::default())
