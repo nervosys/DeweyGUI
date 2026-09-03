@@ -1,0 +1,66 @@
+{
+  "id": "t2-todo",
+  "name": "todo",
+  "window": {
+    "w": 320,
+    "h": 240
+  },
+  "script": [
+    "click:add",
+    "click:add",
+    "click:toggle_0",
+    "key:q"
+  ],
+  "checks": [
+    {
+      "id": "quits",
+      "kind": "frame_count",
+      "equals": 4,
+      "contract": true
+    },
+    {
+      "id": "empty",
+      "kind": "contains",
+      "frame": 0,
+      "pattern": "0 left"
+    },
+    {
+      "id": "one",
+      "kind": "contains",
+      "frame": 1,
+      "pattern": "item 1"
+    },
+    {
+      "id": "two",
+      "kind": "contains",
+      "frame": 2,
+      "pattern": "item 2"
+    },
+    {
+      "id": "counts",
+      "kind": "contains",
+      "frame": 2,
+      "pattern": "2 left"
+    },
+    {
+      "id": "toggled",
+      "kind": "contains",
+      "frame": 3,
+      "pattern": "1 left"
+    },
+    {
+      "id": "addressable",
+      "kind": "has_widget",
+      "frame": 2,
+      "agent_id": "toggle_1"
+    },
+    {
+      "id": "changed",
+      "kind": "frames_differ",
+      "frames": [
+        2,
+        3
+      ]
+    }
+  ]
+}

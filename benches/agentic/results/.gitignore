@@ -1,0 +1,5 @@
+# Recorded runs are data, not source. Keep the directory, not the contents:
+# a result checked in without the conditions that produced it is a number
+# nobody can reproduce.
+*
+!.gitignore

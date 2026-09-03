@@ -1,0 +1,51 @@
+{
+  "id": "t1-counter",
+  "name": "counter",
+  "window": {
+    "w": 240,
+    "h": 120
+  },
+  "script": [
+    "click:inc",
+    "click:inc",
+    "key:q"
+  ],
+  "checks": [
+    {
+      "id": "quits",
+      "kind": "frame_count",
+      "equals": 3,
+      "contract": true
+    },
+    {
+      "id": "title",
+      "kind": "contains",
+      "frame": 0,
+      "pattern": "Counter"
+    },
+    {
+      "id": "start",
+      "kind": "contains",
+      "frame": 0,
+      "pattern": "Count: *0"
+    },
+    {
+      "id": "addressable",
+      "kind": "has_widget",
+      "frame": 0,
+      "agent_id": "inc"
+    },
+    {
+      "id": "inc1",
+      "kind": "contains",
+      "frame": 1,
+      "pattern": "Count: *1"
+    },
+    {
+      "id": "inc2",
+      "kind": "contains",
+      "frame": 2,
+      "pattern": "Count: *2"
+    }
+  ]
+}

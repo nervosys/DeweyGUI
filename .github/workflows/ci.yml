@@ -136,3 +136,10 @@ jobs:
       # size asking is ahead from the first observation.
       - name: Observation cost holds its shape
         run: cargo run --release --bin observation_cost --manifest-path benches/scaffold/Cargo.toml
+
+      # The agentic harness scores a model's work. The scoring is what runs
+      # here: reference solutions must come out at 1.000 and a deliberately
+      # unaddressable one must not. Driving an actual model costs money and
+      # lives in `run.py`, which CI never calls.
+      - name: The agentic verifier scores what it claims to
+        run: python benches/agentic/runner/selftest.py

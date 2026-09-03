@@ -82,6 +82,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `benches/agentic/` — a harness that drives a real model at a task and
+  records what it cost, and whether it consulted the ontology or read the
+  source. Every other benchmark here prices a strategy; nothing observed a
+  model picking one, which is the only place the question is settled. Two
+  conditions, `bare` and `mcp`, so the instructions added to the MCP server
+  can be tested rather than assumed. `runner/selftest.py` runs in CI and needs
+  no model: it scores two reference solutions, which must come out at 1.000,
+  and one whose button renders perfectly and has no id, which must not.
+- `examples/mcp_server.rs`, an MCP server over an empty program whose registry
+  holds every built-in schema. It answers the questions asked before there is
+  an application — what widgets exist, what each accepts — which is what a
+  coding agent wants while writing one.
+
+
 - `benches/scaffold/src/bin/observation_cost.rs` prices what it costs an agent
   to find out what is on screen: five questions, answered by asking the
   application, by reading its source, or by looking at a picture, against

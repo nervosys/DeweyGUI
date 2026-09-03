@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "dewey": {
+      "command": "cargo",
+      "args": ["run", "--release", "--quiet", "--example", "mcp_server"],
+      "cwd": "../../.."
+    }
+  }
+}

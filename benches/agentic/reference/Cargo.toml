@@ -1,0 +1,31 @@
+[package]
+name = "dewey-agentic-reference"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+# Solutions the verifier is tested against. A benchmark harness that has never
+# scored a known-good attempt and a known-bad one is a scoring function nobody
+# has checked, and this project has spent a week finding out what unchecked
+# things claim.
+[[bin]]
+name = "t1_counter"
+path = "src/bin/t1_counter.rs"
+
+[[bin]]
+name = "t2_todo"
+path = "src/bin/t2_todo.rs"
+
+# Deliberately wrong: the button has no agent id, so it renders, looks
+# correct, and cannot be clicked by anything. The verifier must score it below
+# the reference or it is not measuring operability.
+[[bin]]
+name = "t1_counter_broken"
+path = "src/bin/t1_counter_broken.rs"
+
+[dependencies]
+dewey = { package = "deweygui", path = "../../..", default-features = false }
+serde_json = "1"
+
+[profile.release]
+debug = false
