@@ -75,7 +75,9 @@ impl Model for App {
             .on("filter_active", |a: &mut App| a.filter = Filter::Active)
             .render(f[1], frame);
         Button::new("Completed")
-            .on("filter_completed", |a: &mut App| a.filter = Filter::Completed)
+            .on("filter_completed", |a: &mut App| {
+                a.filter = Filter::Completed
+            })
             .render(f[2], frame);
 
         for (i, row) in self.visible().into_iter().zip(rows[2].rows(28.0)) {
@@ -103,7 +105,6 @@ impl Model for App {
             .on("clear_completed", |a: &mut App| a.todos.retain(|t| !t.done))
             .render(foot[1], frame);
     }
-
 }
 
 fn main() -> std::result::Result<(), eframe::Error> {

@@ -129,3 +129,10 @@ jobs:
         run: cargo run --release --bin agent_loop --manifest-path benches/comparative/Cargo.toml
       - name: TodoMVC agent task completes
         run: cargo run --release --bin agent_task --manifest-path benches/scaffold/Cargo.toml
+      # Prices asking the application against reading its source. Its
+      # assertions are about the shape of the result, not its size: that a
+      # targeted read stays far under a source file, that an unchanged poll
+      # stays near free, and that on an application three times this toy's
+      # size asking is ahead from the first observation.
+      - name: Observation cost holds its shape
+        run: cargo run --release --bin observation_cost --manifest-path benches/scaffold/Cargo.toml

@@ -82,6 +82,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `benches/scaffold/src/bin/observation_cost.rs` prices what it costs an agent
+  to find out what is on screen: five questions, answered by asking the
+  application, by reading its source, or by looking at a picture, against
+  Dewey, egui and iced. It contradicts the assumption the other benchmarks
+  make. A full `get_tree` is 2021 estimated tokens and this TodoMVC's entire
+  egui source is 801, so on an application that small an agent that reads the
+  source once has paid less than one observation. The ontology wins on
+  targeted reads (120 tokens), on change-polling (29), and on the three
+  questions of five that source cannot answer at any price — not on bulk. On
+  an application three times the size, which is still tiny, asking is ahead
+  from the first observation. Run in CI, and its assertions are about that
+  shape rather than the numbers.
+
+
 - MCP `initialize` returns `instructions`, and the tool descriptions say why
   to call them rather than read the application's source. The performance case
   for an ontology assumes the agent asks it; a model that has not been told

@@ -234,10 +234,12 @@ a model reads before it decides:
       project: it is what a client puts in front of the model.
 - [x] Tool descriptions say why to call them rather than reading the source,
       and a test asserts they keep saying it
-- [ ] Measure the gap: tokens to answer "which widget do I press to add a
-      todo" from `get_tree` against reading the application's source. The
-      benchmarks compare Dewey to other frameworks and not to the failure mode
-      that actually costs money
+- [x] `benches/scaffold/src/bin/observation_cost.rs` prices five questions an
+      agent has to answer, three ways: ask the application, read its source,
+      or look at a picture. It found that a full `get_tree` costs more than
+      this TodoMVC's entire source — the ontology wins on targeted reads, on
+      change-polling, and on the three questions source cannot answer at any
+      price, not on bulk. Run in CI
 - [ ] A short prompt fragment applications can paste into an agent's system
       prompt, for clients that surface no MCP instructions
 

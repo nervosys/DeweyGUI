@@ -48,7 +48,10 @@ fn tokens(text: &str) -> usize {
         }
         n += 1;
         if c.is_alphanumeric() || c == '_' {
-            while chars.peek().is_some_and(|c| c.is_alphanumeric() || *c == '_') {
+            while chars
+                .peek()
+                .is_some_and(|c| c.is_alphanumeric() || *c == '_')
+            {
                 chars.next();
             }
         }
@@ -254,13 +257,21 @@ fn compiling_mistakes() {
     let cases: [Case; 6] = [
         ("button rendered with no id", forgot_the_id, true),
         ("id copy-pasted onto two widgets", copy_pasted_the_id, true),
-        ("layout arithmetic leaves no room", band_arithmetic_off, true),
+        (
+            "layout arithmetic leaves no room",
+            band_arithmetic_off,
+            true,
+        ),
         (
             "widget positioned past the edge",
             positioned_past_the_edge,
             true,
         ),
-        ("widget wired for one of its actions", wired_half_the_widget, true),
+        (
+            "widget wired for one of its actions",
+            wired_half_the_widget,
+            true,
+        ),
         ("nothing wrong", correct, false),
     ];
 
@@ -345,7 +356,10 @@ fn compiler_mistakes(root: &Path) -> Option<Duration> {
     let warm = format!("{preamble}let _ = frame.area;{postamble}");
     check(&warm)?;
 
-    println!("  {:<38} {:>12} {:>10}", "mistake", "cargo check", "rejected");
+    println!(
+        "  {:<38} {:>12} {:>10}",
+        "mistake", "cargo check", "rejected"
+    );
     let mut total = Duration::ZERO;
     let mut n = 0;
     for (name, body) in probes {
@@ -406,7 +420,11 @@ fn the_loop(compile: Option<Duration>) {
     if let Some(c) = compile {
         println!("  {:<38} {:>12}", "cargo check (mean of section 3)", fmt(c));
     }
-    println!("  {:<38} {:>12}", "validate a rendered interface", fmt(t_validate));
+    println!(
+        "  {:<38} {:>12}",
+        "validate a rendered interface",
+        fmt(t_validate)
+    );
     if let Some(c) = compile {
         println!(
             "\n  {:.0}x apart. That gap is the argument, and it is smaller than it\n  \

@@ -24,10 +24,7 @@ impl eframe::App for App {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         egui::CentralPanel::default().show(ctx, |ui| {
             ui.horizontal(|ui| {
-                ui.add(
-                    egui::TextEdit::singleline(&mut self.input)
-                        .hint_text("What needs doing?"),
-                );
+                ui.add(egui::TextEdit::singleline(&mut self.input).hint_text("What needs doing?"));
                 if ui.button("Add").clicked() {
                     let title = self.input.trim().to_string();
                     if !title.is_empty() {

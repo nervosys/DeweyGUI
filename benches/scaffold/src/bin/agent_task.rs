@@ -84,7 +84,9 @@ impl Model for App {
             .on("filter_active", |a: &mut App| a.filter = Filter::Active)
             .render(f[1], frame);
         Button::new("Completed")
-            .on("filter_completed", |a: &mut App| a.filter = Filter::Completed)
+            .on("filter_completed", |a: &mut App| {
+                a.filter = Filter::Completed
+            })
             .render(f[2], frame);
 
         for (i, row) in self.visible().into_iter().zip(rows[2].rows(28.0)) {
@@ -112,7 +114,6 @@ impl Model for App {
             .on("clear_completed", |a: &mut App| a.todos.retain(|t| !t.done))
             .render(foot[1], frame);
     }
-
 }
 
 fn set_text(id: &str, text: &str) -> AgentRequest {
@@ -155,14 +156,38 @@ fn driver() -> HeadlessDriver<App> {
 
 fn task() -> Vec<(&'static str, AgentRequest)> {
     vec![
-        ("discover        (get_tree)", AgentRequest::GetTree { since: None, viewport: None }),
-        ("type item 1     (set_text)", set_text("new_todo", "write tests")),
+        (
+            "discover        (get_tree)",
+            AgentRequest::GetTree {
+                since: None,
+                viewport: None,
+            },
+        ),
+        (
+            "type item 1     (set_text)",
+            set_text("new_todo", "write tests"),
+        ),
         ("add item 1      (click add)", click("add")),
-        ("type item 2     (set_text)", set_text("new_todo", "ship it")),
+        (
+            "type item 2     (set_text)",
+            set_text("new_todo", "ship it"),
+        ),
         ("add item 2      (click add)", click("add")),
-        ("complete item 1 (toggle_0.toggle)", act("toggle_0", "toggle")),
-        ("filter active   (click filter_active)", click("filter_active")),
-        ("re-read tree    (get_tree)", AgentRequest::GetTree { since: None, viewport: None }),
+        (
+            "complete item 1 (toggle_0.toggle)",
+            act("toggle_0", "toggle"),
+        ),
+        (
+            "filter active   (click filter_active)",
+            click("filter_active"),
+        ),
+        (
+            "re-read tree    (get_tree)",
+            AgentRequest::GetTree {
+                since: None,
+                viewport: None,
+            },
+        ),
         (
             "verify counter  (get_state remaining)",
             AgentRequest::GetState {
@@ -198,7 +223,13 @@ fn main() {
         assert!(d.model().todos[0].done, "first todo was completed");
         assert_eq!(d.model().remaining(), 1, "one item left");
 
-        let tree = d.process_request(&AgentRequest::GetTree { since: None, viewport: None }).data.unwrap();
+        let tree = d
+            .process_request(&AgentRequest::GetTree {
+                since: None,
+                viewport: None,
+            })
+            .data
+            .unwrap();
         let shown = serde_json::to_string(&tree).unwrap();
         assert!(
             shown.contains("ship it"),
@@ -215,8 +246,13 @@ fn main() {
             .data
             .unwrap();
         let state = serde_json::to_string(&state).unwrap();
-        assert!(state.contains("1 items left"), "agent reads the count: {state}");
-        println!("task verified: 2 added, 1 completed, filter=active, footer reads \"1 items left\"");
+        assert!(
+            state.contains("1 items left"),
+            "agent reads the count: {state}"
+        );
+        println!(
+            "task verified: 2 added, 1 completed, filter=active, footer reads \"1 items left\""
+        );
         println!("the agent proved all of that with no window, no GPU, no screenshot.\n");
     }
 
@@ -254,20 +290,29 @@ fn main() {
 
     // What an agent pays to poll a screen that has not moved.
     let mut d = driver();
-    let first = d.process_request(&AgentRequest::GetTree { since: None, viewport: None });
+    let first = d.process_request(&AgentRequest::GetTree {
+        since: None,
+        viewport: None,
+    });
     let v = first.data.unwrap()["version"].as_u64().unwrap();
 
     let mut uncond = Duration::MAX;
     let mut cond = Duration::MAX;
     for _ in 0..ROUNDS {
         let t = Instant::now();
-        black_box(d.process_request(&AgentRequest::GetTree { since: None, viewport: None }));
+        black_box(d.process_request(&AgentRequest::GetTree {
+            since: None,
+            viewport: None,
+        }));
         let e = t.elapsed();
         if e < uncond {
             uncond = e;
         }
         let t = Instant::now();
-        black_box(d.process_request(&AgentRequest::GetTree { since: Some(v), viewport: None }));
+        black_box(d.process_request(&AgentRequest::GetTree {
+            since: Some(v),
+            viewport: None,
+        }));
         let e = t.elapsed();
         if e < cond {
             cond = e;

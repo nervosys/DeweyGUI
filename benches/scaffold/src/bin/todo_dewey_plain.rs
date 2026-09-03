@@ -59,9 +59,11 @@ impl Model for App {
         let rows = frame.area.rows_of(&[36.0, 32.0, h - 96.0, 28.0]);
 
         let top = rows[0].cols_of(&[rows[0].width - 80.0, 80.0]);
-        TextInput::new()
-            .placeholder("What needs doing?")
-            .render(top[0], frame, &mut self.input.borrow_mut());
+        TextInput::new().placeholder("What needs doing?").render(
+            top[0],
+            frame,
+            &mut self.input.borrow_mut(),
+        );
         Button::new("Add").on("add", App::add).render(top[1], frame);
 
         let f = rows[1].split_columns(3);
@@ -72,7 +74,9 @@ impl Model for App {
             .on("filter_active", |a: &mut App| a.filter = Filter::Active)
             .render(f[1], frame);
         Button::new("Completed")
-            .on("filter_completed", |a: &mut App| a.filter = Filter::Completed)
+            .on("filter_completed", |a: &mut App| {
+                a.filter = Filter::Completed
+            })
             .render(f[2], frame);
 
         for (i, row) in self.visible().into_iter().zip(rows[2].rows(28.0)) {
@@ -96,7 +100,6 @@ impl Model for App {
             .on("clear_completed", |a: &mut App| a.todos.retain(|t| !t.done))
             .render(foot[1], frame);
     }
-
 }
 
 fn main() -> std::result::Result<(), eframe::Error> {
