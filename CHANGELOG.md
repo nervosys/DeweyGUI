@@ -82,6 +82,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `HitMap::register_blocking` and `Frame::register_barrier`, for a widget
+  that must take the input it covers.
+
+
 - The AccessKit tree carries which node has focus. A screen reader announces
   the focused node and nothing else, so the tree the bridge published was a
   list that could be read to a user but not walked — the same defect as Tab
@@ -257,6 +261,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   identical whether or not the ontology is built.
 
 ### Fixed
+
+- **A modal dialog blocked nothing.** `Modal` dimmed what was behind it and
+  registered no bounds at all, so a click went straight through the backdrop
+  and pressed the button underneath — and once Tab worked, it walked into the
+  widgets the dialog was covering. The roadmap listed the widget as "dialog
+  overlay with backdrop dimming and input blocking". It now registers a
+  barrier over its area: everything drawn before it stops being clickable and
+  stops being a focus stop, and everything drawn after it — the dialog's own
+  buttons — behaves normally. A closed dialog blocks nothing, which is
+  asserted, or the test for the open case would prove nothing.
+
 
 - `Command::AgentAction` was a `log::debug!` and nothing else under the
   default backend — the same line, in the same position, as the one that left

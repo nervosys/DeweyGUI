@@ -204,6 +204,8 @@ struct HitEntry {
     agent_id: std::borrow::Cow<'static, str>,
     bounds: crate::core::rect::Rect,
     z_order: u32,
+    /// Whether this entry shuts out everything registered before it.
+    blocking: bool,
 }
 
 impl HitMap {
@@ -227,7 +229,49 @@ impl HitMap {
             agent_id: agent_id.into(),
             bounds,
             z_order,
+            blocking: false,
         });
+    }
+
+    /// Register bounds that shut out everything registered before them.
+    ///
+    /// A modal dialog dimmed what was behind it and registered nothing, so a
+    /// click went straight through the backdrop and pressed the button
+    /// underneath, and Tab walked the widgets the dialog was covering. The
+    /// roadmap called that "input blocking".
+    ///
+    /// Everything drawn before the barrier stops being clickable and stops
+    /// being a focus stop; everything drawn after it — the dialog's own
+    /// buttons — behaves normally.
+    pub fn register_blocking(
+        &mut self,
+        agent_id: impl Into<std::borrow::Cow<'static, str>>,
+        bounds: crate::core::rect::Rect,
+        z_order: u32,
+    ) {
+        self.entries.push(HitEntry {
+            agent_id: agent_id.into(),
+            bounds,
+            z_order,
+            blocking: true,
+        });
+    }
+
+    /// The last barrier's index, if one was registered.
+    fn barrier(&self) -> Option<usize> {
+        self.entries.iter().rposition(|e| e.blocking)
+    }
+
+    /// Where clickable entries start: the barrier itself, which is what
+    /// swallows a click on the dimmed area.
+    fn clickable_from(&self) -> usize {
+        self.barrier().unwrap_or_default()
+    }
+
+    /// Where focus stops start: past the barrier. A backdrop is something a
+    /// click lands on, not somewhere Tab should stop.
+    fn focusable_from(&self) -> usize {
+        self.barrier().map_or(0, |i| i + 1)
     }
 
     /// The widgets that can take keyboard focus, in the order they rendered.
@@ -239,7 +283,7 @@ impl HitMap {
     /// Duplicates are dropped: a widget that registers twice is one stop.
     pub fn focusables(&self) -> Vec<String> {
         let mut seen: Vec<String> = Vec::with_capacity(self.entries.len());
-        for entry in &self.entries {
+        for entry in &self.entries[self.focusable_from()..] {
             let id = entry.agent_id.as_ref();
             if !seen.iter().any(|s| s == id) {
                 seen.push(id.to_string());
@@ -258,7 +302,7 @@ impl HitMap {
 
     /// Find the widget at the given position (highest z-order wins).
     pub fn hit_test(&self, pos: Position) -> Option<&str> {
-        self.entries
+        self.entries[self.clickable_from()..]
             .iter()
             .filter(|e| e.bounds.contains(pos))
             .max_by_key(|e| e.z_order)

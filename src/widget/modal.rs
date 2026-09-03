@@ -200,6 +200,19 @@ impl Widget for Modal {
             frame.register_widget(node);
         }
 
+        // The backdrop takes the clicks it covers. Without this the dialog
+        // dimmed the interface and blocked nothing: a click landed on the
+        // widget underneath and Tab walked straight into it.
+        frame.register_barrier(
+            if self.agent_id.is_empty() {
+                std::borrow::Cow::Borrowed("modal_backdrop")
+            } else {
+                self.agent_id.clone()
+            },
+            area,
+            u32::MAX,
+        );
+
         // Backdrop
         frame
             .painter()

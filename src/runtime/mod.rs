@@ -358,6 +358,19 @@ impl<'a> Frame<'a> {
         self.hit_map.register(agent_id, bounds, z_order);
     }
 
+    /// Register bounds that shut out everything drawn before them.
+    ///
+    /// What a modal dialog needs: a click over the backdrop must not reach the
+    /// button it is covering, and Tab must not walk into it.
+    pub fn register_barrier(
+        &mut self,
+        agent_id: impl Into<std::borrow::Cow<'static, str>>,
+        bounds: Rect,
+        z_order: u32,
+    ) {
+        self.hit_map.register_blocking(agent_id, bounds, z_order);
+    }
+
     /// Register the message to dispatch when `agent_id` is activated.
     ///
     /// Widgets call this from [`Widget::action`](crate::widget::Button::action).

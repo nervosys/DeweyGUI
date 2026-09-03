@@ -184,3 +184,112 @@ fn the_focused_widget_is_drawn_with_a_ring() {
         d.painted()
     );
 }
+
+// ── a modal takes the input it covers ───────────────────────────────────
+
+struct Dialog {
+    pressed_behind: bool,
+    confirmed: bool,
+    open: bool,
+}
+
+impl Model for Dialog {
+    type Msg = ();
+
+    fn update(&mut self, _m: ()) -> Command<()> {
+        Command::None
+    }
+
+    fn view(&self, frame: &mut Frame<'_>) {
+        let rows = frame.area.rows_of(&[40.0, 40.0]);
+        Button::new("Behind")
+            .on("behind", |d: &mut Dialog| d.pressed_behind = true)
+            .render(rows[0], frame);
+
+        dewey::widget::Modal::new("Confirm", self.open)
+            .agent_id("dialog")
+            .render(frame.area, frame);
+
+        if self.open {
+            Button::new("OK")
+                .on("ok", |d: &mut Dialog| d.confirmed = true)
+                .render(rows[1], frame);
+        }
+    }
+}
+
+fn dialog(open: bool) -> dewey::agent::driver::HeadlessDriver<Dialog> {
+    let mut d = dewey::agent::driver::HeadlessDriver::new(
+        Dialog {
+            pressed_behind: false,
+            confirmed: false,
+            open,
+        },
+        200.0,
+        200.0,
+    );
+    d.init();
+    d.process_request(&AgentRequest::GetTree {
+        since: None,
+        viewport: None,
+    });
+    d
+}
+
+/// A click on the backdrop does not reach the widget underneath.
+///
+/// The `Modal` dimmed what was behind it and registered nothing, so a click
+/// went straight through and pressed the button it was covering. The roadmap
+/// called that "input blocking".
+#[test]
+fn a_modal_takes_the_click_that_lands_on_it() {
+    let mut d = dialog(true);
+    d.process_request(&AgentRequest::InjectEvent {
+        event: InjectedEvent::MouseClick {
+            x: 20.0,
+            y: 20.0,
+            button: "left".into(),
+        },
+    });
+    assert!(
+        !d.model().pressed_behind,
+        "the click went through the dialog and pressed the button behind it"
+    );
+}
+
+/// With the dialog closed, the same click reaches the same button.
+#[test]
+fn a_closed_modal_blocks_nothing() {
+    let mut d = dialog(false);
+    d.process_request(&AgentRequest::InjectEvent {
+        event: InjectedEvent::MouseClick {
+            x: 20.0,
+            y: 20.0,
+            button: "left".into(),
+        },
+    });
+    assert!(
+        d.model().pressed_behind,
+        "a closed dialog must not block anything, or the test above proves \
+         nothing about the dialog"
+    );
+}
+
+/// Tab does not walk into what the dialog covers.
+#[test]
+fn focus_does_not_walk_behind_a_modal() {
+    let mut d = dialog(true);
+    d.process_request(&key("tab", &[]));
+    assert_eq!(
+        d.focused_id(),
+        Some("ok"),
+        "Tab reached a widget the dialog is covering"
+    );
+
+    d.process_request(&key("tab", &[]));
+    assert_eq!(d.focused_id(), Some("ok"), "the ring is the dialog alone");
+
+    d.process_request(&key("enter", &[]));
+    assert!(d.model().confirmed);
+    assert!(!d.model().pressed_behind);
+}
