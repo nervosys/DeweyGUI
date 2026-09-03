@@ -89,10 +89,15 @@ dewey = "1"
 ```rust
 use dewey::prelude::*;
 
-struct App { count: i32 }
+struct App {
+    count: i32,
+}
 
 #[derive(Debug)]
-enum Msg { Increment, Decrement }
+enum Msg {
+    Increment,
+    Decrement,
+}
 
 impl Model for App {
     type Msg = Msg;
@@ -113,8 +118,12 @@ impl Model for App {
         // `action` names the widget and gives it the message to send, so a
         // person clicking it and an agent calling `execute_action("inc",
         // "click")` take the same path.
-        Button::new("+").action("inc", Msg::Increment).render(rows[1], frame);
-        Button::new("-").action("dec", Msg::Decrement).render(rows[2], frame);
+        Button::new("+")
+            .action("inc", Msg::Increment)
+            .render(rows[1], frame);
+        Button::new("-")
+            .action("dec", Msg::Decrement)
+            .render(rows[2], frame);
     }
 }
 
