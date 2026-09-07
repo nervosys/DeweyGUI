@@ -223,6 +223,13 @@ impl StatefulWidget for TextArea {
             for (action, handler) in self.handlers.drain(..) {
                 frame.register_message(self.agent_id.clone(), action, handler);
             }
+            // Same as `TextInput`: the actions here take text, and a click
+            // supplies a caret position at most. Clicking the field used to
+            // read as setting it to the empty string.
+            frame.register_click(
+                self.agent_id.clone(),
+                crate::runtime::ClickParams::Unavailable,
+            );
         }
 
         let border_radius = self.style.border_radius.unwrap_or(2.0);

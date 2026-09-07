@@ -209,6 +209,14 @@ impl StatefulWidget for TextInput {
             for (action, handler) in self.handlers.drain(..) {
                 frame.register_message(self.agent_id.clone(), action, handler);
             }
+            // `set_text` needs text and `insert` needs a character. A click
+            // puts a caret somewhere; it does not say what to type. Passing
+            // nothing read as the empty string, so clicking a text field
+            // cleared it.
+            frame.register_click(
+                self.agent_id.clone(),
+                crate::runtime::ClickParams::Unavailable,
+            );
         }
 
         // Background fill

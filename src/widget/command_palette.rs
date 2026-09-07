@@ -300,6 +300,13 @@ impl StatefulWidget for CommandPalette {
             for (action, handler) in self.handlers.drain(..) {
                 frame.register_message(self.agent_id.clone(), action, handler);
             }
+            // The palette's hitbox covers the whole window, most of which is
+            // the dimmed backdrop rather than a result. A click there is not
+            // a choice of command, and it used to be read as the first one.
+            frame.register_click(
+                self.agent_id.clone(),
+                crate::runtime::ClickParams::Unavailable,
+            );
         }
 
         if !state.open {

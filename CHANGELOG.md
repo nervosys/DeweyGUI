@@ -325,6 +325,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A click on any widget whose action takes a parameter applied the
+  handler's fallback instead of the click.** A click supplies a point; every
+  host supplied `serde_json::Value::Null` as the parameters, and each of these
+  handlers has an `unwrap_or` behind it. So a click anywhere on a 0..100
+  slider set it to **0** — outside the range on a 10..100 one — a click on any
+  tab selected the **first**, a click anywhere on a toolbar fired an item id
+  of `""`, a click on a text field set it to the **empty string**, and a click
+  in either panel of a splitter snapped the divider to the **middle**.
+  Fourteen widgets were in that position. Nothing reported any of it: the
+  action succeeded, it just did something nobody asked for.
+
+  A widget now says what a click on it means, through `ClickParams`:
+  `FromPosition` maps the point to parameters, `Ignored` is for a handler that
+  reads none, and `Unavailable` means a click cannot answer and so does
+  nothing. `Slider`, `Tabs`, `List`, `Table` and `Toolbar` map the point —
+  including the case of landing on no row, which returns nothing rather than
+  clamping to the nearest, because clamping is how clicking below a list comes
+  to select its last row. The rest declare `Unavailable` with the reason in a
+  comment: `set_text` needs text, `scroll_to` needs a destination, and a
+  `Select` paints no options to aim at.
+
+  Hosts activate through `Handlers::apply_primary_at`, which takes the
+  position. `None` is the keyboard case — Enter on a focused slider does
+  nothing rather than zeroing it. `tests/click_position.rs` fails for a
+  clickable widget with a valued handler that does not declare, and
+  `tests/backend_parity.rs` fails for a host that activates without passing
+  the coordinates. Both were verified by breaking what they catch.
 - The MCP description of `batch_actions` still said "atomically". The protocol
   reference stopped claiming that when it turned out a failing entry did not
   even stop the ones after it; the same claim survived in the one place a

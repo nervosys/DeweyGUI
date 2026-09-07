@@ -457,7 +457,7 @@ impl<M: Model + 'static> HeadlessDriver<M> {
                             // Clicking a widget focuses it, so a keyboard user
                             // continues from where the pointer left off.
                             self.focus.focus_on(&id);
-                            self.dispatch_primary(&id);
+                            self.dispatch_primary(&id, Some(m.position));
                         }
                     }
                 }
@@ -467,7 +467,7 @@ impl<M: Model + 'static> HeadlessDriver<M> {
                     if k.kind == crate::event::KeyEventKind::Press {
                         match crate::focus::handle_key(k, &mut self.focus) {
                             crate::focus::FocusAction::Activate(id) => {
-                                self.dispatch_primary(&id);
+                                self.dispatch_primary(&id, None);
                             }
                             crate::focus::FocusAction::Moved
                             | crate::focus::FocusAction::Ignored => {}
@@ -856,8 +856,11 @@ impl<M: Model + 'static> HeadlessDriver<M> {
         ))
     }
 
-    fn dispatch_primary(&mut self, agent_id: &str) -> bool {
-        let Some(cmd) = self.handlers.apply_primary(agent_id, &mut self.model) else {
+    fn dispatch_primary(&mut self, agent_id: &str, at: Option<crate::core::Position>) -> bool {
+        let Some(cmd) = self
+            .handlers
+            .apply_primary_at(agent_id, at, &mut self.model)
+        else {
             return false;
         };
         self.process_command(cmd);

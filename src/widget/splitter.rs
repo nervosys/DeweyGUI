@@ -235,6 +235,14 @@ impl StatefulWidget for Splitter {
             frame.register_hitbox(self.agent_id.clone(), area, 1);
             if let Some(handler) = self.on_value.take() {
                 frame.register_message(self.agent_id.clone(), "set_ratio", handler);
+                // Moving a divider is a drag, not a click: a click inside panel A
+                // is not a request to put the divider there. It used to pass no
+                // ratio at all, which the handler read as 0.5 — so clicking
+                // either panel snapped the split to the middle.
+                frame.register_click(
+                    self.agent_id.clone(),
+                    crate::runtime::ClickParams::Unavailable,
+                );
             }
         }
 

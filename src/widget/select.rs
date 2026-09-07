@@ -152,6 +152,16 @@ impl StatefulWidget for Select {
             frame.register_hitbox(self.agent_id.clone(), area, 1);
             if let Some(handler) = self.on_value.take() {
                 frame.register_message(self.agent_id.clone(), "select", handler);
+                // `select` needs an index and this widget paints no options
+                // to aim at: it shows the current value and an arrow, and
+                // the list is never drawn. A click therefore says nothing
+                // about which option was meant, and used to say `0`.
+                // Opening a real dropdown is what `OverlayStack` is for, and
+                // nothing drives that yet.
+                frame.register_click(
+                    self.agent_id.clone(),
+                    crate::runtime::ClickParams::Unavailable,
+                );
             }
         }
 

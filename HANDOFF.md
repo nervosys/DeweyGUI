@@ -24,6 +24,7 @@ The ones that mattered most, in the order a user would notice them:
 | **`Command::AgentAction`** | a `log::debug!` under the default backend — the same line, in the same position, that had made both network transports unable to act. |
 | **The plugin system** | ran only under `agpu-backend`. `Program` had no `with_plugin` at all, and agpu dropped two of the four contributions plugins make. |
 | **The AccessKit tree** | published every widget and marked none focused, so a screen reader could be read the interface but not walk it. |
+| **Clicking a slider, tab, list, table, toolbar, text field or splitter** | did something other than what the click said. A click carries a point and the hosts passed no parameters, so each handler applied its own `unwrap_or` default: a 0..100 slider went to 0, any tab selected the first, a text field cleared itself. Fourteen widgets, and nothing reported it — the action succeeded. |
 | **`Event::DragDrop`** | cannot be delivered by any host. Documented as such rather than fixed. |
 
 Three modules described work they do not do (`memory`, `gpu`, `theme`), two

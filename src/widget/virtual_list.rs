@@ -215,6 +215,13 @@ where
         if !self.agent_id.is_empty() {
             if let Some(handler) = self.on_scroll.take() {
                 frame.register_message(self.agent_id.clone(), "scroll_to", handler);
+                // `scroll_to` takes a destination index. A click lands on a row
+                // that is already visible, which is not a request to scroll
+                // anywhere; it used to be read as scrolling to the top.
+                frame.register_click(
+                    self.agent_id.clone(),
+                    crate::runtime::ClickParams::Unavailable,
+                );
             }
         }
 

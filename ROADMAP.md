@@ -24,6 +24,10 @@ Agentic-first GUI framework for Rust with pluggable rendering backends.
       activate, and a focus ring the runtime draws. Driven by the default
       backend, agpu and the headless driver through one implementation, so an
       agent can Tab through an interface exactly as a person does
+- [x] Click parameters (`ClickParams`) — a widget whose action takes a
+      parameter says what a click on it supplies. `Slider`, `Tabs`, `List`,
+      `Table` and `Toolbar` map the point; the rest declare that a click
+      cannot answer and do nothing rather than applying a default
 - [x] Theme system (semantic tokens, dark/light presets, custom themes)
 - [~] Overlay manager for layered rendering (`OverlayStack`) — no frame
       renders a stack and no backend hit-tests against one, so an overlay

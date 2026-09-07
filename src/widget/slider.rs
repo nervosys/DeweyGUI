@@ -186,6 +186,26 @@ impl StatefulWidget for Slider {
             frame.register_hitbox(self.agent_id.clone(), area, 1);
             if let Some(handler) = self.on_value.take() {
                 frame.register_message(self.agent_id.clone(), "set_value", handler);
+                // A click on a track means the value under the pointer. Every
+                // host used to pass no parameters at all, and `set_value`
+                // reads `value` with an `unwrap_or(0.0)` behind it, so a click
+                // anywhere on a 10..100 slider set it to 0 — outside its own
+                // range.
+                let (min, max, step) = (self.min, self.max, self.step);
+                frame.register_click(
+                    self.agent_id.clone(),
+                    crate::runtime::ClickParams::from_position(move |at| {
+                        if area.width <= 0.0 || max <= min {
+                            return None;
+                        }
+                        let frac = ((at.x - area.x) / area.width).clamp(0.0, 1.0) as f64;
+                        let mut value = min + frac * (max - min);
+                        if step > 0.0 {
+                            value = min + ((value - min) / step).round() * step;
+                        }
+                        Some(serde_json::json!({ "value": value.clamp(min, max) }))
+                    }),
+                );
             }
         }
 

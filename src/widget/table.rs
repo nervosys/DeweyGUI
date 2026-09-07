@@ -6,6 +6,12 @@ use crate::ontology::*;
 use crate::runtime::Frame;
 use crate::widget::StatefulWidget;
 
+/// The height of the header row and of every data row.
+///
+/// Named because the click map and the painting have to agree: the same
+/// constant in two places is how a click lands one row off.
+const ROW_HEIGHT: f32 = 24.0;
+
 /// Sort direction for table columns.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SortDirection {
@@ -408,15 +414,43 @@ impl StatefulWidget for Table {
                 frame.register_widget(node);
             }
             frame.register_hitbox(self.agent_id.clone(), area, 1);
+            // What a click means depends on which action a click would fire,
+            // and that is the first handler registered. Read before draining.
+            let primary = self.handlers.first().map(|(action, _)| *action);
             for (action, handler) in self.handlers.drain(..) {
                 frame.register_message(self.agent_id.clone(), action, handler);
             }
+            let click = match primary {
+                // A click selects the row under it. `index` is an index into
+                // the unsorted, unfiltered rows, which is what `selected_row`
+                // is compared against when painting — so the page's own row
+                // numbers are translated here rather than by the application.
+                Some("select_row") => {
+                    let rows: Vec<usize> = page_rows.to_vec();
+                    crate::runtime::ClickParams::from_position(move |at| {
+                        // Row 0 is the header, and a click on it is a request
+                        // to sort, not to select. `sort` needs a column and a
+                        // direction, so it is left alone rather than guessed.
+                        let display = ((at.y - area.y) / ROW_HEIGHT).floor() - 1.0;
+                        if display < 0.0 {
+                            return None;
+                        }
+                        rows.get(display as usize)
+                            .map(|row| serde_json::json!({ "index": row }))
+                    })
+                }
+                // `sort` needs a column and a direction, `filter` needs text.
+                // A pointer landing on the table answers neither, and passing
+                // nothing meant sorting by column 0 ascending on any click.
+                _ => crate::runtime::ClickParams::Unavailable,
+            };
+            frame.register_click(self.agent_id.clone(), click);
         }
 
         frame.painter().push_clip(area);
         let col_count = self.headers.len().max(1);
         let col_w = area.width / col_count as f32;
-        let row_h = 24.0;
+        let row_h = ROW_HEIGHT;
         let mut header_ts = self.style.resolved_text();
         header_ts.weight = crate::core::style::FontWeight::Bold;
         let cell_ts = self.style.resolved_text();

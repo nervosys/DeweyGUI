@@ -5,6 +5,12 @@ use crate::ontology::*;
 use crate::runtime::Frame;
 use crate::widget::StatefulWidget;
 
+/// The height of one row.
+///
+/// Named because the click map and the painting have to agree: a constant
+/// in two places is how a click lands one row off.
+const ITEM_HEIGHT: f32 = 24.0;
+
 /// List state.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct ListState {
@@ -174,11 +180,27 @@ impl StatefulWidget for List {
             frame.register_hitbox(self.agent_id.clone(), area, 1);
             if let Some(handler) = self.on_value.take() {
                 frame.register_message(self.agent_id.clone(), "select", handler);
+                // A click selects the row it landed on. Rows are 24 tall from
+                // the top of the area; a click below the last one selects
+                // nothing, which is the case that matters — clamping is how
+                // clicking empty space comes to select the last row, and
+                // passing no index at all is how it used to select the first.
+                let rows = self.items.len();
+                frame.register_click(
+                    self.agent_id.clone(),
+                    crate::runtime::ClickParams::from_position(move |at| {
+                        let row = ((at.y - area.y) / ITEM_HEIGHT).floor();
+                        if row < 0.0 || row as usize >= rows {
+                            return None;
+                        }
+                        Some(serde_json::json!({ "index": row as usize }))
+                    }),
+                );
             }
         }
 
         frame.painter().push_clip(area);
-        let item_h = 24.0;
+        let item_h = ITEM_HEIGHT;
         let ts = self.style.resolved_text();
         for (i, item) in self.items.iter().enumerate() {
             let y = area.y + i as f32 * item_h;

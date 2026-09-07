@@ -237,6 +237,14 @@ impl StatefulWidget for ColorPicker {
             if let Some(handler) = self.on_color.take() {
                 frame.register_message(self.agent_id.clone(), "set_color", handler);
             }
+            // `set_color` takes a colour. Reading one out of a click means
+            // reproducing the saturation-value square's geometry here, which
+            // is not written; a click used to pass no colour at all and the
+            // handler read that as black.
+            frame.register_click(
+                self.agent_id.clone(),
+                crate::runtime::ClickParams::Unavailable,
+            );
         }
 
         if !self.agent_id.is_empty() {

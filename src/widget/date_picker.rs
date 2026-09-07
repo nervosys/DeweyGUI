@@ -397,6 +397,14 @@ impl StatefulWidget for DatePicker {
             for (action, handler) in self.handlers.drain(..) {
                 frame.register_message(self.agent_id.clone(), action, handler);
             }
+            // The calendar grid is painted only when the picker is open, and
+            // mapping a point to a day means reproducing that layout here.
+            // Until it is, a click says nothing about which date was meant —
+            // it used to say the default one.
+            frame.register_click(
+                self.agent_id.clone(),
+                crate::runtime::ClickParams::Unavailable,
+            );
         }
 
         let ts = self.style.resolved_text();

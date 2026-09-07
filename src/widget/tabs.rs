@@ -156,9 +156,14 @@ impl StatefulWidget for Tabs {
         let ts = self.style.resolved_text();
         let active_bg = self.style.background.unwrap_or(Color::DARK_GRAY);
         let mut x = area.x;
+        // The widths are `measure_text` results, so where each tab is cannot
+        // be known before the frame runs. Collected here and handed to the
+        // click map below.
+        let mut tab_spans: Vec<(f32, f32)> = Vec::with_capacity(self.labels.len());
         for (i, label) in self.labels.iter().enumerate() {
             let text_w = frame.painter().measure_text(label, &ts).width + 16.0;
             let tab_rect = Rect::new(x, area.y, text_w, tab_h);
+            tab_spans.push((x, text_w));
             if state.selected == i {
                 frame.painter().fill_rect(tab_rect, active_bg, 4.0);
             }
@@ -167,6 +172,25 @@ impl StatefulWidget for Tabs {
                 .text(Position::new(x + 8.0, area.y + 6.0), label, &ts);
             x += text_w;
         }
+        // A click selects the tab it landed on. Registered after painting
+        // because that is when the widths are known; before this, a click on
+        // any tab passed no index at all and the handler's `unwrap_or(0)`
+        // selected the first one.
+        if !self.agent_id.is_empty() {
+            frame.register_click(
+                self.agent_id.clone(),
+                crate::runtime::ClickParams::from_position(move |at| {
+                    if at.y < area.y || at.y > area.y + tab_h {
+                        return None;
+                    }
+                    tab_spans
+                        .iter()
+                        .position(|(x, w)| at.x >= *x && at.x < *x + *w)
+                        .map(|i| serde_json::json!({ "index": i }))
+                }),
+            );
+        }
+
         // Bottom border
         frame.painter().line(
             Position::new(area.x, area.y + tab_h),

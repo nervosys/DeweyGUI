@@ -144,6 +144,12 @@ impl Widget for Radio {
             if let Some(handler) = self.on_value.take() {
                 frame.register_message(self.agent_id.clone(), "select", handler);
             }
+            // The handler ignores its parameters — selecting a radio means
+            // selecting this one, and there is nothing else to say — so a
+            // click activates it. Declared rather than left to a default,
+            // because "this handler needs no parameters" and "nobody
+            // thought about it" looked identical from outside.
+            frame.register_click(self.agent_id.clone(), crate::runtime::ClickParams::Ignored);
         }
 
         let radius = 8.0;

@@ -236,6 +236,9 @@ pub struct Frame<'a> {
         &'static str,
         Box<dyn std::any::Any + Send>,
     )>,
+    /// What a click on a widget means, for the widgets whose action takes
+    /// parameters a click has to supply. See [`ClickParams`].
+    clicks: Vec<(std::borrow::Cow<'static, str>, ClickParams)>,
     /// Interactive widgets that rendered without an id, and so cannot be
     /// clicked or addressed. Collected here because such a widget never
     /// reaches the UI tree to be noticed afterwards.
@@ -284,6 +287,7 @@ impl<'a> Frame<'a> {
             painter,
             ontology,
             messages: Vec::new(),
+            clicks: Vec::new(),
             unaddressable: Vec::new(),
             skipped: 0,
             viewport: None,
@@ -385,6 +389,24 @@ impl<'a> Frame<'a> {
         self.messages.push((agent_id.into(), action, msg));
     }
 
+    /// Say what a click on this widget means, for an action that takes
+    /// parameters.
+    ///
+    /// Call it after painting when the mapping depends on the layout the
+    /// frame just computed. See [`ClickParams`].
+    pub fn register_click(
+        &mut self,
+        agent_id: impl Into<std::borrow::Cow<'static, str>>,
+        params: ClickParams,
+    ) {
+        self.clicks.push((agent_id.into(), params));
+    }
+
+    /// Take the click behaviours widgets registered this frame.
+    pub fn take_clicks(&mut self) -> Vec<(std::borrow::Cow<'static, str>, ClickParams)> {
+        std::mem::take(&mut self.clicks)
+    }
+
     /// Record that an interactive widget rendered with no id.
     ///
     /// Such a widget looks correct on screen but is dead: no hitbox, no
@@ -432,6 +454,70 @@ pub type Mutation<M> = Box<dyn FnOnce(&mut M) + Send>;
 /// `execute_action(id, "set_text", {"text": ...})`, by the same path.
 pub type ValueMutation<M> = Box<dyn FnOnce(&mut M, &serde_json::Value) + Send>;
 
+/// How a physical click supplies the parameters an action needs.
+///
+/// A widget action may take parameters — `select` takes an `index`,
+/// `set_value` takes a `value` — and an agent calling `execute_action`
+/// supplies them. A click supplies a point and nothing else, so every host
+/// passed `serde_json::Value::Null` and every one of those handlers has an
+/// `unwrap_or` behind it. The result was not that the click did nothing: a
+/// click anywhere on a 0..100 slider set it to 0, and a click on any tab
+/// selected the first. A wrong answer nothing reports is worse than none.
+///
+/// So a widget that registers a valued handler says here what a click on it
+/// means. The choice is per widget because only the widget knows its own
+/// layout, and it is mandatory: `tests/click_position.rs` fails for a widget
+/// that registers a valued handler and does not say.
+pub enum ClickParams {
+    /// The handler ignores its parameters, so a click simply activates it.
+    Ignored,
+    /// The widget turns a point inside its bounds into the parameters.
+    ///
+    /// Registered after painting, so the closure can capture the layout the
+    /// widget just computed — tab widths come from `measure_text` and are
+    /// not known before the frame runs.
+    ///
+    /// Returning `None` means the point was inside the widget and on nothing
+    /// in particular — below the last row of a list, say. The action does not
+    /// fire, which is the whole point: the alternative is selecting row 0.
+    FromPosition(Box<dyn Fn(crate::core::Position) -> Option<serde_json::Value> + Send>),
+    /// A click cannot say what this action needs, so it does nothing.
+    ///
+    /// `set_text` needs text and `scroll_to` needs a destination; a pointer
+    /// landing on the widget is not an answer to either. The action stays
+    /// available to `execute_action`, which does supply parameters.
+    Unavailable,
+}
+
+impl ClickParams {
+    /// Map a point to parameters with a closure.
+    pub fn from_position(
+        f: impl Fn(crate::core::Position) -> Option<serde_json::Value> + Send + 'static,
+    ) -> Self {
+        Self::FromPosition(Box::new(f))
+    }
+
+    /// The parameters a click at `at` supplies, or `None` when it supplies
+    /// none and the action must not fire.
+    fn resolve(&self, at: Option<crate::core::Position>) -> Option<serde_json::Value> {
+        match self {
+            Self::Ignored => Some(serde_json::Value::Null),
+            Self::Unavailable => None,
+            Self::FromPosition(f) => at.and_then(f),
+        }
+    }
+}
+
+impl std::fmt::Debug for ClickParams {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            Self::Ignored => "Ignored",
+            Self::FromPosition(_) => "FromPosition",
+            Self::Unavailable => "Unavailable",
+        })
+    }
+}
+
 /// The changes the widgets of one frame registered, keyed by widget *and*
 /// action.
 ///
@@ -446,6 +532,9 @@ pub type ValueMutation<M> = Box<dyn FnOnce(&mut M, &serde_json::Value) + Send>;
 /// fix the other.
 pub struct Handlers<M> {
     entries: Vec<(String, &'static str, Box<dyn std::any::Any + Send>)>,
+    /// What a click on a widget supplies, for the widgets that said. Absent
+    /// means the handler takes no parameters, which is the Button case.
+    clicks: Vec<(String, ClickParams)>,
     model: std::marker::PhantomData<fn(&mut M)>,
 }
 
@@ -453,6 +542,7 @@ impl<M> Default for Handlers<M> {
     fn default() -> Self {
         Self {
             entries: Vec::new(),
+            clicks: Vec::new(),
             model: std::marker::PhantomData,
         }
     }
@@ -475,6 +565,11 @@ impl<M: Model + 'static> Handlers<M> {
                 .into_iter()
                 .map(|(id, action, msg)| (id.into_owned(), action, msg))
                 .collect(),
+            clicks: frame
+                .take_clicks()
+                .into_iter()
+                .map(|(id, params)| (id.into_owned(), params))
+                .collect(),
             model: std::marker::PhantomData,
         }
     }
@@ -482,6 +577,7 @@ impl<M: Model + 'static> Handlers<M> {
     /// Forget everything registered.
     pub fn clear(&mut self) {
         self.entries.clear();
+        self.clicks.clear();
     }
 
     /// The `(widget, action)` pairs that have a handler, in registration order.
@@ -501,8 +597,34 @@ impl<M: Model + 'static> Handlers<M> {
     /// it", and this project has now twice watched the third copy of something
     /// be the one that disagreed.
     pub fn apply_primary(&mut self, agent_id: &str, model: &mut M) -> Option<Command<M::Msg>> {
+        self.apply_primary_at(agent_id, None, model)
+    }
+
+    /// Activate `agent_id` the way a click at `at` does.
+    ///
+    /// This is the one a host calls: a click lands somewhere, and a widget
+    /// whose action takes parameters needs to be told where. Passing `None`
+    /// is the keyboard case — Enter on a focused widget — and a widget that
+    /// needs a position is not activated by it, rather than being activated
+    /// with a made-up one.
+    ///
+    /// Every host goes through here. Each used to keep its own copy of "look
+    /// up the primary action, then apply it", and this project has twice
+    /// watched the third copy of something be the one that disagreed.
+    pub fn apply_primary_at(
+        &mut self,
+        agent_id: &str,
+        at: Option<crate::core::Position>,
+        model: &mut M,
+    ) -> Option<Command<M::Msg>> {
         let action = self.primary_action(agent_id)?;
-        self.apply(agent_id, action, &serde_json::Value::Null, model)
+        // A widget that said nothing takes no parameters: a `Button` carries a
+        // message and a `Checkbox` a mutation, and neither reads the value.
+        let params = match self.clicks.iter().find(|(id, _)| id == agent_id) {
+            Some((_, click)) => click.resolve(at)?,
+            None => serde_json::Value::Null,
+        };
+        self.apply(agent_id, action, &params, model)
     }
 
     /// The action a click on `agent_id` should fire: the first one registered.
@@ -1151,8 +1273,11 @@ impl<M: Model + 'static> eframe::App for DeweyApp<M> {
                         // Clicking a widget focuses it, so a keyboard user
                         // continues from where the pointer left off.
                         self.focus.focus_on(&id);
-                        if let Some(cmd) = self.handlers.apply_primary(&id, self.driver.model_mut())
-                        {
+                        if let Some(cmd) = self.handlers.apply_primary_at(
+                            &id,
+                            Some(m.position),
+                            self.driver.model_mut(),
+                        ) {
                             self.process_command(cmd);
                         }
                     }
@@ -1167,7 +1292,9 @@ impl<M: Model + 'static> eframe::App for DeweyApp<M> {
                     if let crate::focus::FocusAction::Activate(id) =
                         crate::focus::handle_key(k, &mut self.focus)
                     {
-                        if let Some(cmd) = self.handlers.apply_primary(&id, self.driver.model_mut())
+                        if let Some(cmd) =
+                            self.handlers
+                                .apply_primary_at(&id, None, self.driver.model_mut())
                         {
                             self.process_command(cmd);
                         }

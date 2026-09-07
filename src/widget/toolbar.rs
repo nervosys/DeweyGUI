@@ -212,6 +212,9 @@ impl Widget for Toolbar {
         let mut disabled_ts = ts.clone();
         disabled_ts.color = Color::GRAY;
         let mut x = area.x + 4.0;
+        // Where each button ends up depends on `measure_text`, so it is known
+        // only once the frame has run. Collected here for the click map below.
+        let mut spans: Vec<(f32, f32, bool, String)> = Vec::with_capacity(self.items.len());
         for item in &self.items {
             let style = if item.enabled { &ts } else { &disabled_ts };
             let sz = frame.painter().measure_text(&item.label, style);
@@ -227,7 +230,25 @@ impl Widget for Toolbar {
                 &item.label,
                 style,
             );
+            spans.push((x, btn_w, item.enabled, item.id.clone()));
             x += btn_w + 4.0;
+        }
+
+        // A click activates the button it landed on. A disabled one is drawn
+        // greyed and now behaves that way too. `click_item` takes an
+        // `item_id`, and a click supplied none — so the handler's
+        // `unwrap_or("")` handed the application an empty id and it looked
+        // like an item that does not exist was pressed.
+        if !self.agent_id.is_empty() {
+            frame.register_click(
+                self.agent_id.clone(),
+                crate::runtime::ClickParams::from_position(move |at| {
+                    spans
+                        .iter()
+                        .find(|(x, w, enabled, _)| *enabled && at.x >= *x && at.x < *x + *w)
+                        .map(|(_, _, _, id)| serde_json::json!({ "item_id": id }))
+                }),
+            );
         }
     }
 }

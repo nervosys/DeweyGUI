@@ -243,16 +243,26 @@ fn a_click_reaches_a_handler_on_every_host() {
              was pressed. Converting the click into an event and handing it to \
              `handle_event` leaves every `Button::action` inert"
         );
-        // `handlers.apply_primary(`, not the bare name: `Handlers` is defined
-        // in src/runtime/mod.rs, so the bare name is satisfied there by the
+        // `apply_primary_at(`, not the bare name: `Handlers` is defined in
+        // src/runtime/mod.rs, so the bare name is satisfied there by the
         // definition. The first version of this check passed with the default
         // backend's only call site renamed away.
         assert!(
-            text.contains("handlers.apply_primary("),
+            text.contains("apply_primary_at("),
             "{name} does not activate a widget through \
-             `Handlers::apply_primary`, which is the one path from a physical \
-             click to the action a widget advertises. Three hosts had three \
-             copies of it; the copies are what diverge"
+             `Handlers::apply_primary_at`, which is the one path from a \
+             physical click to the action a widget advertises. Three hosts \
+             had three copies of it; the copies are what diverge"
+        );
+        // The positional form, with a position. `apply_primary_at(id, None)`
+        // is the keyboard case and compiles just as well, so a host that
+        // forgets the click coordinates is back to a slider that zeroes
+        // itself when clicked, with the call site still looking right.
+        assert!(
+            text.contains("Some(m.position)"),
+            "{name} activates a widget without telling it where the click \
+             landed, so every widget whose action takes a parameter falls \
+             back to its handler's `unwrap_or` default"
         );
     }
 }

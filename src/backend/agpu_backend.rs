@@ -782,8 +782,11 @@ impl<M: Model + 'static> RunningApp<M> {
     /// A click is physical: it means "activate this widget", not any
     /// particular action name. A `Checkbox` advertises `toggle`, a `Button`
     /// advertises `click`, and pressing either must work.
-    fn dispatch_primary(&mut self, agent_id: &str) -> bool {
-        let Some(cmd) = self.handlers.apply_primary(agent_id, &mut self.model) else {
+    fn dispatch_primary(&mut self, agent_id: &str, at: Option<crate::core::Position>) -> bool {
+        let Some(cmd) = self
+            .handlers
+            .apply_primary_at(agent_id, at, &mut self.model)
+        else {
             return false;
         };
         self.process_command(cmd);
@@ -1007,7 +1010,7 @@ impl<M: Model + 'static> ApplicationHandler for AppHandler<M> {
                             // Clicking a widget focuses it, so a keyboard user
                             // continues from where the pointer left off.
                             app.focus.focus_on(&id);
-                            app.dispatch_primary(&id);
+                            app.dispatch_primary(&id, Some(m.position));
                         }
                     }
                 }
@@ -1019,7 +1022,7 @@ impl<M: Model + 'static> ApplicationHandler for AppHandler<M> {
                         if let crate::focus::FocusAction::Activate(id) =
                             crate::focus::handle_key(k, &mut app.focus)
                         {
-                            app.dispatch_primary(&id);
+                            app.dispatch_primary(&id, None);
                         }
                     }
                 }

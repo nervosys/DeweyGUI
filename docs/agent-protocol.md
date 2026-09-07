@@ -256,6 +256,17 @@ Inject a synthetic event into the application event pipeline.
 {"type": "inject_event", "event": {"kind": "mouse_click", "x": 100, "y": 200, "button": "left"}}
 ```
 
+The click lands on whatever the hit map says is under it, and the widget is
+told where. A widget whose action takes a parameter reads it from the point:
+a click three quarters along a 0..100 `Slider` means 75, and a click on the
+second tab means the second tab.
+
+A click that lands on the widget and on nothing in particular — below the
+last row of a `List`, past the last tab — does nothing. So does a click on a
+widget whose action a point cannot answer for: `set_text` needs text and
+`scroll_to` needs a destination. Use `execute_action` for those; it carries
+parameters and a click does not.
+
 #### Mouse move
 
 ```json
