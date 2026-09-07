@@ -79,12 +79,20 @@ Agentic-first GUI framework for Rust with pluggable rendering backends.
 - [x] Scroll — scrollable content container
 - [x] Container — styled box with padding/border
 - [x] Panel — named content section
-- [x] Menu — hierarchical menu with submenus
+- [~] Menu — the vocabulary only. `render` paints a title bar and no items:
+      the submenu structure is held, described to an agent and never drawn, so
+      there is nothing on screen to click and `select_item` is reachable only
+      through `execute_action`
 - [x] Tooltip — hover text with label display
-- [x] Tree — hierarchical expand/collapse with path-based actions
+- [x] Tree — hierarchical expand/collapse with path-based actions, reachable
+      by pointer and by Tab. It registered handlers and no hitbox, so an agent
+      could expand a node and a person could not
 - [x] Canvas — custom drawing surface with DrawCommand API (line, rect, circle, text)
 - [x] Image — URI and RGBA image display with fit modes (Cover, Contain, Fill, Original)
-- [x] Modal — dialog overlay with backdrop dimming and input blocking
+- [x] Modal — dialog overlay with backdrop dimming and input blocking. The
+      barrier registers at z 0, not `u32::MAX`: blocking is done by *being* a
+      barrier, and a backdrop that also outranked everything meant the dialog's
+      own buttons could not be pressed
 - [x] ColorPicker — HSV/hex color selection with preview
 - [x] Toolbar — action grouping with separators
 - [x] Splitter — resizable panels (horizontal/vertical)

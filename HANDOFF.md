@@ -25,6 +25,8 @@ The ones that mattered most, in the order a user would notice them:
 | **The plugin system** | ran only under `agpu-backend`. `Program` had no `with_plugin` at all, and agpu dropped two of the four contributions plugins make. |
 | **The AccessKit tree** | published every widget and marked none focused, so a screen reader could be read the interface but not walk it. |
 | **Clicking a slider, tab, list, table, toolbar, text field or splitter** | did something other than what the click said. A click carries a point and the hosts passed no parameters, so each handler applied its own `unwrap_or` default: a 0..100 slider went to 0, any tab selected the first, a text field cleared itself. Fourteen widgets, and nothing reported it — the action succeeded. |
+| **A button inside a modal** | could not be pressed. The backdrop blocked correctly *and* outranked the dialog's own widgets, because it registered at `u32::MAX` and nothing can register above that. |
+| **A `Tree`** | could be expanded by an agent and by no person: it registered handlers and no hitbox, so no click reached it and Tab could not either. |
 | **`Event::DragDrop`** | cannot be delivered by any host. Documented as such rather than fixed. |
 
 Three modules described work they do not do (`memory`, `gpu`, `theme`), two

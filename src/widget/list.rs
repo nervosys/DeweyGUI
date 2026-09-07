@@ -193,7 +193,9 @@ impl StatefulWidget for List {
                         if row < 0.0 || row as usize >= rows {
                             return None;
                         }
-                        Some(serde_json::json!({ "index": row as usize }))
+                        Some(crate::runtime::Click::params(
+                            serde_json::json!({ "index": row as usize }),
+                        ))
                     }),
                 );
             }

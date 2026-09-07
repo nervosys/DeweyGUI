@@ -480,7 +480,7 @@ pub enum ClickParams {
     /// Returning `None` means the point was inside the widget and on nothing
     /// in particular — below the last row of a list, say. The action does not
     /// fire, which is the whole point: the alternative is selecting row 0.
-    FromPosition(Box<dyn Fn(crate::core::Position) -> Option<serde_json::Value> + Send>),
+    FromPosition(Box<dyn Fn(crate::core::Position) -> Option<Click> + Send>),
     /// A click cannot say what this action needs, so it does nothing.
     ///
     /// `set_text` needs text and `scroll_to` needs a destination; a pointer
@@ -492,18 +492,61 @@ pub enum ClickParams {
 impl ClickParams {
     /// Map a point to parameters with a closure.
     pub fn from_position(
-        f: impl Fn(crate::core::Position) -> Option<serde_json::Value> + Send + 'static,
+        f: impl Fn(crate::core::Position) -> Option<Click> + Send + 'static,
     ) -> Self {
         Self::FromPosition(Box::new(f))
     }
 
-    /// The parameters a click at `at` supplies, or `None` when it supplies
-    /// none and the action must not fire.
-    fn resolve(&self, at: Option<crate::core::Position>) -> Option<serde_json::Value> {
+    /// What a click at `at` fires, or `None` when it fires nothing.
+    fn resolve(&self, at: Option<crate::core::Position>) -> Option<Click> {
         match self {
-            Self::Ignored => Some(serde_json::Value::Null),
+            Self::Ignored => Some(Click::none()),
             Self::Unavailable => None,
             Self::FromPosition(f) => at.and_then(f),
+        }
+    }
+}
+
+/// What a click turned out to mean: which action, with which parameters.
+///
+/// The action is usually the widget's primary one and is left unset. It is
+/// named when the point decides: clicking a `Tree` row means `expand` or
+/// `collapse` depending on the row it landed on, and a widget that can only
+/// ever fire the first action it registered can expand a tree and never
+/// collapse one.
+#[derive(Debug, Clone)]
+pub struct Click {
+    /// The action to fire, or `None` for the widget's primary one.
+    pub action: Option<&'static str>,
+    /// The parameters to fire it with.
+    pub params: serde_json::Value,
+}
+
+impl Click {
+    /// The primary action, with no parameters.
+    #[must_use]
+    pub fn none() -> Self {
+        Self {
+            action: None,
+            params: serde_json::Value::Null,
+        }
+    }
+
+    /// The primary action, with these parameters.
+    #[must_use]
+    pub fn params(params: serde_json::Value) -> Self {
+        Self {
+            action: None,
+            params,
+        }
+    }
+
+    /// A named action, with these parameters.
+    #[must_use]
+    pub fn action(action: &'static str, params: serde_json::Value) -> Self {
+        Self {
+            action: Some(action),
+            params,
         }
     }
 }
@@ -617,14 +660,17 @@ impl<M: Model + 'static> Handlers<M> {
         at: Option<crate::core::Position>,
         model: &mut M,
     ) -> Option<Command<M::Msg>> {
-        let action = self.primary_action(agent_id)?;
         // A widget that said nothing takes no parameters: a `Button` carries a
         // message and a `Checkbox` a mutation, and neither reads the value.
-        let params = match self.clicks.iter().find(|(id, _)| id == agent_id) {
-            Some((_, click)) => click.resolve(at)?,
-            None => serde_json::Value::Null,
+        let click = match self.clicks.iter().find(|(id, _)| id == agent_id) {
+            Some((_, params)) => params.resolve(at)?,
+            None => Click::none(),
         };
-        self.apply(agent_id, action, &params, model)
+        let action = match click.action {
+            Some(named) => named,
+            None => self.primary_action(agent_id)?,
+        };
+        self.apply(agent_id, action, &click.params, model)
     }
 
     /// The action a click on `agent_id` should fire: the first one registered.

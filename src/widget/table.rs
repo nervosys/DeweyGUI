@@ -435,8 +435,9 @@ impl StatefulWidget for Table {
                         if display < 0.0 {
                             return None;
                         }
-                        rows.get(display as usize)
-                            .map(|row| serde_json::json!({ "index": row }))
+                        rows.get(display as usize).map(|row| {
+                            crate::runtime::Click::params(serde_json::json!({ "index": row }))
+                        })
                     })
                 }
                 // `sort` needs a column and a direction, `filter` needs text.

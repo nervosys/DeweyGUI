@@ -203,7 +203,9 @@ impl StatefulWidget for Slider {
                         if step > 0.0 {
                             value = min + ((value - min) / step).round() * step;
                         }
-                        Some(serde_json::json!({ "value": value.clamp(min, max) }))
+                        Some(crate::runtime::Click::params(
+                            serde_json::json!({ "value": value.clamp(min, max) }),
+                        ))
                     }),
                 );
             }

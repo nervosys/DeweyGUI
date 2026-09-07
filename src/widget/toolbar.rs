@@ -246,7 +246,9 @@ impl Widget for Toolbar {
                     spans
                         .iter()
                         .find(|(x, w, enabled, _)| *enabled && at.x >= *x && at.x < *x + *w)
-                        .map(|(_, _, _, id)| serde_json::json!({ "item_id": id }))
+                        .map(|(_, _, _, id)| {
+                            crate::runtime::Click::params(serde_json::json!({ "item_id": id }))
+                        })
                 }),
             );
         }

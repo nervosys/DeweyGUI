@@ -346,6 +346,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A widget inside an open `Modal` could not be pressed.** The backdrop
+  registers a barrier so a click cannot fall through to what the dialog
+  covers — but it registered it at `u32::MAX`, and `hit_test` takes the
+  highest z-order among everything from the barrier onward. The backdrop
+  therefore outranked every widget the dialog itself drew, and nothing can
+  register above `u32::MAX`. The dimming worked, the blocking worked, and the
+  OK button did nothing. The blocking is done by *being* a barrier — `HitMap`
+  stops considering anything registered before one — so the z-order only ever
+  needed to lose to the dialog's own content, and is now 0.
+
+- **`Tree` could be operated by an agent and by nobody else.** It advertised
+  `expand`, `collapse`, `expand_all` and `collapse_all`, registered handlers
+  for all four, and registered no hitbox — so no click reached it, and because
+  the focus ring is built from the hit map, neither did Tab. It now registers
+  one, and a click on a branch toggles it: `ClickParams` learned to name the
+  action as well as the parameters, because a click that can only fire the
+  first handler registered can expand a tree and never collapse one.
+
+  Painting and hit-testing now come from one flatten of the visible rows
+  rather than two traversals, which is what keeps a click on the row it was
+  drawn on. `TreeNode::find_by_path` and `find_by_path_mut` are public:
+  `on_change` hands an application a `TreeChange::Expand(path)` and there was
+  no way in the public API to do anything with it.
+
+  `tests/click_position.rs` now also fails for a widget that registers a
+  handler and is reachable by no pointer at all, unless it is named with a
+  reason. Four are: `chart`, `rich_text` and `scroll`, whose actions are not
+  pointer gestures, and `menu`, which paints a title bar and no items — the
+  gap there is the painting, and ROADMAP.md now says so rather than marking it
+  complete.
 - **A click on any widget whose action takes a parameter applied the
   handler's fallback instead of the click.** A click supplies a point; every
   host supplied `serde_json::Value::Null` as the parameters, and each of these

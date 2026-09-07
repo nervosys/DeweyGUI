@@ -186,6 +186,16 @@ impl Widget for Modal {
             for (action, handler) in self.handlers.drain(..) {
                 frame.register_message(self.agent_id.clone(), action, handler);
             }
+            // A click on the dimmed backdrop lands on the barrier, which
+            // carries this widget's id, so it would fire the first action
+            // registered — `open`, on a dialog that is already open. Whether
+            // clicking outside should dismiss is the application's policy and
+            // not this widget's to invent, so a click does nothing and `close`
+            // stays available to a close button and to `execute_action`.
+            frame.register_click(
+                self.agent_id.clone(),
+                crate::runtime::ClickParams::Unavailable,
+            );
         }
         if !self.open {
             return;
@@ -210,7 +220,14 @@ impl Widget for Modal {
                 self.agent_id.clone()
             },
             area,
-            u32::MAX,
+            // Zero, not `u32::MAX`. The blocking is done by *being* a barrier:
+            // `HitMap` stops considering anything registered before one. The
+            // z-order only decides who wins among what comes after, which is
+            // the dialog's own content — so a backdrop at `u32::MAX` outranked
+            // every widget the dialog drew, and nothing can register above it.
+            // The dimming worked, the blocking worked, and the OK button could
+            // not be pressed.
+            0,
         );
 
         // Backdrop

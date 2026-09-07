@@ -1,6 +1,5 @@
 //! Tree widget — a hierarchical tree view.
 
-use crate::core::style::TextStyle;
 use crate::core::{Color, Position, Rect, Style};
 use crate::ontology::*;
 use crate::runtime::Frame;
@@ -34,7 +33,14 @@ impl TreeNode {
     }
 
     /// Find a mutable node by slash-separated path (e.g. "root/child/leaf").
-    fn find_by_path_mut(&mut self, path: &str) -> Option<&mut TreeNode> {
+    /// The node at `label/label/label` from this one, if there is one.
+    ///
+    /// Public because `on_change` hands an application a
+    /// [`TreeChange::Expand`] carrying exactly such a path, and until this
+    /// there was no way in the public API to do anything with it. A callback
+    /// whose payload the crate gives you no means to apply is a callback that
+    /// looks wired and is not.
+    pub fn find_by_path_mut(&mut self, path: &str) -> Option<&mut TreeNode> {
         let mut parts = path.splitn(2, '/');
         let head = parts.next()?;
         if self.label != head {
@@ -50,6 +56,24 @@ impl TreeNode {
     }
 
     /// Serialize the tree node hierarchy for the agent state.
+    /// The node at `label/label/label` from this one, without borrowing it
+    /// mutably.
+    #[must_use]
+    pub fn find_by_path(&self, path: &str) -> Option<&TreeNode> {
+        let mut parts = path.splitn(2, '/');
+        let head = parts.next()?;
+        if self.label != head {
+            return None;
+        }
+        match parts.next() {
+            None => Some(self),
+            Some(rest) => self
+                .children
+                .iter()
+                .find_map(|child| child.find_by_path(rest)),
+        }
+    }
+
     fn to_json(&self) -> serde_json::Value {
         serde_json::json!({
             "label": self.label,
@@ -303,38 +327,109 @@ impl Widget for Tree {
             frame.register_widget(node);
         }
 
+        // One flatten, used to paint and to answer a click. Two traversals of
+        // the same tree is how a click comes to land one row off the row it
+        // was drawn on.
+        let mut rows = Vec::new();
+        flatten(&self.root, 0, String::new(), &mut rows);
+
+        if !self.agent_id.is_empty() {
+            // Without a hitbox this widget could be operated by an agent and
+            // by nobody else: no click reached it, and the focus ring is built
+            // from the hit map, so Tab could not reach it either. A `Tree`
+            // that advertises `expand` and cannot be expanded by a person is
+            // the same defect as a `Button` whose action goes nowhere.
+            frame.register_hitbox(self.agent_id.clone(), area, 1);
+
+            // Clicking a branch toggles it, which needs the action chosen from
+            // the row rather than fixed: a click that could only ever fire the
+            // first handler registered would expand a tree and never collapse
+            // one.
+            let targets: Vec<(String, bool, bool)> = rows
+                .iter()
+                .map(|r| (r.path.clone(), r.leaf, r.expanded))
+                .collect();
+            frame.register_click(
+                self.agent_id.clone(),
+                crate::runtime::ClickParams::from_position(move |at| {
+                    let row = ((at.y - area.y - TOP_PAD) / ROW_HEIGHT).floor();
+                    if row < 0.0 {
+                        return None;
+                    }
+                    let (path, leaf, expanded) = targets.get(row as usize)?;
+                    // A leaf has nothing to expand. Firing an expand that does
+                    // nothing is the same lie as clamping to the nearest row.
+                    if *leaf {
+                        return None;
+                    }
+                    let action = if *expanded { "collapse" } else { "expand" };
+                    Some(crate::runtime::Click::action(
+                        action,
+                        serde_json::json!({ "path": path }),
+                    ))
+                }),
+            );
+        }
+
         frame.painter().push_clip(area);
         let ts = self.style.resolved_text();
-        let mut y_offset = area.y + 4.0;
-        render_tree_node(frame, &self.root, 0, area.x, &mut y_offset, &ts);
+        for (i, row) in rows.iter().enumerate() {
+            let prefix = if row.leaf {
+                "  "
+            } else if row.expanded {
+                "▼ "
+            } else {
+                "▶ "
+            };
+            let x = area.x + row.depth as f32 * INDENT + 4.0;
+            let y = area.y + TOP_PAD + i as f32 * ROW_HEIGHT;
+            frame
+                .painter()
+                .text(Position::new(x, y), &format!("{prefix}{}", row.label), &ts);
+        }
         frame.painter().pop_clip();
     }
 }
 
-fn render_tree_node(
-    frame: &mut Frame<'_>,
-    node: &TreeNode,
+/// The height of one row, where the first one starts, and how far a level of
+/// nesting moves it right.
+///
+/// Named because the painting and the click map have to agree, and a constant
+/// written twice is how they stop agreeing.
+const ROW_HEIGHT: f32 = 20.0;
+const TOP_PAD: f32 = 4.0;
+const INDENT: f32 = 16.0;
+
+/// One visible row: what is painted, and what a click on it means.
+struct Row {
+    label: String,
+    /// `label/label/label` from the root, which is what `expand` takes.
+    path: String,
     depth: usize,
-    base_x: f32,
-    y: &mut f32,
-    ts: &TextStyle,
-) {
-    let indent = depth as f32 * 16.0;
-    let prefix = if node.children.is_empty() {
-        "  "
-    } else if node.expanded {
-        "▼ "
+    expanded: bool,
+    leaf: bool,
+}
+
+/// The rows a tree shows, in the order they are drawn.
+///
+/// A collapsed branch hides its children, so this is not the whole tree — it
+/// is what a person can see, and therefore what a click can mean.
+fn flatten(node: &TreeNode, depth: usize, prefix: String, out: &mut Vec<Row>) {
+    let path = if prefix.is_empty() {
+        node.label.clone()
     } else {
-        "▶ "
+        format!("{prefix}/{}", node.label)
     };
-    let label = format!("{prefix}{}", node.label);
-    frame
-        .painter()
-        .text(Position::new(base_x + indent + 4.0, *y), &label, ts);
-    *y += 20.0;
+    out.push(Row {
+        label: node.label.clone(),
+        path: path.clone(),
+        depth,
+        expanded: node.expanded,
+        leaf: node.children.is_empty(),
+    });
     if node.expanded {
         for child in &node.children {
-            render_tree_node(frame, child, depth + 1, base_x, y, ts);
+            flatten(child, depth + 1, path.clone(), out);
         }
     }
 }

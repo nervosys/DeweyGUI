@@ -186,7 +186,7 @@ impl StatefulWidget for Tabs {
                     tab_spans
                         .iter()
                         .position(|(x, w)| at.x >= *x && at.x < *x + *w)
-                        .map(|i| serde_json::json!({ "index": i }))
+                        .map(|i| crate::runtime::Click::params(serde_json::json!({ "index": i })))
                 }),
             );
         }
