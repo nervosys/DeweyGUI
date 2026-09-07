@@ -4497,3 +4497,63 @@ fn an_incompatible_client_fails_the_handshake() {
     });
     assert!(current.success);
 }
+
+// -- the tree pays for nothing it does not say ------------------------
+
+/// A tree reply carries no `null`s and no empty collections.
+///
+/// A full `get_tree` is the most expensive thing an agent asks for, and every
+/// node was paying a fixed toll for `"agent_id":null`, `"capabilities":[]`,
+/// `"label":null` and `"children":[]` — four facts an agent reads just as well
+/// from their absence. Dropping them took this crate own TodoMVC benchmark
+/// from 3471 bytes to 2679, and the break-even against reading the source
+/// from nine observations to six.
+///
+/// The check is on the wire text rather than on a count, because the point is
+/// that an agent is never sent a byte that carries no information.
+#[test]
+fn a_tree_reply_sends_no_filler() {
+    let mut driver = HeadlessDriver::new(TestApp { count: 7 }, 200.0, 200.0);
+    let reply = driver.process_request_json(&AgentRequest::GetTree {
+        since: None,
+        viewport: None,
+    });
+    assert!(
+        reply.contains("TestApp") || reply.contains("widget_type"),
+        "{reply}"
+    );
+    for filler in [":null", ":[]", ":{}"] {
+        assert!(
+            !reply.contains(filler),
+            "a tree reply contains `{filler}`, which is a byte an agent pays \
+             for and learns nothing from: {reply}"
+        );
+    }
+}
+
+/// A reply that omits those fields still reads back as the same tree.
+///
+/// Skipping a field on the way out is only safe if the way in supplies it.
+/// Every skipped field carries `serde(default)`; this is what says so.
+#[test]
+fn a_trimmed_tree_round_trips() {
+    let mut driver = HeadlessDriver::new(TestApp { count: 7 }, 200.0, 200.0);
+    driver.process_request(&AgentRequest::GetTree {
+        since: None,
+        viewport: None,
+    });
+    let tree = driver.ontology().tree().expect("a rendered tree").clone();
+    let wire = serde_json::to_string(&tree).expect("serialise");
+    let back: dewey::ontology::UiTree = serde_json::from_str(&wire).expect("deserialise");
+    // Compared as JSON rather than as text: a widget's properties come back
+    // in a different order, because `Properties` deserialises through a map
+    // that sorts its keys. That is invisible to any JSON reader and is not
+    // what this test is about — what matters is that no field went missing
+    // on the way out and came back as something else on the way in.
+    let before: serde_json::Value = serde_json::from_str(&wire).expect("wire as json");
+    let after = serde_json::to_value(&back).expect("reserialise");
+    assert_eq!(
+        before, after,
+        "a tree did not survive the round trip its own reply format implies"
+    );
+}

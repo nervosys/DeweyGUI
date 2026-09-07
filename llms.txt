@@ -39,8 +39,8 @@ Four worth knowing before you start:
   `unchanged` without rendering anything. A re-poll costs about a hundredth of
   a full read, and re-polling is the commonest thing an agent does.
 - `get_tree` takes a `viewport`. Without one the tree describes every widget
-  including those scrolled out of sight; at 1000 rows that is 401 kB against
-  11.7 kB clipped.
+  including those scrolled out of sight; at 1000 rows that is 311 kB against
+  9.0 kB clipped.
 - `validate` reports what a screenshot cannot: widgets that rendered with no
   id and so cannot be clicked at all, duplicate ids, zero-size bounds,
   offscreen bounds, and text painted at a contrast nobody can read.

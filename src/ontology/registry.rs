@@ -274,18 +274,31 @@ impl UiTree {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UiNode {
     /// Optional unique agent-addressable ID.
+    ///
+    /// Absent rather than `null` when there is none. Every field below that
+    /// can be empty is skipped for the same reason: a full `get_tree` is the
+    /// most expensive thing an agent asks for, and it was spending a fixed
+    /// toll per widget on `"agent_id":null,"capabilities":[],"label":null,
+    /// "children":[]` — four facts an agent learns just as well from their
+    /// absence. Every one of these carries `serde(default)`, so a reply that
+    /// omits them still reads back.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub agent_id: Option<std::borrow::Cow<'static, str>>,
     /// The widget type name (matches a registered schema).
     pub widget_type: std::borrow::Cow<'static, str>,
     /// Semantic role of this instance.
     pub role: SemanticRole,
     /// Capabilities of this instance.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub capabilities: Vec<AgentCapability>,
     /// Current state snapshot as named properties.
+    #[serde(default, skip_serializing_if = "Properties::is_empty")]
     pub state: Properties,
     /// Accessibility label.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub label: Option<String>,
     /// Bounding rectangle in logical pixel coordinates.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub bounds: Option<NodeBounds>,
     /// Accessibility attributes for screen readers and assistive agents.
     ///
@@ -296,6 +309,7 @@ pub struct UiNode {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub accessibility: Option<Box<Accessibility>>,
     /// Child nodes.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub children: Vec<UiNode>,
 }
 

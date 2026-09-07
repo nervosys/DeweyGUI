@@ -112,7 +112,7 @@ resending an identical tree:
 
 This is the difference between a re-poll costing a render and a serialisation
 and one costing a comparison — 100 ns against roughly 5 µs for a 100-row
-interface, at 30 bytes instead of 40 kB. Re-polling is the commonest thing an
+interface, at 30 bytes instead of 31 kB. Re-polling is the commonest thing an
 agent does, so it is worth threading the version through.
 
 Pass `viewport` to be described only the widgets whose bounds intersect a
@@ -124,8 +124,8 @@ rectangle — the region the agent can actually see:
 
 The reply then carries `total_nodes` and `shown_nodes`, so a short list is
 distinguishable from a window onto a long one. Without it the tree describes
-every widget including those scrolled out of view: at 1000 rows that is 401 kB
-against 11.7 kB clipped, and against 16.7 kB for a screenshot of the same
+every widget including those scrolled out of view: at 1000 rows that is 311 kB
+against 9.0 kB clipped, and against 16.7 kB for a screenshot of the same
 window.
 
 Clipping happens after the frame is built, so it reduces what the agent reads

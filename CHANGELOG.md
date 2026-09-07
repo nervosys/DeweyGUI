@@ -9,6 +9,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Performance
 
+- A `UiNode` no longer sends what it has nothing to say about. Every node was
+  paying a fixed toll for `"agent_id":null`, `"capabilities":[]`,
+  `"label":null` and `"children":[]` — four facts an agent reads just as well
+  from their absence — on the most expensive call in the protocol. Skipping
+  them took this project's TodoMVC benchmark from **3471 bytes to 2679, and
+  2021 estimated tokens to 1599**, with nothing removed that an agent could
+  read. A 1000-row tree went from 401 kB to 311 kB, and the same list through
+  a `viewport` from 11.7 kB to 9.0 kB.
+
+  The economics move with it. The nine-step task priced in
+  `observation_cost.rs` costs 2679 tokens asking against 3655 reading the
+  source and looking at screenshots, so the penalty for not knowing the
+  application describes itself went from **18% to 36%**. Break-even against
+  reading the source once went from nine observations to **six** for the egui
+  TodoMVC and from five to **two** for the Dewey one — which is the lever that
+  matters, because a model is persuaded by an ontology being cheaper far more
+  reliably than by being told to use it.
+
+  Every skipped field carries `serde(default)`, so a reply that omits them
+  still reads back; `tests/integration.rs` holds a tree reply to containing no
+  `null`, `[]` or `{}` at all, and holds the round trip.
 - `get_tree` builds the reply as bytes rather than as a `serde_json::Value`
   that is then serialised. For a 100-row interface the intermediate `Value`
   cost 379 µs of 557. The transports use `process_request_json`, which skips
@@ -19,9 +40,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `get_tree` takes a `viewport` and describes only the widgets whose bounds
   intersect it. The tree previously described every widget in the interface,
   including those scrolled out of sight — measured against a screenshot of the
-  same 1000-row application it was 24× larger and 3.7× slower, the one axis
+  same 1000-row application it was 35× larger and 3.7× slower, the one axis
   where a structured observation lost outright to a picture. Windowed, the same
-  list is **11.7 kB against a screenshot's 16.7 kB, and 971 µs against
+  list is **9.0 kB against a screenshot's 16.7 kB, and 971 µs against
   1.53 ms**. The reply carries `total_nodes` and `shown_nodes` so an agent can
   tell a short list from a window onto a long one, and a container is kept when
   any descendant is visible. Clipping happens after the frame is built, so a

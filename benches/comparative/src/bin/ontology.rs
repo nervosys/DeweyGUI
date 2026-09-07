@@ -21,8 +21,8 @@ use dewey::agent::driver::HeadlessDriver;
 use dewey::agent::protocol::{AgentRequest, InjectedEvent};
 use dewey::backend::image_buffer::ImagePainter;
 use dewey::prelude::*;
-use dewey::widget::{Checkbox, StatefulWidget, TextInput};
 use dewey::widget::input::TextInputState;
+use dewey::widget::{Checkbox, StatefulWidget, TextInput};
 use std::cell::RefCell;
 use std::hint::black_box;
 use std::time::{Duration, Instant};
@@ -56,7 +56,6 @@ impl App {
             input: RefCell::new(TextInputState::new()),
         }
     }
-
 }
 
 const ROW_H: f32 = 28.0;
@@ -186,15 +185,22 @@ fn seeing(sizes: &[usize]) {
     );
     println!(
         "  {:<6} {:>10} {:>10} {:>10} {:>10} {:>10} {:>10} {:>10} {:>10} {:>10} {:>10}",
-        "rows", "time", "bytes", "time", "bytes", "time", "bytes", "time", "bytes",
-        "time", "bytes"
+        "rows", "time", "bytes", "time", "bytes", "time", "bytes", "time", "bytes", "time", "bytes"
     );
 
+    // The paragraph after this table quotes the largest run. Typed in, its
+    // numbers went stale the moment anything changed the size of a tree —
+    // which is what trimming the empty fields out of `UiNode` did, leaving
+    // the prose contradicting the table directly above it. Measured instead.
+    let mut last: Option<(usize, usize, Duration, usize, Duration, usize, Duration)> = None;
     for &n in sizes {
         let rounds = if n >= 1000 { 40 } else { 400 };
         let mut d = driver(n);
 
-        let full = d.process_request(&AgentRequest::GetTree { since: None, viewport: None });
+        let full = d.process_request(&AgentRequest::GetTree {
+            since: None,
+            viewport: None,
+        });
         let version = full
             .data
             .as_ref()
@@ -204,7 +210,10 @@ fn seeing(sizes: &[usize]) {
         let tree_bytes = serde_json::to_vec(&full.data).expect("tree json").len();
 
         let t_tree = best(rounds, || {
-            black_box(d.process_request(&AgentRequest::GetTree { since: None, viewport: None }));
+            black_box(d.process_request(&AgentRequest::GetTree {
+                since: None,
+                viewport: None,
+            }));
         });
         let t_poll = best(rounds, || {
             black_box(d.process_request(&AgentRequest::GetTree {
@@ -264,6 +273,15 @@ fn seeing(sizes: &[usize]) {
             }));
         });
 
+        last = Some((
+            n,
+            tree_bytes,
+            t_tree,
+            vp_tree_bytes,
+            t_vp_tree,
+            vp_png,
+            t_vp,
+        ));
         println!(
             "  {:<6} {:>10} {:>10} {:>10} {:>10} {:>10} {:>10} {:>10} {:>10} {:>10} {:>10}",
             n,
@@ -280,23 +298,32 @@ fn seeing(sizes: &[usize]) {
         );
     }
 
+    let (l_rows, l_tree_bytes, l_t_tree, l_vp_tree_bytes, l_t_vp_tree, l_vp_png, l_t_vp) =
+        last.expect("at least one row count was measured");
     println!(
         "\n  The middle pair is generous to the tree: it grows the window until\n  \
                every row is drawn. A real screenshot is the third pair, one viewport,\n  \
                near constant however long the list.\n  \
              \n  \
-               The fourth pair is `get_tree` given the same viewport. At 1000 rows it\n  \
-               is 11.7 kB against a screenshot of 16.7 kB, and 971 us against 1.53 ms:\n  \
-               smaller and faster, where the unclipped tree was 24x bigger and 3.7x\n  \
-               slower. That column exists because measuring this benchmark showed the\n  \
-               tree losing, which it had no business doing.\n  \
+               The fourth pair is `get_tree` given the same viewport. At {} rows\n  \
+               it is {} against a screenshot of {}, and {} against {}: smaller\n  \
+               and faster, where the unclipped tree was {:.0}x bigger and {:.1}x\n  \
+               slower. That column exists because measuring this benchmark showed\n  \
+               the tree losing, which it had no business doing.\n  \
              \n  \
                What is still true, and smaller than it was: the clipped time still\n  \
                grows with the list. The viewport now decides before a UiNode is\n  \
                built rather than after, so an off-screen widget costs nothing to\n  \
                describe — but it is still laid out and still painted, and that is\n  \
                what remains. A list long enough for it to matter wants VirtualList\n  \
-               in the view, which this benchmark deliberately does not use."
+               in the view, which this benchmark deliberately does not use.",
+        l_rows,
+        bytes(l_vp_tree_bytes),
+        bytes(l_vp_png),
+        fmt(l_t_vp_tree),
+        fmt(l_t_vp),
+        l_tree_bytes as f64 / l_vp_tree_bytes as f64,
+        l_t_tree.as_secs_f64() / l_t_vp_tree.as_secs_f64(),
     );
 }
 
@@ -318,7 +345,10 @@ fn acting() {
     let mut d = driver(N);
     // Read the target's position out of the observation, as an agent working
     // from a screenshot would read it off the image.
-    let tree = d.process_request(&AgentRequest::GetTree { since: None, viewport: None });
+    let tree = d.process_request(&AgentRequest::GetTree {
+        since: None,
+        viewport: None,
+    });
     let bounds = find_bounds(&tree.data.clone().unwrap(), &format!("toggle_{TARGET}"))
         .expect("target is on screen");
     let (cx, cy) = (bounds.0 + bounds.2 / 2.0, bounds.1 + bounds.3 / 2.0);
@@ -338,7 +368,10 @@ fn acting() {
 
     // -- ontology path ---------------------------------------------------
     let mut d = driver(N);
-    d.process_request(&AgentRequest::GetTree { since: None, viewport: None });
+    d.process_request(&AgentRequest::GetTree {
+        since: None,
+        viewport: None,
+    });
     raise_banner(&mut d);
     let r = d.process_request(&AgentRequest::ExecuteAction {
         agent_id: format!("toggle_{TARGET}"),
@@ -440,8 +473,12 @@ fn verifying() {
     }
     fn duplicate_id(frame: &mut Frame<'_>) {
         let r = frame.area.split_rows(2);
-        Button::new("Yes").on("confirm", |_: &mut ()| {}).render(r[0], frame);
-        Button::new("No").on("confirm", |_: &mut ()| {}).render(r[1], frame);
+        Button::new("Yes")
+            .on("confirm", |_: &mut ()| {})
+            .render(r[0], frame);
+        Button::new("No")
+            .on("confirm", |_: &mut ()| {})
+            .render(r[1], frame);
     }
     fn zero_size(frame: &mut Frame<'_>) {
         Button::new("Send")
@@ -532,7 +569,11 @@ fn verifying() {
             "  {:<34} {:<24} {:>10}",
             case.name,
             if caught { diagnostics[0].code } else { "—" },
-            if case.visible_in_pixels { "visible" } else { "—" }
+            if case.visible_in_pixels {
+                "visible"
+            } else {
+                "—"
+            }
         );
     }
     println!(
@@ -620,9 +661,7 @@ fn main() {
     verifying();
     paying(&sizes);
 
-    println!(
-        "\n── summary ──────────────────────────────────────────────────────────\n"
-    );
+    println!("\n── summary ──────────────────────────────────────────────────────────\n");
     println!("  buys");
     println!("    an action that still hits the right widget after the screen moves;");
     println!("    the coordinate above reported success and toggled the wrong row");

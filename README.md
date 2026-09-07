@@ -366,7 +366,7 @@ switch filter, read the result back):
 | polling an unchanged screen (`get_tree since=`) | **100 ns**  | 50× less  |
 | todomvc: 9-step add/complete/filter/verify      | **45.2 µs** | 22,000/s  |
 | session setup: `query_ontology`, 29 widget types | **500 ns**  | once      |
-| one screen of a 1000-row list (`viewport`)      | **488 µs**  | 11.7 kB   |
+| one screen of a 1000-row list (`viewport`)      | **488 µs**  | 9.0 kB    |
 
 `query_ontology` reads the whole widget catalogue, which never changes, so a
 transport serves it from bytes serialised once for the process rather than
@@ -387,9 +387,9 @@ wrong row after a single line was inserted above the list, and reported
 success**; the id was still correct, and the two cost the same, so what the
 ontology buys there is correctness rather than speed. And the tree used to
 describe every widget including the ones nobody could see, which at 1000 rows
-made it 3.7× slower and 24× larger than a screenshot — `get_tree` now takes a
+made it 3.7× slower and 35× larger than a screenshot — `get_tree` now takes a
 `viewport`, and decides before building a node rather than clipping a finished
-tree, so the same read is **3.5× faster and 30% smaller** than the picture. What
+tree, so the same read is **3.5× faster and 46% smaller** than the picture. What
 it still does not do is stop laying out and painting the widgets it declines to
 describe, so the time grows with the list even though the reply does not.
 
