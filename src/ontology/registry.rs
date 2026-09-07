@@ -190,7 +190,13 @@ impl OntologyRegistry {
         action: &str,
         params: &serde_json::Value,
     ) -> Result<(), String> {
-        let Some(schema) = self.schemas.get(widget_type) else {
+        // `get_schema`, not `self.schemas`: the built-in catalogue is where an
+        // agent reads a widget's actions from, and validating against a
+        // narrower source than the one that made the promise means every
+        // built-in widget an application never registered by hand was exempt
+        // from checking. `Toolbar` declares `item_id` required, an agent is
+        // shown that, and the call went through without it.
+        let Some(schema) = self.get_schema(widget_type) else {
             return Ok(());
         };
         let Some(declared) = schema.actions.iter().find(|a| a.name == action) else {
