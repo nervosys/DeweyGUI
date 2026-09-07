@@ -11,6 +11,11 @@ use crate::runtime::{Command, Frame, Model};
 use super::protocol::{AgentRequest, AgentResponse, RequestEnvelope};
 use super::session::AgentSession;
 
+/// A node and everything under it.
+pub(crate) fn count_nodes(node: &crate::ontology::UiNode) -> usize {
+    1 + node.children.iter().map(count_nodes).sum::<usize>()
+}
+
 /// Run a Dewey application headlessly, driven entirely by agent protocol messages.
 pub struct HeadlessDriver<M: Model> {
     model: M,
@@ -34,6 +39,27 @@ pub struct HeadlessDriver<M: Model> {
     diffed_version: u64,
     /// Whether the quit has already been announced, so it is sent once.
     announced_quit: bool,
+    /// Frame timings, so an agent can ask what its interface costs.
+    ///
+    /// The profiler was written, driven by the opt-in agpu backend alone, and
+    /// read by nothing — the same shape as every other defect in this crate's
+    /// history. It is driven here and by the default backend, and
+    /// `get_performance` is what reads it.
+    profiler: crate::profiling::Profiler,
+    /// `Model::update` time measured since the last frame was rendered.
+    ///
+    /// An update happens while a request is being answered and the render
+    /// happens after it, so the two halves of a frame cannot be bracketed
+    /// together. This carries the first half into the frame it belongs to.
+    pending_update: std::time::Duration,
+    /// Whether the last frame counted its widgets. See [`end_frame`].
+    ///
+    /// [`end_frame`]: Self::end_frame
+    widget_count_known: bool,
+    /// Which host is driving. Reported with a performance answer, because
+    /// frame cost measured without a display loop is a different number from
+    /// frame cost measured with one, and an agent cannot tell them apart.
+    host: &'static str,
     /// What the last render actually drew.
     ///
     /// Structure cannot show that a label is painted white on white; the draw
@@ -61,8 +87,108 @@ impl<M: Model + 'static> HeadlessDriver<M> {
             version: 0,
             diffed_version: 0,
             announced_quit: false,
+            profiler: crate::profiling::Profiler::default(),
+            pending_update: std::time::Duration::ZERO,
+            widget_count_known: true,
+            host: "headless",
             painted: Vec::new(),
         }
+    }
+
+    /// Deliver a message to the model, timing how long it takes.
+    ///
+    /// Every host routes its updates through here. `Model::update` is the half
+    /// of a frame an application controls, and it was the half no profiler
+    /// measured: `FrameProfile::update` was filled from a timer nothing ever
+    /// started, on every host, so it read zero for the life of the crate.
+    pub fn update_model(&mut self, msg: M::Msg) -> Command<M::Msg> {
+        let started = std::time::Instant::now();
+        let cmd = self.model.update(msg);
+        self.pending_update += started.elapsed();
+        cmd
+    }
+
+    /// Frame timings collected by whichever host is driving.
+    pub fn profiler(&self) -> &crate::profiling::Profiler {
+        &self.profiler
+    }
+
+    /// Name the host, so a performance answer says where its numbers came
+    /// from. Defaults to `headless`.
+    /// Gated because the only caller is the default backend, and a benchmark
+    /// that depends on this crate with `default-features = false` builds
+    /// without it — where an ungated helper is dead code and `-D warnings`
+    /// is a red CI job.
+    #[cfg(feature = "egui-backend")]
+    pub(crate) fn set_host(&mut self, host: &'static str) {
+        self.host = host;
+    }
+
+    /// Open a frame for timing, folding in the update time already spent.
+    ///
+    /// Public to the crate because the default backend renders through egui's
+    /// own closure rather than through [`render`](Self::render_clipped), and
+    /// has to bracket the frame itself.
+    pub(crate) fn begin_frame(&mut self) {
+        self.profiler.begin_frame();
+        let update = std::mem::take(&mut self.pending_update);
+        self.profiler.record("update", update);
+    }
+
+    /// Close a frame, recording what it drew.
+    ///
+    /// `widgets` is `None` when the host rendered without building a UI tree —
+    /// which the default backend does unless `OntologyMode::EveryFrame` is set,
+    /// because nothing was going to read the tree. There is nothing to count in
+    /// that case, and a reported zero would be indistinguishable from an empty
+    /// interface, so the count is withheld instead.
+    pub(crate) fn end_frame(&mut self, render: std::time::Duration, widgets: Option<usize>) {
+        self.profiler.record("render", render);
+        self.widget_count_known = widgets.is_some();
+        self.profiler.count_widgets(widgets.unwrap_or(0));
+        self.profiler.end_frame();
+    }
+
+    /// What one frame timing covers, sent with every performance answer so an
+    /// agent is not left to guess what the milliseconds contain.
+    const MEASURES: &'static str = concat!(
+        "A frame is one `Model::view` and the painting it produced, plus the ",
+        "`Model::update` calls delivered before it. Layout happens inside ",
+        "`view` and is not timed separately.",
+    );
+
+    /// What the profiler has to say, in the shape `get_performance` answers.
+    ///
+    /// `avg_fps` is omitted unless the host runs a display loop. Headless,
+    /// a frame is rendered when an agent asks for one, so frames per second
+    /// would describe how often the agent spoke and not how fast the
+    /// interface is.
+    pub fn performance(&self) -> serde_json::Value {
+        let looped = self.host != "headless";
+        let last = self.profiler.last_frame().map(|f| {
+            serde_json::json!({
+                "frame_number": f.frame_number,
+                "total_ms": f.total.as_secs_f64() * 1000.0,
+                "update_ms": f.update.as_secs_f64() * 1000.0,
+                "render_ms": f.render.as_secs_f64() * 1000.0,
+                "widget_count": self
+                    .widget_count_known
+                    .then_some(f.widget_count),
+            })
+        });
+        let mut out = serde_json::json!({
+            "host": self.host,
+            "frames_total": self.profiler.frame_number(),
+            "frames_measured": self.profiler.history().len(),
+            "last_frame": last,
+            "avg_frame_time_ms": self.profiler.avg_frame_time().as_secs_f64() * 1000.0,
+            "max_frame_time_ms": self.profiler.max_frame_time().as_secs_f64() * 1000.0,
+            "measures": Self::MEASURES,
+        });
+        if looped {
+            out["avg_fps"] = serde_json::json!(self.profiler.avg_fps());
+        }
+        out
     }
 
     /// Whether the application is still running.
@@ -232,6 +358,14 @@ impl<M: Model + 'static> HeadlessDriver<M> {
             }
         }
 
+        // Answered here because the profiler belongs to the host, not to the
+        // session. Deliberately not in `needs_tree`: rendering a frame in
+        // order to report what a frame costs would make the answer describe
+        // the question.
+        if matches!(request, AgentRequest::GetPerformance) {
+            response = AgentResponse::ok(self.performance());
+        }
+
         // Structural check: answered here because it needs the frame's own
         // record of what rendered, which the session cannot see.
         if let AgentRequest::Validate { strict } = request {
@@ -341,7 +475,7 @@ impl<M: Model + 'static> HeadlessDriver<M> {
                     }
                 }
                 if let Some(msg) = self.model.handle_event(ev) {
-                    let cmd = self.model.update(msg);
+                    let cmd = self.update_model(msg);
                     self.process_command(cmd);
                 }
             }
@@ -393,7 +527,7 @@ impl<M: Model + 'static> HeadlessDriver<M> {
     /// Inject a tick event.
     pub fn tick(&mut self) {
         if let Some(msg) = self.model.handle_event(crate::event::Event::Tick) {
-            let cmd = self.model.update(msg);
+            let cmd = self.update_model(msg);
             self.process_command(cmd);
         }
     }
@@ -470,6 +604,15 @@ impl<M: Model + 'static> HeadlessDriver<M> {
     /// Hit-testing and painting are untouched — an off-screen widget is still
     /// laid out and still clickable, it is simply not described.
     fn render_clipped(&mut self, viewport: Option<crate::agent::protocol::Viewport>) {
+        // Under a windowed host this is not a frame anybody saw: it is an
+        // offscreen render done to answer an agent, and the display loop is
+        // already timing the real ones. Recording both under one label would
+        // mix two different things into one average.
+        let timed = self.host == "headless";
+        if timed {
+            self.begin_frame();
+        }
+        let started = std::time::Instant::now();
         let area =
             crate::core::Rect::new(0.0, 0.0, self.window_size.width, self.window_size.height);
         self.hit_map.clear();
@@ -500,6 +643,11 @@ impl<M: Model + 'static> HeadlessDriver<M> {
         drop(frame);
         self.painted = backend.ops().to_vec();
         let shown = nodes.len();
+        // Every widget, not every top-level one: a row inside a list is a
+        // widget that was laid out, painted and hit-tested like any other, and
+        // a per-frame count that says "3" for a hundred-row table measures
+        // nothing an agent could act on.
+        let widgets: usize = nodes.iter().map(count_nodes).sum();
         if !nodes.is_empty() || viewport.is_some() {
             let mut root =
                 crate::ontology::UiNode::new("root", crate::ontology::SemanticRole::Container);
@@ -510,6 +658,9 @@ impl<M: Model + 'static> HeadlessDriver<M> {
                 tree.total_nodes = Some(shown + skipped);
             }
             self.ontology.set_tree(tree);
+        }
+        if timed {
+            self.end_frame(started.elapsed(), Some(widgets));
         }
     }
 
@@ -736,7 +887,7 @@ impl<M: Model + 'static> HeadlessDriver<M> {
                 }
             }
             Command::Message(msg) => {
-                let cmd = self.model.update(msg);
+                let cmd = self.update_model(msg);
                 self.process_command(cmd);
             }
             Command::SetTickRate(_) => {
@@ -758,7 +909,7 @@ impl<M: Model + 'static> HeadlessDriver<M> {
             Command::Task(task) => {
                 // Spawn the task on a background thread and feed the result message back.
                 let msg = task();
-                let cmd = self.model.update(msg);
+                let cmd = self.update_model(msg);
                 self.process_command(cmd);
             }
             // A headless driver has no window. These are recorded rather than
@@ -789,12 +940,12 @@ impl<M: Model + 'static> HeadlessDriver<M> {
                     Ok(result) => result,
                     Err(_) => on_timeout,
                 };
-                let cmd = self.model.update(msg);
+                let cmd = self.update_model(msg);
                 self.process_command(cmd);
             }
             Command::TaskCancellable { task, token } => {
                 let msg = task(token);
-                let cmd = self.model.update(msg);
+                let cmd = self.update_model(msg);
                 self.process_command(cmd);
             }
         }

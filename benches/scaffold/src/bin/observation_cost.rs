@@ -7,7 +7,7 @@
 //! it is the only thing available. Those are the frameworks a model has seen
 //! most of in training, so it is also the habit it arrives with.
 //!
-//! Five questions an agent actually has to answer while driving a GUI, priced
+//! Six questions an agent actually has to answer while driving a GUI, priced
 //! three ways: ask the running application, read its source, or look at a
 //! picture of it.
 //!
@@ -274,6 +274,10 @@ fn main() {
     let egui_src = source("src/bin/todo_egui.rs");
     let iced_src = source("src/bin/todo_iced.rs");
 
+    // What the interface costs to run. There is no source-reading answer to
+    // this at any price, and no screenshot of it either.
+    let performance = reply(&mut d, &AgentRequest::GetPerformance);
+
     // A screenshot of this application, as the framework actually produces one.
     let screenshot = reply(
         &mut d,
@@ -319,6 +323,16 @@ fn main() {
             Cost::of(&iced_src, true),
         ),
         (
+            // Cost. Not in the source at any price: the source says what the
+            // program could do, not what this run of it is doing, at this
+            // size, with this much data in it.
+            "what is this interface costing per frame?",
+            Cost::of(&performance, true),
+            Cost::of(&dewey_src, false),
+            Cost::of(&egui_src, false),
+            Cost::of(&iced_src, false),
+        ),
+        (
             // The loop an agent spends most of its time in: has anything
             // changed since I last looked?
             "has anything changed since I looked?",
@@ -330,12 +344,12 @@ fn main() {
     ];
 
     println!(
-        "{:<38} {:>11} {:>11} {:>11} {:>11}",
+        "{:<42} {:>11} {:>11} {:>11} {:>11}",
         "question", "ask dewey", "read dewey", "read egui", "read iced"
     );
     for (q, ask, dewey, egui, iced) in &questions {
         println!(
-            "{q:<38} {} {} {} {}",
+            "{q:<42} {} {} {} {}",
             ask.show(),
             dewey.show(),
             egui.show(),
@@ -345,8 +359,9 @@ fn main() {
 
     let answerable = questions.iter().filter(|q| q.2.answers).count();
     println!(
-        "\nReading the source answers {answerable} of the five. The other {} are questions\n\
+        "\nReading the source answers {answerable} of the {}. The other {} are questions\n\
          about a run of the program, and source describes the program.",
+        questions.len(),
         questions.len() - answerable
     );
 

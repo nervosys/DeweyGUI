@@ -28,11 +28,12 @@ document per line, one reply per request.
 an agent can use the same application at once. `HeadlessDriver`, `RpcTransport`
 and the MCP server run it without a window.
 
-Fourteen request types: `ping`, `negotiate`, `query_ontology`, `get_schema`,
+Fifteen request types: `ping`, `negotiate`, `query_ontology`, `get_schema`,
 `get_tree`, `get_state`, `execute_action`, `batch_actions`, `inject_event`,
-`subscribe`, `unsubscribe`, `screenshot`, `validate`, `quit`.
+`subscribe`, `unsubscribe`, `screenshot`, `validate`, `get_performance`,
+`quit`.
 
-Three worth knowing before you start:
+Four worth knowing before you start:
 
 - `get_tree` takes `since`, the `version` from your last reply, and answers
   `unchanged` without rendering anything. A re-poll costs about a hundredth of
@@ -43,6 +44,10 @@ Three worth knowing before you start:
 - `validate` reports what a screenshot cannot: widgets that rendered with no
   id and so cannot be clicked at all, duplicate ids, zero-size bounds,
   offscreen bounds, and text painted at a contrast nobody can read.
+- `get_performance` reports what the running interface costs per frame:
+  render time, `Model::update` time, the widget count, and frames per second
+  where the host runs a display loop. Reading the source cannot answer that
+  at any price.
 
 ## Writing an application
 

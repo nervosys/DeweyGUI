@@ -82,6 +82,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `get_performance`, the fifteenth request: what the running interface costs
+  per frame — render time, `Model::update` time, the widget count, and
+  `avg_fps` where the host runs a display loop. This is one of the questions
+  reading the source cannot answer at any price, which is the case the
+  ontology is meant to make. It reports frames that have already happened and
+  renders none itself: a frame drawn to answer what a frame costs would
+  describe the question. Offered as an MCP tool too, and every request is now
+  held to being one.
+
+  Behind it, `Profiler` was another subsystem that shipped complete and was
+  read by nothing: driven by the opt-in agpu backend alone, with no reader
+  anywhere. And its `update` timer was never started by any host, so
+  `FrameProfile::update` had been a constant zero for the life of the crate —
+  advertised, compiled, documented, and measuring nothing. Every host now
+  delivers messages through `HeadlessDriver::update_model`, which times them,
+  and brackets its own frame; `tests/backend_parity.rs` fails if one stops.
+
+  Two numbers are withheld rather than faked. `avg_fps` is absent headless,
+  where a frame is rendered when an agent asks for one and frames per second
+  would report how often the agent spoke. `widget_count` is `null` when the
+  host rendered without building a UI tree — the default backend does that
+  unless `OntologyMode::EveryFrame` is set, and a zero would be
+  indistinguishable from an empty window. `FrameProfile::layout` stays zero
+  and is not reported at all: Dewey lays out inside `Model::view`, so there is
+  no separate pass to time.
 - `benches/agentic/` — a harness that drives a real model at a task and
   records what it cost, and whether it consulted the ontology or read the
   source. Every other benchmark here prices a strategy; nothing observed a

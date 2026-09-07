@@ -38,11 +38,11 @@ Agentic-first GUI framework for Rust with pluggable rendering backends.
 - [x] Task cancellation and timeout handling
 
 ### Agent Protocol
-- [x] JSON Lines stdin/stdout protocol (14 request types)
+- [x] JSON Lines stdin/stdout protocol (15 request types)
 - [x] `HeadlessDriver` for running apps without a window
 - [x] `RpcTransport` for bidirectional agent communication
 - [x] `AgentSession` managing subscriptions and state diffs
-- [x] Request types: Ping, Quit, QueryOntology, GetSchema, GetTree, GetState, ExecuteAction, InjectEvent, Subscribe, Unsubscribe, Screenshot, BatchActions, Negotiate, ListActions
+- [x] Request types: Ping, Quit, QueryOntology, GetSchema, GetTree, GetState, ExecuteAction, InjectEvent, Subscribe, Unsubscribe, Screenshot, BatchActions, Negotiate, Validate, GetPerformance
 - [x] `RequestEnvelope` / `AgentResponse` with request ID correlation
 - [x] Screenshot implementation (returns UiTree snapshot)
 - [x] State diff subscriptions (only send changed fields)
@@ -186,11 +186,14 @@ Agentic-first GUI framework for Rust with pluggable rendering backends.
       merging) — no `Painter` builds a batch and nothing submits one, so no
       draw call has been saved by it. The agpu backend paints through agpu's
       own `ShapeRenderer` and `TextEngine` and does not pass through it
-- [~] Profiling instrumentation (`Profiler`, `FrameProfile`, FPS/timing/widget
-      count tracking) — driven only by the agpu backend, which is opt-in; the
-      default backend has no profiling at all. Nothing reads `last_frame()` or
-      `history()` either, so what agpu measures goes nowhere. Surfacing it
-      wants a protocol request an agent can ask, which is not written
+- [x] Profiling instrumentation (`Profiler`, `FrameProfile`, FPS/timing/widget
+      count tracking) — driven by the headless driver and the default backend
+      through `HeadlessDriver`, and read by the `get_performance` request.
+      `FrameProfile::update` was filled from a timer no host ever started and
+      read zero everywhere; every host now delivers messages through
+      `HeadlessDriver::update_model`, which times them. `FrameProfile::layout`
+      is still always zero and is not reported: Dewey lays out inside
+      `Model::view`, so there is no separate pass to time
 - [~] Memory optimization (`Arena` bump allocator, `VecPool` buffer reuse,
       `InlineString`) — offered to applications; no allocation in Dewey goes
       through any of them. The per-frame counts that did come down (18.0 to
@@ -208,7 +211,9 @@ Agentic-first GUI framework for Rust with pluggable rendering backends.
 - [x] Feature-gated `agpu-backend` (no default, opt-in via `--features agpu-backend`)
 - [x] Plugin lifecycle (PluginRegistry init/on_frame/on_shutdown hooks)
 - [~] Profiler integration (begin_frame/start/stop/end_frame timing in render
-      loop) — the timings are collected and never read
+      loop) — off unless `with_profiling(true)`, and still read by nothing:
+      this backend answers no agent requests, so `get_performance` cannot reach
+      the profiler it keeps. Its `update` timer is never started either
 - [x] ProgramOptions parity (fullscreen, transparent window support)
 - [x] Unit tests (24 tests — type conversion, event conversion, builder API)
 

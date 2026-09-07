@@ -272,8 +272,9 @@ fn documented_features_exist() {
 /// Neither backend opens a window in a test, which is why nothing noticed.
 ///
 /// So the check is textual, and it is the same bargain the test above strikes:
-/// drive it from both, or say in the roadmap that you do not. The profiler is
-/// the one that currently says so.
+/// drive it from both, or say in the roadmap that you do not. agpu's own
+/// profiler is the one that currently says so: it answers no agent requests,
+/// so the timings it collects are still read by nothing.
 #[test]
 fn a_subsystem_is_driven_by_both_backends_or_declared_partial() {
     const DEFAULT: &str = "src/runtime/mod.rs";
@@ -305,17 +306,25 @@ fn a_subsystem_is_driven_by_both_backends_or_declared_partial() {
         }
     }
 
-    // The known asymmetry, kept honest rather than silent.
+    // This used to assert the opposite: that the default backend did *not*
+    // mention the profiler, and that the roadmap said so. It does now — the
+    // profiler is driven by all three hosts through `HeadlessDriver` and read
+    // by `get_performance` — so the entry that kept the omission honest became
+    // the entry that kept a fixed thing looking broken.
+    assert!(
+        default.contains("driver.begin_frame(") && default.contains("driver.end_frame("),
+        "the default backend stopped driving the profiler, so `get_performance` answers about a window it did not time"
+    );
     let roadmap = source("ROADMAP.md");
     assert!(
-        !default.contains("Profiler"),
-        "the default backend now drives the profiler, so the roadmap's `[~]` \
-         for it is stale"
+        !roadmap.contains("- [~] Profiling instrumentation"),
+        "the profiler is read by `get_performance`, so the roadmap's `[~]` for it is stale"
     );
+    // agpu keeps its own profiler and answers no agent requests, so what it
+    // measures still goes nowhere. That is the part still marked partial.
     assert!(
-        roadmap.contains("- [~] Profiling instrumentation"),
-        "the profiler is driven by the agpu backend alone and the roadmap must \
-         say so"
+        roadmap.contains("- [~] Profiler integration"),
+        "agpu's own profiler is read by nothing and the roadmap must say so"
     );
 }
 

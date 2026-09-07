@@ -39,6 +39,7 @@ if [ "${1:-}" = "--all" ]; then
     run cargo run --release --bin allocs --manifest-path benches/comparative/Cargo.toml
     run cargo run --release --bin agent_loop --manifest-path benches/comparative/Cargo.toml
     run cargo run --release --bin agent_task --manifest-path benches/scaffold/Cargo.toml
+    run cargo run --release --bin observation_cost --manifest-path benches/scaffold/Cargo.toml
 fi
 
 echo

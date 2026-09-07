@@ -13,11 +13,18 @@ use crate::ontology::*;
 pub struct FrameProfile {
     /// Frame number (monotonically increasing).
     pub frame_number: u64,
-    /// Total frame time (update + layout + render).
+    /// Total frame time, wall clock from `begin_frame` to `end_frame`.
     pub total: Duration,
-    /// Time spent in `Model::update`.
+    /// Time spent in `Model::update`, for the messages this frame delivered.
     pub update: Duration,
     /// Time spent in layout computation.
+    ///
+    /// **Always zero.** Dewey has no separate layout pass: a widget lays
+    /// itself out inside `Model::view`, so layout time is part of
+    /// [`render`](Self::render) and no host can separate the two. The field is
+    /// kept because it is public API at 1.0; it is not reported to agents,
+    /// because publishing a constant zero as a measurement is how the rest of
+    /// this crate's dead instrumentation looked from the outside.
     pub layout: Duration,
     /// Time spent in rendering (view + paint).
     pub render: Duration,
@@ -62,6 +69,16 @@ impl Profiler {
     /// Start a named timer.
     pub fn start(&mut self, label: &str) {
         self.timers.insert(label.to_string(), Instant::now());
+    }
+
+    /// Record a duration measured somewhere else.
+    ///
+    /// The frame loop is not one function. A host times `Model::update` while
+    /// answering an event and renders later, so the two halves of a frame
+    /// cannot both be bracketed by `start`/`stop` around this profiler. The
+    /// host measures its own half and hands the result over.
+    pub fn record(&mut self, label: &str, duration: Duration) {
+        self.durations.insert(label.to_string(), duration);
     }
 
     /// Stop a named timer and record the duration.
@@ -197,7 +214,6 @@ impl Discoverable for Profiler {
                 "frame_number": f.frame_number,
                 "total_ms": f.total.as_secs_f64() * 1000.0,
                 "update_ms": f.update.as_secs_f64() * 1000.0,
-                "layout_ms": f.layout.as_secs_f64() * 1000.0,
                 "render_ms": f.render.as_secs_f64() * 1000.0,
                 "widget_count": f.widget_count,
             })

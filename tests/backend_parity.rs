@@ -328,3 +328,63 @@ fn every_host_drives_the_focus_ring() {
         }
     }
 }
+
+/// Every host must measure the frame it drew, and route updates through the
+/// one place that times them.
+///
+/// `Profiler` shipped complete, was driven by the opt-in agpu backend alone,
+/// and nothing read it — and even there, `FrameProfile::update` came from a
+/// timer no host ever started, so it read zero for the life of the crate. Both
+/// halves of that are the pattern this file exists to catch.
+#[test]
+fn every_host_measures_a_frame() {
+    for (name, file, calls) in [
+        (
+            "the default backend",
+            "src/runtime/mod.rs",
+            [
+                "driver.begin_frame(",
+                "driver.end_frame(",
+                "driver.update_model(",
+            ],
+        ),
+        (
+            "the headless driver",
+            "src/agent/driver.rs",
+            ["self.begin_frame(", "self.end_frame(", "self.update_model("],
+        ),
+        (
+            "the agpu backend",
+            "src/backend/agpu_backend.rs",
+            [
+                "profiler.begin_frame(",
+                "profiler.end_frame(",
+                "profiler.start(",
+            ],
+        ),
+    ] {
+        let text: String = source(file)
+            .chars()
+            .filter(|c| !c.is_whitespace())
+            .collect();
+        for call in calls {
+            let wanted: String = call.chars().filter(|c| !c.is_whitespace()).collect();
+            assert!(
+                text.contains(&wanted),
+                "{name} never calls `{call}`, so a frame it drew is not measured; instrumentation one host drives is how the profiler came to report nothing"
+            );
+        }
+    }
+
+    // The update timer is the half that read zero everywhere. It is filled by
+    // exactly one function, and every host reaches it by calling that.
+    let driver = source("src/agent/driver.rs");
+    assert!(
+        driver.contains("self.pending_update += started.elapsed()"),
+        "`update_model` no longer times `Model::update`, so `update_ms` is a constant zero again"
+    );
+    assert!(
+        !source("src/runtime/mod.rs").contains("model_mut().update("),
+        "the default backend calls `Model::update` directly again, going around the only place that times it"
+    );
+}

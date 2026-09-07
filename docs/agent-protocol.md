@@ -185,6 +185,45 @@ against a flat fill it cannot be read against. It does not check contrast
 against a gradient or an image, overlapping widgets, or whether the layout is
 any good — it is not a substitute for looking at the interface.
 
+### get_performance
+
+Ask what the running interface costs per frame.
+
+```json
+{"type": "get_performance"}
+```
+
+```json
+{"success": true, "data": {"host": "headless", "frames_total": 3, "frames_measured": 3, "last_frame": {"frame_number": 2, "total_ms": 0.41, "update_ms": 0.02, "render_ms": 0.39, "widget_count": 7}, "avg_frame_time_ms": 0.44, "max_frame_time_ms": 0.52, "measures": "..."}}
+```
+
+This is one of the questions reading the source cannot answer at any price.
+The source says what the program could do; this says what it is doing, on this
+machine, at this size, with this much data in it.
+
+`host` says who measured. Under `egui` the numbers come from a display loop and
+`avg_fps` is included. Headless there is no loop — a frame is rendered when an
+agent asks for one — so frames per second would report how often the agent
+spoke rather than how fast the interface is, and the field is left out.
+
+`update_ms` is time in `Model::update` for the messages that frame delivered;
+`render_ms` is `Model::view` and the painting it drove. Dewey has no separate
+layout pass, so layout is inside `render_ms` and is not reported on its own.
+`widget_count` is every node including nested ones, and is `null` when the host
+rendered without building a UI tree — the default backend does that unless
+`OntologyMode::EveryFrame` is set, and a count of zero would be
+indistinguishable from an empty window.
+
+`get_performance` does not render a frame to answer. Rendering one in order to
+report what a frame costs would make the answer describe the question, so it
+reports the frames that have already happened, and says `frames_measured: 0`
+until one has.
+
+Under a windowed host the frames counted are the ones the display loop drew.
+An offscreen render done to answer a `get_tree` is not a frame anybody saw,
+and mixing it into the same average would describe two different things at
+once.
+
 ### get_state
 
 Get the state of a specific widget by its `agent_id`.

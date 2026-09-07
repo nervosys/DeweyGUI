@@ -82,7 +82,12 @@ way costs about a hundredth of a full read. It also takes a `viewport`, and a \
 long list is a large reply without one. And `validate` reports faults you \
 cannot see in a screenshot: widgets that rendered with no id and so cannot be \
 clicked at all, duplicate ids, zero-size bounds, and text painted at a \
-contrast nobody can read.\
+contrast nobody can read.
+
+And `get_performance` says what the running interface costs per frame: \
+render time, update time, how many widgets were drawn. The source cannot \
+answer that at any price. It describes what the program could do, not \
+what this one is doing, at this size, with this much data in it.\
 ";
 
 impl JsonRpcResponse {
@@ -203,6 +208,11 @@ fn tool_definitions() -> serde_json::Value {
                     }
                 }
             }
+        },
+        {
+            "name": "get_performance",
+            "description": "What the running interface costs per frame: render     time, `Model::update` time, how many widgets were drawn, and frames per     second where the host runs a display loop. Reading the source cannot answer     this — it describes what the program could do, not what this one is doing     now on this machine.",
+            "inputSchema": { "type": "object", "properties": {} }
         },
         {
             "name": "get_state",
@@ -338,6 +348,7 @@ fn tool_definitions() -> serde_json::Value {
 fn parse_tool_call(name: &str, args: &serde_json::Value) -> Result<AgentRequest, String> {
     match name {
         "ping" => Ok(AgentRequest::Ping),
+        "get_performance" => Ok(AgentRequest::GetPerformance),
         "quit" => Ok(AgentRequest::Quit),
         "get_tree" => Ok(AgentRequest::GetTree {
             since: args.get("since").and_then(serde_json::Value::as_u64),
@@ -613,19 +624,53 @@ fn write_response(stdout: &mut impl Write, resp: &JsonRpcResponse) -> io::Result
 mod tests {
     use super::*;
 
+    /// Every request the protocol accepts is offered as a tool.
+    ///
+    /// A hard-coded count passed while `get_performance` was added to the
+    /// protocol and not to this list, which would have left an MCP client
+    /// unable to ask a question the JSON transport answers.
     #[test]
-    fn tool_definitions_has_all_tools() {
+    fn every_request_is_offered_as_a_tool() {
+        let protocol = include_str!("protocol.rs");
+        let start = protocol
+            .find("pub enum AgentRequest")
+            .expect("AgentRequest");
+        let end = protocol[start..]
+            .find(
+                "
+}",
+            )
+            .expect("end")
+            + start;
+        let requests: Vec<&str> = protocol[start..end]
+            .lines()
+            .filter_map(|l| l.trim().strip_prefix("#[serde(rename = \""))
+            .filter_map(|l| l.split('"').next())
+            .collect();
+        assert!(requests.len() >= 15, "{requests:?}");
+
         let defs = tool_definitions();
         let tools = defs["tools"].as_array().unwrap();
-        assert_eq!(tools.len(), 14);
         let names: Vec<&str> = tools.iter().map(|t| t["name"].as_str().unwrap()).collect();
-        assert!(names.contains(&"ping"));
-        assert!(names.contains(&"query_ontology"));
-        assert!(names.contains(&"get_tree"));
-        assert!(names.contains(&"execute_action"));
-        assert!(names.contains(&"batch_actions"));
-        assert!(names.contains(&"quit"));
-        assert!(names.contains(&"validate"));
+        for request in &requests {
+            assert!(
+                names.contains(request),
+                "the protocol accepts `{request}` and no MCP tool offers it"
+            );
+            // Advertised and unroutable is the same defect one step later:
+            // a missing required argument is a real error, an unrecognised
+            // name means the tool goes nowhere.
+            let routed = parse_tool_call(request, &serde_json::json!({}));
+            assert!(
+                !routed.as_ref().is_err_and(|e| e.contains("unknown tool")),
+                "the `{request}` tool is advertised and `parse_tool_call` does not know it"
+            );
+        }
+        assert_eq!(
+            names.len(),
+            requests.len(),
+            "{names:?} against {requests:?}"
+        );
     }
 
     /// The tool descriptions are what a model reads before deciding anything.

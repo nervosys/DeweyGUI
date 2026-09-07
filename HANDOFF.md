@@ -65,10 +65,11 @@ red Format job once. Run it before pushing.
 
 These are honest `[~]` entries, not oversights:
 
-- **the profiler** is driven only by agpu, and nothing reads `last_frame()` or
-  `history()` even there
 - **`Arena`/`VecPool`/`InlineString`**, `RenderBatch`, `ThemeWatcher`,
   `OverlayStack` — working code nothing calls
+- **agpu’s own profiler** is off unless `with_profiling(true)` and read by
+  nothing: that backend answers no agent requests, so `get_performance`
+  cannot reach it. The other two hosts are wired and read
 - **tray and native dialogs** — types only, no platform backend
 - **multi-window** — in-memory bookkeeping that opens no windows
 - **the eframe pin** cannot move: wgpu-hal 30 needs `windows 0.62`, agpu pins

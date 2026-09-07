@@ -26,6 +26,7 @@ pub const SERVER_CAPABILITIES: &[&str] = &[
     "tree_viewport",
     "conditional_tree",
     "accesskit",
+    "performance",
 ];
 
 /// The events a subscription can actually deliver.
@@ -138,6 +139,16 @@ pub enum AgentRequest {
     /// Execute multiple actions atomically in a single request.
     #[serde(rename = "batch_actions")]
     BatchActions { actions: Vec<BatchActionEntry> },
+
+    /// Ask what the interface costs to render.
+    ///
+    /// Returns the timings of the last frame and the average over the frames
+    /// since the application started: `render_ms`, `update_ms`, the widget
+    /// count, and `avg_fps` where the host runs a display loop. Reading the
+    /// source cannot answer this at any price — it is one of the questions the
+    /// ontology exists for.
+    #[serde(rename = "get_performance")]
+    GetPerformance,
 
     /// Negotiate protocol version and capabilities.
     #[serde(rename = "negotiate")]

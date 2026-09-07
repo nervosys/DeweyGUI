@@ -240,6 +240,13 @@ impl AgentSession {
                 )
             }
 
+            // The driver replaces this: only a host that renders frames has
+            // timings, and a session sees neither.
+            AgentRequest::GetPerformance => (
+                AgentResponse::err("no host is driving this session, so no frame has been timed"),
+                false,
+            ),
+
             AgentRequest::Ping => (
                 AgentResponse::ok(serde_json::json!({
                     "status": "pong",

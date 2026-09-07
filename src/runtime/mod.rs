@@ -847,6 +847,10 @@ impl<M: Model + 'static> DeweyApp<M> {
             initial_size.height,
         );
         *driver.ontology_mut() = ontology;
+        // A performance answer says which host measured it: frames timed
+        // inside a display loop and frames rendered on demand are different
+        // numbers wearing the same units.
+        driver.set_host("egui");
 
         // The reader thread parses stdin and waits on the frame loop for each
         // answer; it holds no part of the model. It also holds an
@@ -932,7 +936,7 @@ impl<M: Model + 'static> DeweyApp<M> {
                 }
             }
             Command::Message(msg) => {
-                let cmd = self.driver.model_mut().update(msg);
+                let cmd = self.driver.update_model(msg);
                 self.process_command(cmd);
             }
             Command::SetTickRate(_duration) => {
@@ -1018,7 +1022,7 @@ impl<M: Model + 'static> DeweyApp<M> {
                 // Execute the task synchronously in the update cycle.
                 // For truly async I/O, wrap with tokio::task::spawn_blocking externally.
                 let msg = task();
-                let cmd = self.driver.model_mut().update(msg);
+                let cmd = self.driver.update_model(msg);
                 self.process_command(cmd);
             }
             Command::TaskWithTimeout {
@@ -1036,12 +1040,12 @@ impl<M: Model + 'static> DeweyApp<M> {
                     Ok(result) => result,
                     Err(_) => on_timeout,
                 };
-                let cmd = self.driver.model_mut().update(msg);
+                let cmd = self.driver.update_model(msg);
                 self.process_command(cmd);
             }
             Command::TaskCancellable { task, token } => {
                 let msg = task(token);
-                let cmd = self.driver.model_mut().update(msg);
+                let cmd = self.driver.update_model(msg);
                 self.process_command(cmd);
             }
         }
@@ -1171,7 +1175,7 @@ impl<M: Model + 'static> eframe::App for DeweyApp<M> {
                 }
             }
             if let Some(msg) = self.driver.model().handle_event(event) {
-                let cmd = self.driver.model_mut().update(msg);
+                let cmd = self.driver.update_model(msg);
                 self.process_command(cmd);
             }
         }
@@ -1181,7 +1185,7 @@ impl<M: Model + 'static> eframe::App for DeweyApp<M> {
             if self.last_tick.elapsed() >= tick_rate {
                 self.last_tick = std::time::Instant::now();
                 if let Some(msg) = self.driver.model().handle_event(crate::event::Event::Tick) {
-                    let cmd = self.driver.model_mut().update(msg);
+                    let cmd = self.driver.update_model(msg);
                     self.process_command(cmd);
                 }
             }
@@ -1224,6 +1228,12 @@ impl<M: Model + 'static> eframe::App for DeweyApp<M> {
             (None, None) => self.announced_focus = None,
             (None, Some(_)) => {}
         }
+        // The frame the profiler measures is this closure: `Model::view` plus
+        // the painting it drove. The update half was timed as it happened and
+        // is folded in by `begin_frame`.
+        self.driver.begin_frame();
+        let started = std::time::Instant::now();
+        let mut widgets = build_tree.then_some(0usize);
         egui::CentralPanel::default().show(ctx, |ui| {
             let mut egui_painter = crate::backend::egui_backend::EguiPainter::new(ctx);
             let mut frame =
@@ -1237,6 +1247,9 @@ impl<M: Model + 'static> eframe::App for DeweyApp<M> {
 
             // Collect UI tree
             let nodes = frame.take_nodes();
+            if widgets.is_some() {
+                widgets = Some(nodes.iter().map(crate::agent::driver::count_nodes).sum());
+            }
             if !nodes.is_empty() {
                 let root =
                     crate::ontology::UiNode::new("root", crate::ontology::SemanticRole::Container);
@@ -1255,6 +1268,7 @@ impl<M: Model + 'static> eframe::App for DeweyApp<M> {
             }
             let _ = ui;
         });
+        self.driver.end_frame(started.elapsed(), widgets);
         self.handlers = handlers;
         self.focus = focus;
 

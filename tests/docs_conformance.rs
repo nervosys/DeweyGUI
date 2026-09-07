@@ -399,7 +399,14 @@ fn no_doctest_is_silently_ignored() {
 #[test]
 fn the_machine_readable_index_is_true() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
-    let index = std::fs::read_to_string(root.join("llms.txt")).expect("llms.txt");
+    // Normalised: this file is split on a blank line below, and a Windows
+    // checkout hands it back with CRLF, where two bare newlines never occur.
+    // The paragraph then ran to the end of the file, and the request list was
+    // compared against every backticked word in it.
+    let index = std::fs::read_to_string(root.join("llms.txt"))
+        .expect("llms.txt")
+        .replace("\r\n", "\n");
+
     let manifest = std::fs::read_to_string(root.join("Cargo.toml")).expect("Cargo.toml");
 
     // Every request name it lists must be one the protocol accepts, and every
