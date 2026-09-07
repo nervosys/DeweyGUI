@@ -106,6 +106,8 @@ pub mod profiling;
 pub mod runtime;
 pub mod theme;
 pub mod tray;
+#[cfg(feature = "system-tray")]
+pub mod tray_platform;
 pub mod util;
 pub mod widget;
 pub mod window;
