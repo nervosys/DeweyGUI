@@ -430,3 +430,79 @@ fn every_host_renders_through_one_function() {
         "`runtime::render` no longer runs the overlays it exists to run"
     );
 }
+
+/// Every host tells the frame where the pointer is.
+///
+/// A widget that wants to know whether it is hovered — a `Tooltip` deciding
+/// whether to show its tip — asks the frame. A host that does not pass the
+/// pointer answers "nowhere", and the tip silently never appears on that host
+/// while working on the others. That is the shape of four defects in this
+/// file already.
+#[test]
+fn every_host_says_where_the_pointer_is() {
+    // The expression each host passes, not just the call. The first version
+    // of this check asked whether `.with_pointer(` appeared anywhere, and
+    // passed with the headless driver changed to `.with_pointer(None)` —
+    // which is the whole defect, spelled out.
+    for (name, file, expected) in [
+        (
+            "the default backend",
+            "src/runtime/mod.rs",
+            ".with_pointer(pointer)",
+        ),
+        (
+            "the agpu backend",
+            "src/backend/agpu_backend.rs",
+            ".with_pointer(self.pointer)",
+        ),
+        (
+            "the headless driver",
+            "src/agent/driver.rs",
+            ".with_pointer(self.pointer)",
+        ),
+    ] {
+        let text: String = source(file)
+            .chars()
+            .filter(|c| !c.is_whitespace())
+            .collect();
+        let wanted: String = expected.chars().filter(|c| !c.is_whitespace()).collect();
+        assert!(
+            text.contains(&wanted),
+            "{name} does not pass `{expected}` to its frame, so every widget \
+             on it believes nothing is hovered"
+        );
+    }
+
+    // And each of the two that receive mouse events keeps track of it. The
+    // default backend reads it from egui as state, which is what a hover is.
+    for (name, file, marker) in [
+        (
+            "the agpu backend",
+            "src/backend/agpu_backend.rs",
+            "app.pointer=Some(m.position)",
+        ),
+        (
+            "the headless driver",
+            "src/agent/driver.rs",
+            "self.pointer=Some(m.position)",
+        ),
+    ] {
+        let text: String = source(file)
+            .chars()
+            .filter(|c| !c.is_whitespace())
+            .collect();
+        assert!(
+            text.contains(marker),
+            "{name} never records where a mouse event happened, so the \
+             pointer it passes is whatever it started as"
+        );
+    }
+    let runtime: String = source("src/runtime/mod.rs")
+        .chars()
+        .filter(|c| !c.is_whitespace())
+        .collect();
+    assert!(
+        runtime.contains("i.pointer.latest_pos()"),
+        "the default backend stopped reading the pointer from egui"
+    );
+}

@@ -796,3 +796,136 @@ fn no_widget_registers_its_wiring_only_when_describing_itself() {
          finding them"
     );
 }
+
+// -- a tooltip only an agent could read --------------------------------
+
+/// `Tooltip` held its tip text, published it to the ontology, and drew the
+/// label alone. Its own doc comment said "visual tooltip popups are handled by
+/// the backend"; none was, on any host. So an agent could read a tooltip that
+/// no person could ever see — the same asymmetry as `Tree`, in the other
+/// direction from the usual one.
+///
+/// Showing it needed the frame to know where the pointer is. Nothing did: a
+/// widget asking whether it was hovered had to be told by the application,
+/// which meant the application redoing the arithmetic the hit map already
+/// does.
+mod tooltip {
+    use super::*;
+    use dewey::widget::Tooltip;
+
+    struct Help;
+
+    impl Model for Help {
+        type Msg = ();
+
+        fn update(&mut self, _m: ()) -> Command<()> {
+            Command::None
+        }
+
+        fn view(&self, frame: &mut Frame<'_>) {
+            Tooltip::new("(?)", "Saves without asking")
+                .agent_id("help")
+                .render(Rect::new(10.0, 10.0, 40.0, 20.0), frame);
+        }
+    }
+
+    fn help() -> dewey::agent::driver::HeadlessDriver<Help> {
+        let mut d = dewey::agent::driver::HeadlessDriver::new(Help, 200.0, 200.0);
+        d.init();
+        d
+    }
+
+    fn drawn(d: &dewey::agent::driver::HeadlessDriver<Help>) -> Vec<String> {
+        d.painted()
+            .iter()
+            .filter_map(|op| match op {
+                dewey::backend::test::RenderOp::Text { text, .. } => Some(text.clone()),
+                _ => None,
+            })
+            .collect()
+    }
+
+    fn move_pointer(d: &mut dewey::agent::driver::HeadlessDriver<Help>, x: f32, y: f32) {
+        d.process_request(&AgentRequest::InjectEvent {
+            event: InjectedEvent::MouseMove { x, y },
+        });
+    }
+
+    fn render(d: &mut dewey::agent::driver::HeadlessDriver<Help>) {
+        d.process_request(&AgentRequest::GetTree {
+            since: None,
+            viewport: None,
+        });
+    }
+
+    #[test]
+    fn the_tip_is_not_drawn_until_the_pointer_is_on_it() {
+        let mut d = help();
+        render(&mut d);
+        let text = drawn(&d);
+        assert!(text.iter().any(|t| t == "(?)"), "{text:?}");
+        assert!(
+            !text.iter().any(|t| t.contains("Saves")),
+            "the tip was drawn with the pointer nowhere near it: {text:?}"
+        );
+    }
+
+    #[test]
+    fn hovering_the_label_draws_the_tip() {
+        let mut d = help();
+        move_pointer(&mut d, 20.0, 15.0);
+        render(&mut d);
+        let text = drawn(&d);
+        assert!(
+            text.iter().any(|t| t.contains("Saves without asking")),
+            "the pointer is on the label and the tip was not drawn: {text:?}"
+        );
+    }
+
+    #[test]
+    fn moving_away_takes_the_tip_with_it() {
+        let mut d = help();
+        move_pointer(&mut d, 20.0, 15.0);
+        render(&mut d);
+        move_pointer(&mut d, 150.0, 150.0);
+        render(&mut d);
+        assert!(
+            !drawn(&d).iter().any(|t| t.contains("Saves")),
+            "the tip stayed after the pointer left"
+        );
+    }
+
+    /// An agent is told whether the tip is on screen, which is a different
+    /// fact from whether the widget has one.
+    #[test]
+    fn the_tree_says_whether_the_tip_is_showing() {
+        let mut d = help();
+        render(&mut d);
+        let closed = d.process_request(&AgentRequest::GetState {
+            agent_id: "help".into(),
+        });
+        assert_eq!(
+            closed
+                .data
+                .as_ref()
+                .and_then(|v| v["state"]["showing"].as_bool()),
+            Some(false),
+            "{:?}",
+            closed.data
+        );
+
+        move_pointer(&mut d, 20.0, 15.0);
+        render(&mut d);
+        let open = d.process_request(&AgentRequest::GetState {
+            agent_id: "help".into(),
+        });
+        assert_eq!(
+            open.data
+                .as_ref()
+                .and_then(|v| v["state"]["showing"].as_bool()),
+            Some(true),
+            "{:?}",
+            open.data
+        );
+    }
+}

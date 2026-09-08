@@ -132,16 +132,32 @@ impl AgentSession {
 
             AgentRequest::GetState { agent_id } => match registry.find_node(agent_id) {
                 Some(node) => {
-                    let data = serde_json::json!({
-                        "agent_id": node.agent_id,
-                        "widget_type": node.widget_type,
-                        "role": node.role,
-                        "state": node.state.to_value(),
-                        "label": node.label,
-                        "bounds": node.bounds,
-                        "capabilities": node.capabilities,
-                    });
-                    (AgentResponse::ok(data), false)
+                    // Built field by field rather than with one `json!`, so
+                    // that what has nothing to say says nothing. `UiNode` skips
+                    // its empty fields on the way out; this reply is assembled
+                    // here and went on sending `"label":null` and
+                    // `"capabilities":[]` on the cheapest and commonest read in
+                    // the protocol, which is the one the case for asking rather
+                    // than reading rests on.
+                    let mut data = serde_json::Map::new();
+                    if let Some(id) = &node.agent_id {
+                        data.insert("agent_id".into(), serde_json::json!(id));
+                    }
+                    data.insert("widget_type".into(), serde_json::json!(node.widget_type));
+                    data.insert("role".into(), serde_json::json!(node.role));
+                    if !node.state.is_empty() {
+                        data.insert("state".into(), node.state.to_value());
+                    }
+                    if let Some(label) = &node.label {
+                        data.insert("label".into(), serde_json::json!(label));
+                    }
+                    if let Some(bounds) = &node.bounds {
+                        data.insert("bounds".into(), serde_json::json!(bounds));
+                    }
+                    if !node.capabilities.is_empty() {
+                        data.insert("capabilities".into(), serde_json::json!(node.capabilities));
+                    }
+                    (AgentResponse::ok(serde_json::Value::Object(data)), false)
                 }
                 None => (
                     AgentResponse::err(format!("Widget not found: {agent_id}")),

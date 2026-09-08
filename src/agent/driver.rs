@@ -56,6 +56,9 @@ pub struct HeadlessDriver<M: Model> {
     ///
     /// [`end_frame`]: Self::end_frame
     widget_count_known: bool,
+    /// The last place the pointer was told to be, so a widget can ask whether
+    /// it is hovered without the application doing the arithmetic.
+    pointer: Option<crate::core::Position>,
     /// Which host is driving. Reported with a performance answer, because
     /// frame cost measured without a display loop is a different number from
     /// frame cost measured with one, and an agent cannot tell them apart.
@@ -90,6 +93,7 @@ impl<M: Model + 'static> HeadlessDriver<M> {
             profiler: crate::profiling::Profiler::default(),
             pending_update: std::time::Duration::ZERO,
             widget_count_known: true,
+            pointer: None,
             host: "headless",
             painted: Vec::new(),
         }
@@ -452,6 +456,10 @@ impl<M: Model + 'static> HeadlessDriver<M> {
                 // widget with an `action` responds without the application
                 // doing coordinate arithmetic in `handle_event`.
                 if let crate::event::Event::Mouse(m) = &ev {
+                    // Every mouse event says where the pointer is, moves
+                    // included: a widget asking whether it is hovered is
+                    // asking about the last one of these.
+                    self.pointer = Some(m.position);
                     if m.is_click() {
                         if let Some(id) = self.hit_map.hit_test(m.position).map(str::to_owned) {
                             // Clicking a widget focuses it, so a keyboard user
@@ -618,7 +626,8 @@ impl<M: Model + 'static> HeadlessDriver<M> {
         self.hit_map.clear();
         let mut backend =
             crate::backend::test::TestBackend::new(self.window_size.width, self.window_size.height);
-        let mut frame = Frame::new(area, &mut self.hit_map, &mut backend);
+        let mut frame =
+            Frame::new(area, &mut self.hit_map, &mut backend).with_pointer(self.pointer);
         if let Some(view) = viewport {
             frame = frame.clipped_to(crate::core::Rect::new(
                 view.x,

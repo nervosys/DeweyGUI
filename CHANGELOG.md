@@ -380,6 +380,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`Tooltip` drew its label and never its tip.** The text was held,
+  published to the ontology, and painted by nothing — while the widget's own
+  doc comment said "visual tooltip popups are handled by the backend". None
+  was, on any host. An agent could read a tooltip that no person could ever
+  see, which is the `Tree` asymmetry pointing the other way.
+
+  Showing it needed the frame to know where the pointer is, and nothing did:
+  a widget asking whether it was hovered had to be told by the application,
+  which meant the application redoing the arithmetic the hit map already does.
+  `Frame::with_pointer`, `Frame::pointer` and `Frame::hovered` fill that in,
+  every host passes what it knows, and the tip is drawn through
+  `Frame::overlay` so it sits over what comes after it. The node reports
+  `showing`, which is a different fact from whether the widget has a tip.
+
+  `tests/backend_parity.rs` fails for a host that stops passing it. The first
+  version of that check asked only whether `with_pointer` appeared and passed
+  with the driver changed to `with_pointer(None)` — which is the entire defect
+  spelled out — so it now checks the expression each host passes.
+
+- `get_state` sent `"label":null` and `"capabilities":[]`. The tree stopped
+  sending its empty fields a few commits ago; this reply is assembled by hand
+  in the session and was missed, on the cheapest and commonest read in the
+  protocol — **207 bytes to 176, 120 estimated tokens to 104**. The nine-step
+  task priced in `observation_cost.rs` is 2535 tokens asking against 3655
+  reading, so the penalty for not knowing the application describes itself
+  goes from 36% to **44%**, and break-even against reading the egui TodoMVC once is **five**
+  observations rather than six.
+
+  `query_ontology` grew, 16153 bytes to 16441: `Select` and `Menu` each
+  advertise a `toggle_open` they did not have. The catalogue costs more
+  because there is more to say.
 - **`Menu` was a bar with no menu, and was wired only while an agent was
   watching.** It held its items, advertised `select_item` for them, and
   painted a title and nothing else — so there was nothing on screen to pick.

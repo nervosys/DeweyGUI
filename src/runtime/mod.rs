@@ -7,7 +7,7 @@
 
 use std::time::Duration;
 
-use crate::core::Rect;
+use crate::core::{Position, Rect};
 use crate::ontology::OntologyRegistry;
 
 /// A token that can be checked to determine if a task should be cancelled.
@@ -254,6 +254,15 @@ pub struct Frame<'a> {
     /// over the whole thing — which is what the first version of this did, and
     /// it cost more than the clipping saved.
     skipped: usize,
+    /// Where the pointer is, if the host knows.
+    ///
+    /// A widget that wants to know whether it is under the pointer had to be
+    /// told by the application, which meant the application doing the
+    /// coordinate arithmetic the hit map already does. `Tooltip` is the case
+    /// that made it obvious: it painted its trigger, held the tip text, and
+    /// described it to an agent — so an agent could read a tooltip nobody
+    /// could see.
+    pointer: Option<Position>,
     /// When set, only widgets intersecting this rectangle are described.
     ///
     /// Clipping the finished tree kept the reply small and left the work in
@@ -297,8 +306,35 @@ impl<'a> Frame<'a> {
             overlays: Vec::new(),
             unaddressable: Vec::new(),
             skipped: 0,
+            pointer: None,
             viewport: None,
         }
+    }
+
+    /// Tell this frame where the pointer is.
+    ///
+    /// Every host that has a pointer passes it; `tests/backend_parity.rs`
+    /// fails for one that stops.
+    #[must_use]
+    pub fn with_pointer(mut self, pointer: Option<Position>) -> Self {
+        self.pointer = pointer;
+        self
+    }
+
+    /// Where the pointer is, if the host knows.
+    #[must_use]
+    pub fn pointer(&self) -> Option<Position> {
+        self.pointer
+    }
+
+    /// Whether the pointer is inside `area`.
+    ///
+    /// False when the host does not know where the pointer is, which is the
+    /// honest answer: headless with no mouse event yet injected, nothing is
+    /// hovered.
+    #[must_use]
+    pub fn hovered(&self, area: Rect) -> bool {
+        self.pointer.is_some_and(|p| area.contains(p))
     }
 
     /// Describe only the widgets intersecting `viewport`.
@@ -1445,6 +1481,14 @@ impl<M: Model + 'static> eframe::App for DeweyApp<M> {
         // frame, so accessibility forces it back on.
         let build_tree = self.options.ontology == OntologyMode::EveryFrame || self.accessibility;
 
+        // Where the pointer is, so a widget can ask whether it is hovered
+        // instead of the application computing it from raw events. egui
+        // reports this as state rather than as an event, which is what a
+        // hover is.
+        let pointer = ctx
+            .input(|i| i.pointer.latest_pos())
+            .map(|p| crate::core::Position::new(p.x, p.y));
+
         // The closure borrows `self.hit_map` through the frame, so what the
         // widgets registered comes out here and is stored after it returns.
         let mut handlers = Handlers::default();
@@ -1474,7 +1518,8 @@ impl<M: Model + 'static> eframe::App for DeweyApp<M> {
         egui::CentralPanel::default().show(ctx, |ui| {
             let mut egui_painter = crate::backend::egui_backend::EguiPainter::new(ctx);
             let mut frame =
-                Frame::with_ontology(area, &mut self.hit_map, &mut egui_painter, build_tree);
+                Frame::with_ontology(area, &mut self.hit_map, &mut egui_painter, build_tree)
+                    .with_pointer(pointer);
             render(self.driver.model(), &mut frame);
             // Render order is tab order, and a widget registers a hitbox
             // exactly when it is interactive and addressable.

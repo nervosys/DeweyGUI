@@ -91,7 +91,11 @@ Agentic-first GUI framework for Rust with pluggable rendering backends.
       click on an item chooses it; a disabled item is greyed and refuses. The
       node publishes the items, which it did not: it carried a title and
       nothing else, so an agent could not learn what there was to pick
-- [x] Tooltip — hover text with label display
+- [x] Tooltip — the tip is drawn over everything else while the pointer is on
+      the label, through `Frame::overlay`. It used to paint the label alone and
+      publish the tip to the ontology, with a doc comment saying popups were
+      "handled by the backend" — none was, so an agent could read a tooltip
+      nobody could see
 - [x] Tree — hierarchical expand/collapse with path-based actions, reachable
       by pointer and by Tab. It registered handlers and no hitbox, so an agent
       could expand a node and a person could not

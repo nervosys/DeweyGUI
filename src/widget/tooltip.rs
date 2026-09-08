@@ -7,8 +7,13 @@ use crate::widget::Widget;
 
 /// A tooltip that wraps a label and shows hover text.
 ///
-/// Renders the label text. The tooltip text is exposed via the ontology
-/// for agent discovery. Visual tooltip popups are handled by the backend.
+/// Renders the label inline, and the tip over everything else while the
+/// pointer is inside the label's bounds.
+///
+/// This used to say "visual tooltip popups are handled by the backend". None
+/// was: the tip text was held, published to the ontology, and drawn by
+/// nothing — so an agent could read a tooltip that no person could ever
+/// see.
 pub struct Tooltip {
     /// The visible label text.
     label: String,
@@ -111,6 +116,33 @@ impl Widget for Tooltip {
             .painter()
             .text(Position::new(area.x, area.y), label, &ts);
 
+        // The tip, while the pointer is on the label. Deferred, because a tip
+        // that paints here is painted under whatever the view renders next —
+        // which for a tooltip, whose whole job is to sit on top, is every
+        // time.
+        if frame.hovered(area) && !self.text.is_empty() {
+            let text = self.text.clone();
+            let anchor = Position::new(area.x, area.y + area.height + 4.0);
+            let fg = self.style.foreground.unwrap_or(Color::WHITE);
+            frame.overlay(move |frame| {
+                let tip_ts = crate::core::style::TextStyle {
+                    color: fg,
+                    ..Default::default()
+                };
+                let size = frame.painter().measure_text(&text, &tip_ts);
+                let box_rect = Rect::new(anchor.x, anchor.y, size.width + 12.0, size.height + 8.0);
+                frame
+                    .painter()
+                    .fill_rect(box_rect, Color::BLACK.with_alpha(0.85), 4.0);
+                frame.painter().stroke_rect(box_rect, Color::GRAY, 1.0, 4.0);
+                frame.painter().text(
+                    Position::new(box_rect.x + 6.0, box_rect.y + 4.0),
+                    &text,
+                    &tip_ts,
+                );
+            });
+        }
+
         // Built last so owned fields (text, item vectors) move into the
         // state instead of being cloned; painting above only borrows them.
         if frame.describes(area) && !self.agent_id.is_empty() {
@@ -118,7 +150,10 @@ impl Widget for Tooltip {
                 .with_id(self.agent_id.clone())
                 .with_bounds(area.into())
                 .with_property("label", serde_json::Value::from(self.label))
-                .with_property("text", serde_json::Value::from(self.text));
+                .with_property("text", serde_json::Value::from(self.text))
+                // Whether the tip is on screen right now, which is a different
+                // fact from whether the widget has one.
+                .with_property("showing", serde_json::json!(frame.hovered(area)));
             frame.register_widget(node);
         }
     }

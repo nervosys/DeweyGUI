@@ -469,6 +469,8 @@ struct RunningApp<M: Model> {
     shapes: agpu::ShapeRenderer,
     text: agpu::TextEngine,
     hit_map: HitMap,
+    /// Where the pointer last was, so a widget can ask whether it is hovered.
+    pointer: Option<crate::core::Position>,
     /// The keyboard focus ring, rebuilt from the hit map after every frame.
     focus: crate::focus::FocusManager,
     /// Changes registered by widgets during the last rendered frame.
@@ -604,6 +606,7 @@ impl<M: Model + 'static> RunningApp<M> {
             shapes,
             text,
             hit_map: HitMap::new(),
+            pointer: None,
             focus: crate::focus::FocusManager::new(),
             handlers: crate::runtime::Handlers::default(),
             ontology,
@@ -704,7 +707,8 @@ impl<M: Model + 'static> RunningApp<M> {
                 &mut self.hit_map,
                 &mut painter,
                 self.ontology_mode == crate::runtime::OntologyMode::EveryFrame,
-            );
+            )
+            .with_pointer(self.pointer);
             crate::runtime::render(&self.model, &mut dewey_frame);
 
             // Render order is tab order, and a widget registers a hitbox
@@ -1005,6 +1009,7 @@ impl<M: Model + 'static> ApplicationHandler for AppHandler<M> {
                 // widget built with `action` responds without the application
                 // doing coordinate arithmetic in `handle_event`.
                 if let crate::event::Event::Mouse(m) = &dewey_ev {
+                    app.pointer = Some(m.position);
                     if m.is_click() {
                         if let Some(id) = app.hit_map.hit_test(m.position).map(str::to_owned) {
                             // Clicking a widget focuses it, so a keyboard user
