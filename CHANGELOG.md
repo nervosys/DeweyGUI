@@ -581,6 +581,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Documentation
 
+- The `animation` module is declared undriven, which it always was. Thirty-four
+  easing functions, `Tween`, `Spring`, `Timeline` and `KeyframeSequence` all
+  work and are tested, and **nothing in the crate calls `Animation::tick`** —
+  no host advances an animation, so one moves only if the application does it
+  from `update`. `tests/reachability.rs` now holds it to the same bargain as
+  `memory`, `gpu`, `theme` and `overlay`: drive it, or carry the sentence
+  saying you do not. It was the one undriven module the check did not list.
+
+  There is a design gap behind it. `Animation::tick` takes a delta and
+  `Event::Tick` carries none, while documenting itself as being "for
+  animations" — so an application has to keep its own `Instant` to use the
+  event for the purpose it names. Giving the variant a duration breaks every
+  `match` on `Event`, so it is recorded rather than quietly changed.
+
+- The progress table said things that were not true. `Web backend: Complete`
+  described a module whose own header says it is a painter and not a runner —
+  no event loop, no `main`, nothing that starts an application. `Widgets (30):
+  Complete` counted `Menu`, which paints no items. `Agent protocol (14)` is
+  fifteen requests. The test counts (`101` unit, `58` integration, `5`
+  doctests) were `93`, `210` and `29`.
 - `llms.txt`, the machine-readable index a model reads before anything else,
   and `docs/agent-prompt.md`, the same instructions the MCP server returns from
   `initialize` for clients that surface none. Doc conformance checks the index

@@ -23,7 +23,15 @@ pub enum Event {
     FocusLost,
     /// Window close requested.
     CloseRequested,
-    /// A scheduled tick from the runtime (for animations).
+    /// A scheduled tick from the runtime, at `ProgramOptions::tick_rate`.
+    ///
+    /// It carries no elapsed time, which is what an animation needs: the
+    /// `animation` module's [`tick`](crate::animation::Animation::tick) takes a
+    /// delta, and an application receiving this has to keep an `Instant` of its
+    /// own to know how long it has been. This variant used to describe itself
+    /// as being "for animations", which it cannot serve as it stands. Adding
+    /// the duration means changing a unit variant into a tuple one, which
+    /// breaks every `match` on `Event`, so it waits for a major version.
     Tick,
     /// File(s) dropped onto the window.
     FileDrop(Vec<String>),

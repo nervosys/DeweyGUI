@@ -1,7 +1,18 @@
 //! Animation system for Dewey.
 //!
-//! Provides easing functions, tweens, and spring physics for smooth
-//! transitions between GUI states.
+//! Easing functions, tweens, spring physics and timelines, for an application
+//! to drive.
+//!
+//! **Nothing in this crate drives it.** No host advances an animation: an
+//! application holds its own `Tween` and calls [`Animation::tick`] from
+//! `update`, and if it does not, nothing moves.
+//!
+//! There is a gap in the way of doing that well. [`Animation::tick`] takes a
+//! delta, and `Event::Tick` — the event the runtime schedules, whose own
+//! documentation says it is "for animations" — carries none, so an application
+//! has to keep an `Instant` of its own to work out how much time passed. The
+//! event cannot gain a field without breaking every `match` on `Event`, so it
+//! is recorded here and in ROADMAP.md rather than quietly changed.
 
 use std::time::{Duration, Instant};
 

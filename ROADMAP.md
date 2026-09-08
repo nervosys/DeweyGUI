@@ -33,7 +33,9 @@ Agentic-first GUI framework for Rust with pluggable rendering backends.
       renders a stack and no backend hit-tests against one, so an overlay
       pushed here appears nowhere and blocks nothing. The `Modal` widget draws
       its own backdrop and does not go through it
-- [x] Animation interpolation (linear, ease-in/out, spring, bounce)
+- [~] Animation interpolation (linear, ease-in/out, spring, bounce) — offered
+      to applications; no host advances one, and `Event::Tick` carries no
+      elapsed time, so an application must keep its own clock
 - [x] Error types (`DeweyError`, `DeweyResult`)
 
 ### Task Command Execution
@@ -106,17 +108,29 @@ Agentic-first GUI framework for Rust with pluggable rendering backends.
 - [x] State persistence (`StateStore` with serde serialization)
 
 ### Animation
+
+Every type here works and is tested. None of it is driven: nothing in the
+crate calls `Animation::tick`, so an animation moves only if the application
+advances it from its own `update`. Doing that well wants an elapsed time the
+runtime does not hand over — `Event::Tick` is a unit variant, and giving it a
+duration breaks every `match` on `Event`, so it waits for a major version.
+
 - [x] 34 easing functions (linear, quad, cubic, quart, quint, sine, expo, circ, back, elastic, bounce)
 - [x] `Tween` interpolation with duration and easing
 - [x] `Spring` physics-based animation
 - [x] `Timeline` for coordinated animations
 - [x] `KeyframeSequence` for multi-keyframe animations
+- [~] Driven by the runtime — nothing calls `tick`, and `Event::Tick` carries
+      no delta for an application to call it with
 
 ### Testing
-- [x] 101 unit tests across all modules (including 24 agpu backend tests)
-- [x] 58 integration tests covering driver, widgets, protocol, focus, theme, accessibility
+- [x] 93 unit tests in the library (including 24 agpu backend tests)
+- [x] 210 integration tests across 11 binaries — driver, widgets, protocol,
+      focus, theme, accessibility, and the standing checks in
+      `backend_parity`, `reachability`, `docs_conformance`, `click_position`
+      and `frame_cost`
 - [x] 6 property-based tests
-- [x] 5 doctests
+- [x] 29 doctests
 - [x] Test backend with `Painter` impl for non-GPU validation (records RenderOps)
 - [x] Criterion benchmark suite (easing, tween, ontology, virtual list)
 - [x] agpu crate: 213 standalone tests
@@ -176,7 +190,10 @@ Agentic-first GUI framework for Rust with pluggable rendering backends.
       consumes neither
 
 ### v1.2 — Backend & Platform
-- [x] Web backend (`WebPainter` with `WebRenderOp` for wasm32/Canvas 2D)
+- [~] Web backend (`WebPainter` with `WebRenderOp` for wasm32/Canvas 2D) — a
+      painter, not a runner: it records operations for a host page to replay,
+      and there is no event loop, no `main` and nothing that starts an
+      application. Driving one is the embedder's job
 - [x] Headless rendering to image buffer (`ImagePainter` software rasterizer)
 - [x] Software rasterizer (pixel-level fill_rect, fill_circle, line, stroke, alpha blending)
 - [ ] Upgrade `agpu` from wgpu 24 to wgpu 30, which unblocks moving the
@@ -294,23 +311,23 @@ evidence yet that they change what a model does.
 
 ## Progress Summary
 
-| Area                | Status         |
-| ------------------- | -------------- |
-| Core runtime        | Complete       |
-| Agent protocol (14) | Complete       |
-| Ontology system     | Complete       |
-| Widgets (30)        | Complete       |
-| Animation           | Complete       |
-| Accessibility       | Complete       |
-| State persistence   | Complete       |
-| Testing (170 + 213) | Complete       |
-| Benchmarks          | Complete       |
-| API polish          | Complete       |
-| Rustdoc             | Complete       |
-| CI/CD               | Complete       |
-| Examples (11)       | Complete       |
-| agpu GPU backend    | Complete       |
-| Async tasks         | Complete       |
-| Painter abstraction | Complete       |
-| Web backend         | Complete       |
-| crates.io publish   | Planned (v2.0) |
+| Area                | Status                                 |
+| ------------------- | -------------------------------------- |
+| Core runtime        | Complete                               |
+| Agent protocol (15) | Complete                               |
+| Ontology system     | Complete                               |
+| Widgets (30)        | 29 complete; `Menu` paints no items    |
+| Animation           | Works, undriven — nothing calls `tick` |
+| Accessibility       | Complete                               |
+| State persistence   | Complete                               |
+| Testing (332 + 213) | Complete                               |
+| Benchmarks          | Complete                               |
+| API polish          | Complete                               |
+| Rustdoc             | Complete                               |
+| CI/CD               | Complete                               |
+| Examples (11)       | Complete                               |
+| agpu GPU backend    | Complete                               |
+| Async tasks         | Complete                               |
+| Painter abstraction | Complete                               |
+| Web backend         | A painter; no runner or event loop     |
+| crates.io publish   | Planned (v2.0)                         |

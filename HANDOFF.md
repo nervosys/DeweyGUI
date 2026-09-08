@@ -1,7 +1,7 @@
 # Handoff
 
 **Date:** 3 September 2026 · **Range:** `65f67d0..0cebcd3`, 26 commits ·
-**State:** green on CI, 313 tests passing across 11 binaries
+**State:** green on CI, 332 tests passing across 13 binaries
 
 Read this before picking the work up. It says what was wrong, what is fixed,
 what is knowingly still broken, and the one thing that costs money to finish.

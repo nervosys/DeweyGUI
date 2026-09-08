@@ -125,6 +125,11 @@ const SUBSYSTEMS: &[Subsystem] = &[
         file: "src/overlay.rs",
         requirement: Requirement::Undriven,
     },
+    Subsystem {
+        trait_name: "Animation",
+        file: "src/animation/mod.rs",
+        requirement: Requirement::Undriven,
+    },
 ];
 
 /// The phrase an undriven module must carry, verbatim.
