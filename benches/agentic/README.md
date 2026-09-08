@@ -192,6 +192,29 @@ only 27%, and that the prompt leaks neither the seed nor the answer. Nine
 harness defects have been paid for at about a dollar each; this is where the
 tenth is cheap.
 
+#### What it can and cannot settle
+
+It answers a narrower question than "does an agent use the ontology", and the
+difference matters enough to state before anyone pays for it.
+
+Because reading the source cannot produce the answer, an agent that wants to
+finish **has to** observe. So this measures whether an agent *can* drive an
+application it did not write, and what that costs in turns and tokens — not
+whether it *would choose* to when reading was also an option. `t1-counter`
+measured the choice and found the answer was no; this measures the capability,
+which is a different thing wearing similar words.
+
+The preference question may not be askable in the driving case at all. Driving
+requires the interface; there is no second way to learn what a running program
+currently holds. What the two arms still compare is *which* interface an agent
+reaches for when both are present — raw JSON Lines on stdin in `bare`, typed
+tools in `mcp` — and whether the typed one is worth what it costs to maintain.
+
+That is worth knowing, and it is what `observation_cost` has been pricing all
+along without anybody checking an agent could actually do it. It is not the
+headline the first framing of this task implied, and the numbers should not be
+reported as if it were.
+
 What it will cost to run: twelve runs at roughly $1 each, on the evidence of
 8 September.
 
