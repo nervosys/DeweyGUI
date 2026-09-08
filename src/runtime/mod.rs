@@ -248,6 +248,8 @@ pub struct Frame<'a> {
     /// What a wheel turn over a widget means. See [`ClickParams`] for the
     /// same arrangement on the other gesture.
     scrolls: Vec<(std::borrow::Cow<'static, str>, ScrollParams)>,
+    /// What a widget offers when a drag starts on it.
+    drags: Vec<(std::borrow::Cow<'static, str>, crate::drag::DragSource)>,
     /// Interactive widgets that rendered without an id, and so cannot be
     /// clicked or addressed. Collected here because such a widget never
     /// reaches the UI tree to be noticed afterwards.
@@ -308,6 +310,7 @@ impl<'a> Frame<'a> {
             clicks: Vec::new(),
             overlays: Vec::new(),
             scrolls: Vec::new(),
+            drags: Vec::new(),
             unaddressable: Vec::new(),
             skipped: 0,
             pointer: None,
@@ -456,6 +459,25 @@ impl<'a> Frame<'a> {
         params: ScrollParams,
     ) {
         self.scrolls.push((agent_id.into(), params));
+    }
+
+    /// Offer something to drag when a press lands on this widget.
+    ///
+    /// The closure is given the point the press landed on, because what is
+    /// being dragged usually depends on where: a list offers the row under the
+    /// pointer, not the list. Returning `None` means nothing is draggable
+    /// there, and the press stays an ordinary click.
+    pub fn register_drag(
+        &mut self,
+        agent_id: impl Into<std::borrow::Cow<'static, str>>,
+        source: impl Fn(Position) -> Option<crate::event::DragPayload> + Send + 'static,
+    ) {
+        self.drags.push((agent_id.into(), Box::new(source)));
+    }
+
+    /// Take the drag sources widgets registered this frame.
+    pub fn take_drags(&mut self) -> Vec<(std::borrow::Cow<'static, str>, crate::drag::DragSource)> {
+        std::mem::take(&mut self.drags)
     }
 
     /// Take the scroll behaviours widgets registered this frame.
@@ -718,6 +740,8 @@ pub struct Handlers<M> {
     /// What a wheel turn over a widget supplies. Absent means the widget does
     /// not scroll, and a turn over it does nothing.
     scrolls: Vec<(String, ScrollParams)>,
+    /// What each widget offers to a drag. Absent means it is not draggable.
+    drags: Vec<(String, crate::drag::DragSource)>,
     model: std::marker::PhantomData<fn(&mut M)>,
 }
 
@@ -727,6 +751,7 @@ impl<M> Default for Handlers<M> {
             entries: Vec::new(),
             clicks: Vec::new(),
             scrolls: Vec::new(),
+            drags: Vec::new(),
             model: std::marker::PhantomData,
         }
     }
@@ -759,6 +784,11 @@ impl<M: Model + 'static> Handlers<M> {
                 .into_iter()
                 .map(|(id, params)| (id.into_owned(), params))
                 .collect(),
+            drags: frame
+                .take_drags()
+                .into_iter()
+                .map(|(id, source)| (id.into_owned(), source))
+                .collect(),
             model: std::marker::PhantomData,
         }
     }
@@ -768,6 +798,16 @@ impl<M: Model + 'static> Handlers<M> {
         self.entries.clear();
         self.clicks.clear();
         self.scrolls.clear();
+        self.drags.clear();
+    }
+
+    /// What `agent_id` offers to a drag that starts at `at`.
+    ///
+    /// This is what a host hands [`DragTracker::handle`](crate::drag::DragTracker::handle).
+    #[must_use]
+    pub fn drag_payload(&self, agent_id: &str, at: Position) -> Option<crate::event::DragPayload> {
+        let (_, source) = self.drags.iter().find(|(id, _)| id == agent_id)?;
+        source(at)
     }
 
     /// The `(widget, action)` pairs that have a handler, in registration order.
@@ -1131,6 +1171,8 @@ struct DeweyApp<M: Model> {
     hit_map: crate::event::HitMap,
     /// The keyboard focus ring, rebuilt from the hit map after every frame.
     focus: crate::focus::FocusManager,
+    /// Reads a drag out of press, movement and release.
+    drag: crate::drag::DragTracker,
     /// The widget a screen reader was last told about.
     ///
     /// Focus is announced on the frame it moves and not on every frame after,
@@ -1225,6 +1267,7 @@ impl<M: Model + 'static> DeweyApp<M> {
             agent_jobs,
             hit_map: crate::event::HitMap::new(),
             focus: crate::focus::FocusManager::new(),
+            drag: crate::drag::DragTracker::new(),
             announced_focus: None,
             options,
             running: true,
@@ -1497,6 +1540,21 @@ impl<M: Model + 'static> eframe::App for DeweyApp<M> {
             // actually uses. It worked headless and under agpu, so every test
             // passed.
             if let crate::event::Event::Mouse(m) = &event {
+                let hit = self.hit_map.hit_test(m.position).map(str::to_owned);
+                let handlers = &self.handlers;
+                let drags = self
+                    .drag
+                    .handle(m, hit.as_deref(), |id, at| handlers.drag_payload(id, at));
+                for drag in drags {
+                    if let Some(msg) = self
+                        .driver
+                        .model()
+                        .handle_event(crate::event::Event::DragDrop(drag))
+                    {
+                        let cmd = self.driver.update_model(msg);
+                        self.process_command(cmd);
+                    }
+                }
                 if let crate::event::MouseEventKind::Scroll { delta_x, delta_y } = m.kind {
                     if let Some(id) = self.hit_map.hit_test(m.position).map(str::to_owned) {
                         if let Some(cmd) = self.handlers.apply_scroll_at(

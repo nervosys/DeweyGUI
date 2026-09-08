@@ -85,6 +85,7 @@ pub mod agent;
 pub mod animation;
 pub mod backend;
 pub mod core;
+pub mod drag;
 
 // Re-export derive macro
 #[cfg(feature = "derive")]

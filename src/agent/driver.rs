@@ -59,6 +59,9 @@ pub struct HeadlessDriver<M: Model> {
     /// The last place the pointer was told to be, so a widget can ask whether
     /// it is hovered without the application doing the arithmetic.
     pointer: Option<crate::core::Position>,
+    /// Reads a drag out of press, movement and release. `Event::DragDrop` was
+    /// deliverable by no host at all before this.
+    drag: crate::drag::DragTracker,
     /// Which host is driving. Reported with a performance answer, because
     /// frame cost measured without a display loop is a different number from
     /// frame cost measured with one, and an agent cannot tell them apart.
@@ -94,6 +97,7 @@ impl<M: Model + 'static> HeadlessDriver<M> {
             pending_update: std::time::Duration::ZERO,
             widget_count_known: true,
             pointer: None,
+            drag: crate::drag::DragTracker::new(),
             host: "headless",
             painted: Vec::new(),
         }
@@ -460,6 +464,22 @@ impl<M: Model + 'static> HeadlessDriver<M> {
                     // included: a widget asking whether it is hovered is
                     // asking about the last one of these.
                     self.pointer = Some(m.position);
+                    // Press, movement and release read as a drag. Delivered
+                    // before the click below, so an application sees the drop
+                    // before it sees anything the release did.
+                    let hit = self.hit_map.hit_test(m.position).map(str::to_owned);
+                    let handlers = &self.handlers;
+                    let drags = self
+                        .drag
+                        .handle(m, hit.as_deref(), |id, at| handlers.drag_payload(id, at));
+                    for drag in drags {
+                        if let Some(msg) =
+                            self.model.handle_event(crate::event::Event::DragDrop(drag))
+                        {
+                            let cmd = self.update_model(msg);
+                            self.process_command(cmd);
+                        }
+                    }
                     // A wheel turn goes to whatever is under it, the same way
                     // a click does. Before this it became an `Event::Mouse`
                     // the application had to catch and turn into coordinates

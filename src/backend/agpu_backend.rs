@@ -471,6 +471,8 @@ struct RunningApp<M: Model> {
     hit_map: HitMap,
     /// Where the pointer last was, so a widget can ask whether it is hovered.
     pointer: Option<crate::core::Position>,
+    /// Reads a drag out of press, movement and release.
+    drag: crate::drag::DragTracker,
     /// The keyboard focus ring, rebuilt from the hit map after every frame.
     focus: crate::focus::FocusManager,
     /// Changes registered by widgets during the last rendered frame.
@@ -607,6 +609,7 @@ impl<M: Model + 'static> RunningApp<M> {
             text,
             hit_map: HitMap::new(),
             pointer: None,
+            drag: crate::drag::DragTracker::new(),
             focus: crate::focus::FocusManager::new(),
             handlers: crate::runtime::Handlers::default(),
             ontology,
@@ -1027,6 +1030,19 @@ impl<M: Model + 'static> ApplicationHandler for AppHandler<M> {
                 // doing coordinate arithmetic in `handle_event`.
                 if let crate::event::Event::Mouse(m) = &dewey_ev {
                     app.pointer = Some(m.position);
+                    let hit = app.hit_map.hit_test(m.position).map(str::to_owned);
+                    let handlers = &app.handlers;
+                    let drags = app
+                        .drag
+                        .handle(m, hit.as_deref(), |id, at| handlers.drag_payload(id, at));
+                    for drag in drags {
+                        if let Some(msg) =
+                            app.model.handle_event(crate::event::Event::DragDrop(drag))
+                        {
+                            let cmd = app.model.update(msg);
+                            app.process_command(cmd);
+                        }
+                    }
                     if let crate::event::MouseEventKind::Scroll { delta_x, delta_y } = m.kind {
                         if let Some(id) = app.hit_map.hit_test(m.position).map(str::to_owned) {
                             app.dispatch_scroll(&id, m.position, delta_x, delta_y);

@@ -53,6 +53,7 @@ pub struct List {
     style: Style,
     agent_id: std::borrow::Cow<'static, str>,
     on_value: Option<Box<dyn std::any::Any + Send>>,
+    draggable: bool,
 }
 
 impl List {
@@ -63,6 +64,7 @@ impl List {
             style: Style::default(),
             agent_id: std::borrow::Cow::Borrowed(""),
             on_value: None,
+            draggable: false,
         }
     }
 
@@ -103,6 +105,17 @@ impl List {
             });
         self.agent_id = id.into();
         self.on_value = Some(Box::new(wrapped));
+        self
+    }
+
+    /// Let rows be dragged out of this list.
+    ///
+    /// A drag that starts on a row carries `DragPayload::Index(row)`. Off by
+    /// default: a list that suddenly starts reporting drags would change what
+    /// every existing application sees for a press-and-move over it.
+    #[must_use]
+    pub fn draggable(mut self, draggable: bool) -> Self {
+        self.draggable = draggable;
         self
     }
 
@@ -178,6 +191,18 @@ impl StatefulWidget for List {
     fn render(mut self, area: Rect, frame: &mut Frame<'_>, state: &mut ListState) {
         if !self.agent_id.is_empty() {
             frame.register_hitbox(self.agent_id.clone(), area, 1);
+            if self.draggable {
+                // The row under the press, not the list: what is being dragged
+                // depends on where the drag began.
+                let rows = self.items.len();
+                frame.register_drag(self.agent_id.clone(), move |at| {
+                    let row = ((at.y - area.y) / ITEM_HEIGHT).floor();
+                    if row < 0.0 || row as usize >= rows {
+                        return None;
+                    }
+                    Some(crate::event::DragPayload::Index(row as usize))
+                });
+            }
             if let Some(handler) = self.on_value.take() {
                 frame.register_message(self.agent_id.clone(), "select", handler);
                 // A click selects the row it landed on. Rows are 24 tall from

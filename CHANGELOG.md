@@ -103,6 +103,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Drag-and-drop, which no host could deliver.** `Event::DragDrop` shipped in
+  v1.1 with a complete vocabulary — five kinds, four payload types, a source
+  and a target — and nothing produced any of it. The agpu backend converted an
+  `agpu::Event::DragDrop` that the agpu crate never constructs; the default
+  backend had no drag path at all; and the protocol could not inject a release,
+  so `handle_event` was never called with one, on any host, by anybody.
+
+  A drag is not an event a backend reports. It is a reading of three ordinary
+  ones — a press, some movement, a release — and that reading is what belongs
+  in one place: `drag::DragTracker`, which every host feeds and
+  `tests/backend_parity.rs` holds them to. A press that never moves stays a
+  click; letting go over a widget is a drop and over nothing is a cancel, which
+  are different facts and were already different variants; leaving a target is
+  announced before arriving at the next, so a target that highlights itself is
+  never told it has two.
+
+  A widget offers a payload through `Frame::register_drag`, which is given the
+  point the press landed on — what is dragged usually depends on where.
+  `List::draggable(true)` is the first to use it and carries
+  `DragPayload::Index(row)`. Off by default, because a list that started
+  reporting drags would change what every existing application sees for a
+  press and a move.
+
+  The protocol gained `mouse_release`. Without it a drop could not be
+  completed by an agent or driven by a test, which is part of why this went
+  unnoticed: the one host a test can drive could not express the gesture.
 - `Frame::overlay` — drawing deferred until every widget has had its turn.
   A dropdown, a menu and a tooltip all have to appear over whatever comes
   after them in the view, and a widget painting inline is painted before it.

@@ -553,3 +553,43 @@ fn every_host_routes_a_wheel_turn() {
         );
     }
 }
+
+/// Every host reads a drag and delivers it.
+///
+/// `Event::DragDrop` shipped in v1.1 with a complete vocabulary and no host
+/// that could produce one: agpu converted an `agpu::Event::DragDrop` the agpu
+/// crate never constructs, the default backend had no drag path, and the
+/// protocol could not inject a release. The reading is one implementation now,
+/// and this is what keeps it that way.
+#[test]
+fn every_host_reads_a_drag() {
+    for (name, file) in [
+        ("the default backend", "src/runtime/mod.rs"),
+        ("the agpu backend", "src/backend/agpu_backend.rs"),
+        ("the headless driver", "src/agent/driver.rs"),
+    ] {
+        let text: String = source(file)
+            .chars()
+            .filter(|c| !c.is_whitespace())
+            .collect();
+        assert!(
+            text.contains("drag.handle("),
+            "{name} does not read its mouse events as a drag, so \
+             `Event::DragDrop` reaches no application on it"
+        );
+        assert!(
+            text.contains("Event::DragDrop(drag)"),
+            "{name} reads a drag and delivers nothing, which is the shape the \
+             agpu backend was already in: it converted a drag event and no \
+             application ever saw one"
+        );
+    }
+
+    // One reading, not three. The tracker is the only thing that decides
+    // whether letting go is a drop or a cancel.
+    let drag = source("src/drag.rs");
+    assert!(
+        drag.contains("DragDropKind::Drop") && drag.contains("DragDropKind::DragCancel"),
+        "the tracker no longer decides between a drop and a cancel"
+    );
+}

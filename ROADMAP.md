@@ -182,12 +182,12 @@ duration breaks every `match` on `Event`, so it waits for a major version.
 - [x] Protocol versioning (v2) with backward compatibility (min v1, server capabilities)
 
 ### v1.1 — Widget Improvements (30 widgets total)
-- [~] Drag-and-drop support (`DragDropEvent`, `DragDropKind`, `DragPayload`)
-      — the vocabulary only. No backend emits one: agpu converts an
-      `agpu::Event::DragDrop` that the agpu crate never constructs, the
-      default backend has no drag-drop path, and the agent protocol cannot
-      inject one, so `handle_event` is never called with it. File drops are
-      a different event and do work on both backends
+- [x] Drag-and-drop support (`DragDropEvent`, `DragDropKind`, `DragPayload`)
+      — read out of press, movement and release by `drag::DragTracker`, which
+      every host feeds. A widget offers a payload through `Frame::register_drag`
+      and `List::draggable` is the first to; the protocol gained
+      `mouse_release`, without which no agent could complete a drop. File drops
+      are a different event and work on both backends
 - [x] Rich text / Markdown rendering (`RichText` widget with `TextSpan` and `parse_markdown()`)
 - [x] Data-bound Table with sorting (`SortDirection`), filtering, pagination
 - [x] Date/time picker widget (`DatePicker` with calendar grid, `DateValue`,

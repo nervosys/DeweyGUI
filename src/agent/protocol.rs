@@ -188,6 +188,13 @@ pub enum InjectedEvent {
     /// A mouse click event (GUI coordinates).
     #[serde(rename = "mouse_click")]
     MouseClick { x: f32, y: f32, button: String },
+    /// A mouse button being let go.
+    ///
+    /// Added because a drag is a press, some movement and a release, and the
+    /// protocol could express the first two. Without it no agent could
+    /// complete a drop, and no test could drive one.
+    #[serde(rename = "mouse_release")]
+    MouseRelease { x: f32, y: f32, button: String },
     /// A mouse move event.
     #[serde(rename = "mouse_move")]
     MouseMove { x: f32, y: f32 },

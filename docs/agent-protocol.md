@@ -267,6 +267,21 @@ widget whose action a point cannot answer for: `set_text` needs text and
 `scroll_to` needs a destination. Use `execute_action` for those; it carries
 parameters and a click does not.
 
+#### Mouse release
+
+```json
+{"type": "inject_event", "event": {"kind": "mouse_release", "x": 240, "y": 30, "button": "left"}}
+```
+
+A press, some movement and a release read as a drag: the application receives
+`DragStart`, `DragOver`/`DragLeave` as the pointer crosses widgets, and then
+either `Drop` — carrying the source id, the target id and the payload — or
+`DragCancel` if it was let go over nothing. A press and release with no
+movement between them stays an ordinary click.
+
+Only a widget that offers a payload can start one, so most presses are just
+presses.
+
 #### Mouse move
 
 ```json

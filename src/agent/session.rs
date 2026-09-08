@@ -420,6 +420,18 @@ impl AgentSession {
                     modifiers: KeyModifiers::empty(),
                 }))
             }
+            InjectedEvent::MouseRelease { x, y, button } => {
+                let btn = match button.to_lowercase().as_str() {
+                    "right" => MouseButton::Right,
+                    "middle" => MouseButton::Middle,
+                    _ => MouseButton::Left,
+                };
+                Some(Event::Mouse(MouseEvent {
+                    kind: MouseEventKind::Release(btn),
+                    position: crate::core::Position::new(*x, *y),
+                    modifiers: KeyModifiers::empty(),
+                }))
+            }
             InjectedEvent::MouseMove { x, y } => Some(Event::Mouse(MouseEvent {
                 kind: MouseEventKind::Move,
                 position: crate::core::Position::new(*x, *y),

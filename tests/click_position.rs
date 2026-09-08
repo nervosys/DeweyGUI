@@ -1309,3 +1309,199 @@ mod wheel {
         assert_eq!(d.model().scrolled_to, Some(13));
     }
 }
+
+// -- a drag no host could deliver --------------------------------------
+
+/// `Event::DragDrop` shipped in v1.1 and reached an application on no host.
+///
+/// The vocabulary was complete — five kinds, four payload types, a source and
+/// a target — and nothing produced any of it: agpu converted an
+/// `agpu::Event::DragDrop` the agpu crate never constructs, the default
+/// backend had no drag path, and the protocol could not inject a release, so
+/// `handle_event` was never called with one by anybody.
+///
+/// The reading lives in `dewey::drag::DragTracker` and every host feeds it.
+/// These drive the headless one, which is the host a test can drive.
+mod dragdrop {
+    use super::*;
+    use dewey::event::{DragDropKind, DragPayload, Event};
+    use dewey::widget::List;
+    use dewey::widget::list::ListState;
+
+    #[derive(Default)]
+    struct Board {
+        left: std::cell::RefCell<ListState>,
+        right: std::cell::RefCell<ListState>,
+        seen: std::cell::RefCell<Vec<String>>,
+    }
+
+    impl Model for Board {
+        type Msg = ();
+
+        fn update(&mut self, _m: ()) -> Command<()> {
+            Command::None
+        }
+
+        fn handle_event(&self, event: Event) -> Option<()> {
+            if let Event::DragDrop(drag) = event {
+                let note = match &drag.kind {
+                    DragDropKind::DragStart { source_id, .. } => format!("start:{source_id}"),
+                    DragDropKind::DragOver { target_id } => format!("over:{target_id}"),
+                    DragDropKind::DragLeave { target_id } => format!("leave:{target_id}"),
+                    DragDropKind::Drop {
+                        source_id,
+                        target_id,
+                        payload,
+                    } => {
+                        let index = match payload {
+                            DragPayload::Index(i) => *i,
+                            _ => usize::MAX,
+                        };
+                        format!("drop:{source_id}->{target_id}:{index}")
+                    }
+                    DragDropKind::DragCancel => "cancel".to_string(),
+                };
+                self.seen.borrow_mut().push(note);
+            }
+            None
+        }
+
+        fn view(&self, frame: &mut Frame<'_>) {
+            List::new(vec!["one".into(), "two".into(), "three".into()])
+                .draggable(true)
+                .on_select("left", |_b: &mut Board, _i| {})
+                .render(
+                    Rect::new(0.0, 0.0, 100.0, 72.0),
+                    frame,
+                    &mut self.left.borrow_mut(),
+                );
+            List::new(vec!["a".into()])
+                .on_select("right", |_b: &mut Board, _i| {})
+                .render(
+                    Rect::new(200.0, 0.0, 100.0, 72.0),
+                    frame,
+                    &mut self.right.borrow_mut(),
+                );
+        }
+    }
+
+    fn board() -> dewey::agent::driver::HeadlessDriver<Board> {
+        let mut d = dewey::agent::driver::HeadlessDriver::new(Board::default(), 400.0, 200.0);
+        d.init();
+        d.process_request(&AgentRequest::GetTree {
+            since: None,
+            viewport: None,
+        });
+        d
+    }
+
+    fn press(d: &mut dewey::agent::driver::HeadlessDriver<Board>, x: f32, y: f32) {
+        d.process_request(&AgentRequest::InjectEvent {
+            event: InjectedEvent::MouseClick {
+                x,
+                y,
+                button: "left".into(),
+            },
+        });
+    }
+
+    fn move_to(d: &mut dewey::agent::driver::HeadlessDriver<Board>, x: f32, y: f32) {
+        d.process_request(&AgentRequest::InjectEvent {
+            event: InjectedEvent::MouseMove { x, y },
+        });
+    }
+
+    fn release(d: &mut dewey::agent::driver::HeadlessDriver<Board>, x: f32, y: f32) {
+        let response = d.process_request(&AgentRequest::InjectEvent {
+            event: InjectedEvent::MouseRelease {
+                x,
+                y,
+                button: "left".into(),
+            },
+        });
+        assert!(response.success, "{:?}", response.error);
+    }
+
+    fn seen(d: &dewey::agent::driver::HeadlessDriver<Board>) -> Vec<String> {
+        d.model().seen.borrow().clone()
+    }
+
+    /// The whole gesture, end to end, on a host that could not deliver any
+    /// part of it before.
+    #[test]
+    fn a_row_can_be_dragged_from_one_list_to_another() {
+        let mut d = board();
+        press(&mut d, 40.0, 30.0); // the second row: 24..48
+        move_to(&mut d, 120.0, 30.0);
+        move_to(&mut d, 240.0, 30.0);
+        release(&mut d, 240.0, 30.0);
+
+        let notes = seen(&d);
+        assert!(
+            notes.contains(&"start:left".to_string()),
+            "no drag started: {notes:?}"
+        );
+        assert!(
+            notes.contains(&"drop:left->right:1".to_string()),
+            "the second row of `left` was not dropped on `right`: {notes:?}"
+        );
+    }
+
+    /// A press and a release with no movement between them is a click. A
+    /// widget that reported both would fire its action and announce a drag for
+    /// the same gesture.
+    #[test]
+    fn a_click_on_a_draggable_row_is_not_a_drag() {
+        let mut d = board();
+        press(&mut d, 40.0, 30.0);
+        release(&mut d, 40.0, 30.0);
+        assert!(
+            seen(&d).is_empty(),
+            "a click reported a drag: {:?}",
+            seen(&d)
+        );
+    }
+
+    /// Letting go over nothing is a cancel, which is a different thing from a
+    /// drop and is in the vocabulary for that reason.
+    #[test]
+    fn releasing_over_empty_space_cancels() {
+        let mut d = board();
+        press(&mut d, 40.0, 30.0);
+        move_to(&mut d, 150.0, 150.0);
+        release(&mut d, 150.0, 150.0);
+        let notes = seen(&d);
+        assert!(notes.contains(&"cancel".to_string()), "{notes:?}");
+        assert!(
+            !notes.iter().any(|n| n.starts_with("drop:")),
+            "a release over nothing was reported as a drop: {notes:?}"
+        );
+    }
+
+    /// A list that has not asked to be draggable is not.
+    #[test]
+    fn a_plain_list_offers_nothing_to_drag() {
+        let mut d = board();
+        press(&mut d, 240.0, 30.0); // the right-hand list, not draggable
+        move_to(&mut d, 40.0, 30.0);
+        release(&mut d, 40.0, 30.0);
+        assert!(seen(&d).is_empty(), "{:?}", seen(&d));
+    }
+
+    /// Leaving is announced before arriving, so a target that highlights
+    /// itself is never told it has two.
+    #[test]
+    fn crossing_between_targets_leaves_before_it_arrives() {
+        let mut d = board();
+        press(&mut d, 40.0, 30.0);
+        move_to(&mut d, 40.0, 32.0); // still over `left`
+        move_to(&mut d, 240.0, 30.0); // now over `right`
+        let notes = seen(&d);
+        let leave = notes.iter().position(|n| n == "leave:left");
+        let over = notes.iter().position(|n| n == "over:right");
+        assert!(
+            leave.is_some() && over.is_some() && leave < over,
+            "{notes:?}"
+        );
+    }
+}
