@@ -140,6 +140,36 @@ fn keys(value: &serde_json::Value) -> Vec<String> {
         .unwrap_or_default()
 }
 
+/// Every key a documented response shows, at every depth, as `a.b.c` paths.
+///
+/// The first version of this compared the top level of `data` and stopped, so
+/// `data.last_frame.render_ms` — a field an agent reads by name — was never
+/// checked against anything.
+fn paths(value: &serde_json::Value, prefix: &str, out: &mut Vec<String>) {
+    match value {
+        serde_json::Value::Object(map) => {
+            for (k, v) in map {
+                let path = if prefix.is_empty() {
+                    k.clone()
+                } else {
+                    format!("{prefix}.{k}")
+                };
+                out.push(path.clone());
+                paths(v, &path, out);
+            }
+        }
+        // Arrays: the first element stands for the shape of the rest. A
+        // documented list of diagnostics is empty in the happy case, which is
+        // the case the reference shows.
+        serde_json::Value::Array(items) => {
+            if let Some(first) = items.first() {
+                paths(first, &format!("{prefix}[]"), out);
+            }
+        }
+        _ => {}
+    }
+}
+
 // ── the checks ──────────────────────────────────────────────────────────
 
 /// Every documented request must be a request this crate accepts.
@@ -216,6 +246,14 @@ fn documented_responses_match_what_the_server_sends() {
         };
 
         let mut d = driver();
+        // The reference describes an application that is running: it shows
+        // frame timings and rendered widgets. A driver that has never drawn
+        // anything answers `get_performance` with `last_frame: null`, which
+        // is correct and is not what the reference is showing.
+        d.process_request(&AgentRequest::GetTree {
+            since: None,
+            viewport: None,
+        });
         let actual = d.process_request(&request);
 
         let documented = keys(&value);
@@ -241,27 +279,47 @@ fn documented_responses_match_what_the_server_sends() {
             );
         }
 
-        // And the `data` payload, which is where the drift was.
+        // And the `data` payload at every depth, which is where the drift is.
         if let (Some(shown), Some(sent)) = (value.get("data"), actual.data.as_ref()) {
-            let shown_keys = keys(shown);
-            let sent_keys = keys(sent);
-            if !shown_keys.is_empty() && !sent_keys.is_empty() {
-                for key in &shown_keys {
+            let mut shown_paths = Vec::new();
+            paths(shown, "", &mut shown_paths);
+            let mut sent_paths = Vec::new();
+            paths(sent, "", &mut sent_paths);
+            if !shown_paths.is_empty() && !sent_paths.is_empty() {
+                for path in &shown_paths {
                     assert!(
-                        sent_keys.contains(key),
-                        "the reference shows `data.{key}` for {request:?}; the \
-                         server sends {sent_keys:?}. An agent written from the \
+                        sent_paths.contains(path),
+                        "the reference shows `data.{path}` for {request:?}; the \
+                         server sends {sent_paths:?}. An agent written from the \
                          reference reads a field that is not there"
                     );
                 }
+            }
+
+            // The handshake capability list is the one array an agent
+            // branches on, so it is compared by value rather than by shape.
+            // It had gone stale: `performance` was added to the server and
+            // not here, and a key-only comparison cannot see that.
+            if let Some(documented) = shown.get("server_capabilities").and_then(|v| v.as_array()) {
+                let documented: Vec<&str> = documented.iter().filter_map(|v| v.as_str()).collect();
+                assert_eq!(
+                    documented,
+                    dewey::agent::protocol::SERVER_CAPABILITIES,
+                    "the reference lists different server capabilities from the \
+                     ones the server advertises"
+                );
             }
         }
         checked += 1;
     }
 
     assert!(
-        checked >= 1,
-        "no request/response pair was compared, so this test proves nothing"
+        // The reference documented a response for two of its fifteen
+        // requests, and this floor was `>= 1` — so the check could pass
+        // having compared one pair while everything else went unexamined.
+        checked >= 8,
+        "only {checked} request/response pairs were compared; the reference \
+         has stopped showing what the server sends"
     );
 }
 

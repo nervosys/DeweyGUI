@@ -41,10 +41,11 @@ Response:
 
 ```json
 {"success": true, "id": "1", "data": {"protocol_version": 2, "min_protocol_version": 1,
- "compatible": true, "supported_capabilities": ["batch_actions", "state_diffs"],
+ "compatible": true, "framework": "dewey", "client_version": 1,
+ "supported_capabilities": ["batch_actions", "state_diffs"],
  "server_capabilities": ["state_diffs", "batch_actions", "screenshot", "ws_transport",
  "protocol_v2", "validate", "strict_validate", "tree_viewport", "conditional_tree",
- "accesskit"]}}
+ "accesskit", "performance"]}}
 ```
 
 `supported_capabilities` is the subset of what you asked for that this server
@@ -65,7 +66,13 @@ Health check / keepalive.
 {"type": "ping"}
 ```
 
-Response: `{"success": true, "data": {"status": "pong", "framework": "dewey", "version": "1.0.0"}}`
+```json
+{"success": true, "data": {"status": "pong", "framework": "dewey", "protocol_version": 2}}
+```
+
+There is no `version` field. This line used to show one, holding `"1.0.0"`,
+and was written as prose rather than as a fenced block — so the check that
+compares documented responses against real ones never parsed it.
 
 ### quit
 
@@ -91,6 +98,10 @@ Get the full schema for a specific widget type.
 
 ```json
 {"type": "get_schema", "widget_type": "Button"}
+```
+
+```json
+{"success": true, "data": {"name": "Button", "description": "A clickable button", "default_role": "Action", "tags": ["button", "click", "action"], "usage_hint": "Button::new(\"Save\").enabled(true)", "properties": [], "actions": [{"name": "click", "description": "Click the button", "params": [], "idempotent": true, "mutates": false, "returns": null, "shortcut": null}]}}
 ```
 
 ### get_tree
@@ -140,6 +151,10 @@ broken while compiling, rendering, and looking correct.
 
 ```json
 {"type": "validate"}
+```
+
+```json
+{"success": true, "data": {"ok": true, "errors": 0, "diagnostics": []}}
 ```
 
 ```jsonc
@@ -232,12 +247,24 @@ Get the state of a specific widget by its `agent_id`.
 {"type": "get_state", "agent_id": "counter_label"}
 ```
 
+```json
+{"success": true, "data": {"agent_id": "counter_label", "widget_type": "Label", "role": "Display", "state": {"text": "Count: 0"}, "bounds": {"x": 0.0, "y": 40.0, "width": 480.0, "height": 40.0}}}
+```
+
+Absent fields are absent, not null: a widget with no accessibility label and no
+capabilities sends neither key. The tree does the same, and on the commonest
+read in the protocol it is the difference between 207 bytes and 176.
+
 ### execute_action
 
 Invoke an action on a specific widget.
 
 ```json
 {"type": "execute_action", "agent_id": "inc_btn", "action": "click", "params": {}}
+```
+
+```json
+{"success": true, "data": {"status": "dispatched", "agent_id": "inc_btn", "action": "click", "params": null}}
 ```
 
 ### inject_event
@@ -325,6 +352,10 @@ Subscribe to server-pushed events. Available event types:
 
 ```json
 {"type": "subscribe", "events": ["state_changed"]}
+```
+
+```json
+{"success": true, "data": {"subscriptions": ["state_changed"]}}
 ```
 
 ### unsubscribe
