@@ -380,6 +380,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A wheel turn over a scrollable region reached no widget.** `ScrollArea`
+  and `VirtualList` both advertise `scroll_to`, neither registered a hitbox,
+  and no host hit-tested a scroll — so a turn became an `Event::Mouse` the
+  application had to catch and convert to coordinates itself. That is the
+  arithmetic hit-testing exists to do, and it is exactly where the click path
+  was at the start of this cycle.
+
+  `ScrollParams` is the wheel's answer to `ClickParams`: the widget says what
+  a turn over it means, because only the widget knows. `ScrollArea` converts
+  notches to pixels and adds them to its current offset — `scroll_to` takes an
+  absolute position and a wheel gives a delta — and `VirtualList` converts
+  them to rows, since its action takes an index and only it knows how tall a
+  row is. A turn that would change nothing, like scrolling up at the top,
+  fires nothing.
+
+  Every host routes it through `Handlers::apply_scroll_at`, and
+  `tests/backend_parity.rs` fails for one that looks at a wheel turn without
+  routing it, or that hit-tests a click and not a turn.
+
+- `ColorPicker` refused clicks with a reason that named geometry it does not
+  have: "reproducing the saturation-value square's geometry here". It has
+  never drawn a saturation-value square. It paints a swatch of the current
+  colour, the label and the hex value — a display, not a picker — so there is
+  nothing on screen to choose from and `set_color` is reachable only through
+  `execute_action`. ROADMAP.md stops calling it "HSV/hex color selection".
+
+  A reason that names something the code does not contain is worse than no
+  reason: it reads as a small deferred task rather than a missing feature, and
+  it is what let me claim in the previous round that no widget was left which
+  an agent could drive and a person could not. One was.
 - **`DatePicker` and `CommandPalette` could be operated by an agent and by
   nobody else.** Both were left declaring `ClickParams::Unavailable` two
   commits ago with the reason "mapping a point to a day means reproducing that

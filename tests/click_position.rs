@@ -335,13 +335,12 @@ mod tree {
 fn a_widget_with_a_handler_is_reachable_by_pointer_or_says_why_not() {
     // Actions that are not pointer gestures. A click is a point; none of these
     // is a question a point answers.
-    const NOT_A_CLICK: [(&str, &str); 3] = [
+    const NOT_A_CLICK: [(&str, &str); 2] = [
         (
             "chart.rs",
             "add_series/remove_series/clear are data operations",
         ),
         ("rich_text.rs", "set_markdown/clear replace content"),
-        ("scroll.rs", "scroll_to is a wheel or a drag, not a click"),
     ];
 
     let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/widget");
@@ -1174,5 +1173,139 @@ mod palette {
             "a click on the dimmed area did not close the palette"
         );
         assert_eq!(d.model().ran, "", "and it must not have run anything");
+    }
+}
+
+// -- the wheel reached nothing -----------------------------------------
+
+/// A wheel turn over a scrollable region reached no widget at all.
+///
+/// `Scroll` and `VirtualList` both advertise `scroll_to`, neither registered a
+/// hitbox, and no host hit-tested a scroll — so the wheel became an
+/// `Event::Mouse` the application had to catch and turn into coordinates
+/// itself. That is the arithmetic hit-testing exists to do, and it is the
+/// state the click path was in before this session started on it.
+mod wheel {
+    use super::*;
+    use dewey::widget::scroll::{ScrollArea, ScrollState};
+    use dewey::widget::virtual_list::{VirtualList, VirtualListState};
+
+    struct Page {
+        scroll: std::cell::RefCell<ScrollState>,
+        list: std::cell::RefCell<VirtualListState>,
+        scrolled_to: Option<usize>,
+    }
+
+    impl Model for Page {
+        type Msg = ();
+
+        fn update(&mut self, _m: ()) -> Command<()> {
+            Command::None
+        }
+
+        fn view(&self, frame: &mut Frame<'_>) {
+            ScrollArea::vertical()
+                .on_scroll("region", |p: &mut Page, x, y| {
+                    let mut s = p.scroll.borrow_mut();
+                    if let Some(x) = x {
+                        s.offset_x = x;
+                    }
+                    if let Some(y) = y {
+                        s.offset_y = y;
+                    }
+                })
+                .render(
+                    Rect::new(0.0, 0.0, 200.0, 100.0),
+                    frame,
+                    &mut self.scroll.borrow_mut(),
+                );
+            VirtualList::new(20.0, |_i, _r, _f| {})
+                .on_scroll("rows", |p: &mut Page, index| p.scrolled_to = Some(index))
+                .render(
+                    Rect::new(0.0, 120.0, 200.0, 80.0),
+                    frame,
+                    &mut self.list.borrow_mut(),
+                );
+        }
+    }
+
+    fn page() -> dewey::agent::driver::HeadlessDriver<Page> {
+        let mut d = dewey::agent::driver::HeadlessDriver::new(
+            Page {
+                scroll: std::cell::RefCell::new(ScrollState::new()),
+                list: std::cell::RefCell::new(VirtualListState {
+                    scroll_offset: 200.0,
+                    total_items: 500,
+                }),
+                scrolled_to: None,
+            },
+            200.0,
+            300.0,
+        );
+        d.init();
+        d.process_request(&AgentRequest::GetTree {
+            since: None,
+            viewport: None,
+        });
+        d
+    }
+
+    fn wheel_at(d: &mut dewey::agent::driver::HeadlessDriver<Page>, x: f32, y: f32, delta_y: f32) {
+        let response = d.process_request(&AgentRequest::InjectEvent {
+            event: InjectedEvent::MouseScroll {
+                x,
+                y,
+                delta_x: 0.0,
+                delta_y,
+            },
+        });
+        assert!(response.success, "{:?}", response.error);
+    }
+
+    #[test]
+    fn the_wheel_scrolls_the_region_under_it() {
+        let mut d = page();
+        wheel_at(&mut d, 100.0, 50.0, -3.0);
+        assert!(
+            d.model().scroll.borrow().offset_y > 0.0,
+            "a wheel turn over a scroll region moved nothing"
+        );
+    }
+
+    /// Up at the top is not a scroll. Reporting one would have the region
+    /// answer a turn that changed nothing.
+    #[test]
+    fn scrolling_up_at_the_top_does_nothing() {
+        let mut d = page();
+        wheel_at(&mut d, 100.0, 50.0, 3.0);
+        assert_eq!(d.model().scroll.borrow().offset_y, 0.0);
+    }
+
+    /// The wheel goes to whatever is under it, which is the whole point of
+    /// hit-testing it rather than handing it to the application.
+    #[test]
+    fn the_turn_goes_to_the_widget_under_the_pointer() {
+        let mut d = page();
+        wheel_at(&mut d, 100.0, 150.0, -1.0);
+        assert_eq!(
+            d.model().scroll.borrow().offset_y,
+            0.0,
+            "the turn was over the list and moved the scroll region"
+        );
+        assert!(
+            d.model().scrolled_to.is_some(),
+            "the turn was over the list and the list did not move"
+        );
+    }
+
+    /// A virtual list scrolls in rows, because `scroll_to` takes an index and
+    /// only the widget knows how tall a row is.
+    #[test]
+    fn a_virtual_list_scrolls_by_rows() {
+        let mut d = page();
+        // Rows are 20 tall and the offset starts at 200, so the first visible
+        // row is 10. Three notches down is row 13.
+        wheel_at(&mut d, 100.0, 150.0, -3.0);
+        assert_eq!(d.model().scrolled_to, Some(13));
     }
 }

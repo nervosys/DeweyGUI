@@ -5,6 +5,12 @@ use crate::ontology::*;
 use crate::runtime::Frame;
 use crate::widget::StatefulWidget;
 
+/// How far one notch of the wheel moves the content.
+///
+/// Both backends report a wheel turn in notches rather than pixels, so this
+/// is the conversion. Named because it is a decision, not a fact.
+const LINE_HEIGHT: f32 = 24.0;
+
 /// Scroll state.
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct ScrollState {
@@ -159,6 +165,37 @@ impl StatefulWidget for ScrollArea {
             if let Some(handler) = self.on_scroll.take() {
                 frame.register_message(self.agent_id.clone(), "scroll_to", handler);
             }
+            // Without a hitbox nothing could be found under the wheel, and
+            // without this nothing knew what a turn meant here. A scrollable
+            // region that does not scroll under the pointer left every
+            // application catching `Event::Mouse` and doing the arithmetic
+            // itself.
+            frame.register_hitbox(self.agent_id.clone(), area, 0);
+            let (at_x, at_y) = (state.offset_x, state.offset_y);
+            frame.register_click(
+                self.agent_id.clone(),
+                // A click inside a scroll region belongs to whatever is drawn
+                // in it, not to the region: `scroll_to` takes a destination
+                // and a click is not one.
+                crate::runtime::ClickParams::Unavailable,
+            );
+            frame.register_scroll(
+                self.agent_id.clone(),
+                crate::runtime::ScrollParams::from_delta(move |_at, dx, dy| {
+                    // `scroll_to` takes an absolute offset and the wheel gives
+                    // a delta, so the current offset is carried in here. Down
+                    // is a negative `delta_y`, which is what both backends
+                    // report and what a scrollbar moving down means.
+                    let x = (at_x - dx * LINE_HEIGHT).max(0.0);
+                    let y = (at_y - dy * LINE_HEIGHT).max(0.0);
+                    if x == at_x && y == at_y {
+                        return None;
+                    }
+                    Some(crate::runtime::Click::params(
+                        serde_json::json!({ "x": x, "y": y }),
+                    ))
+                }),
+            );
         }
 
         if frame.describes(area) && !self.agent_id.is_empty() {

@@ -786,6 +786,23 @@ impl<M: Model + 'static> RunningApp<M> {
     /// A click is physical: it means "activate this widget", not any
     /// particular action name. A `Checkbox` advertises `toggle`, a `Button`
     /// advertises `click`, and pressing either must work.
+    fn dispatch_scroll(
+        &mut self,
+        agent_id: &str,
+        at: crate::core::Position,
+        delta_x: f32,
+        delta_y: f32,
+    ) -> bool {
+        let Some(cmd) =
+            self.handlers
+                .apply_scroll_at(agent_id, at, delta_x, delta_y, &mut self.model)
+        else {
+            return false;
+        };
+        self.process_command(cmd);
+        true
+    }
+
     fn dispatch_primary(&mut self, agent_id: &str, at: Option<crate::core::Position>) -> bool {
         let Some(cmd) = self
             .handlers
@@ -1010,6 +1027,11 @@ impl<M: Model + 'static> ApplicationHandler for AppHandler<M> {
                 // doing coordinate arithmetic in `handle_event`.
                 if let crate::event::Event::Mouse(m) = &dewey_ev {
                     app.pointer = Some(m.position);
+                    if let crate::event::MouseEventKind::Scroll { delta_x, delta_y } = m.kind {
+                        if let Some(id) = app.hit_map.hit_test(m.position).map(str::to_owned) {
+                            app.dispatch_scroll(&id, m.position, delta_x, delta_y);
+                        }
+                    }
                     if m.is_click() {
                         if let Some(id) = app.hit_map.hit_test(m.position).map(str::to_owned) {
                             // Clicking a widget focuses it, so a keyboard user

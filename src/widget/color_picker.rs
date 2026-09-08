@@ -237,10 +237,17 @@ impl StatefulWidget for ColorPicker {
             if let Some(handler) = self.on_color.take() {
                 frame.register_message(self.agent_id.clone(), "set_color", handler);
             }
-            // `set_color` takes a colour. Reading one out of a click means
-            // reproducing the saturation-value square's geometry here, which
-            // is not written; a click used to pass no colour at all and the
-            // handler read that as black.
+            // `set_color` takes a colour and there is nothing on screen to
+            // read one off. This widget paints a swatch of the current colour,
+            // its label and its hex value — it is a display, not a picker, and
+            // ROADMAP.md now says so instead of calling it "HSV/hex color
+            // selection".
+            //
+            // An earlier version of this comment blamed "the saturation-value
+            // square's geometry", which this widget has never drawn. A reason
+            // that names a thing the code does not contain is worse than no
+            // reason: it reads as a small deferred task rather than a missing
+            // feature.
             frame.register_click(
                 self.agent_id.clone(),
                 crate::runtime::ClickParams::Unavailable,

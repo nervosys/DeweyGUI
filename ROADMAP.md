@@ -83,7 +83,9 @@ Agentic-first GUI framework for Rust with pluggable rendering backends.
 - [x] List — scrollable item list with selection
 - [x] Tabs — tabbed navigation
 - [x] Table — columnar data with sortable headers
-- [x] Scroll — scrollable content container
+- [x] Scroll — scrollable content container. The wheel scrolls it: it
+      registers a hitbox and says what a turn over it means, where before a
+      turn reached no widget on any host
 - [x] Container — styled box with padding/border
 - [x] Panel — named content section
 - [x] Menu — a bar that opens. The items are drawn through `Frame::overlay`
@@ -105,13 +107,18 @@ Agentic-first GUI framework for Rust with pluggable rendering backends.
       barrier registers at z 0, not `u32::MAX`: blocking is done by *being* a
       barrier, and a backdrop that also outranked everything meant the dialog's
       own buttons could not be pressed
-- [x] ColorPicker — HSV/hex color selection with preview
+- [~] ColorPicker — the preview only. It paints a swatch of the current
+      colour, the label and the hex value; there is no hue strip and no
+      saturation-value square, so nothing on screen offers a colour to choose
+      and a person cannot pick one. `set_color` works through
+      `execute_action`, which makes this a display an agent can write to
 - [x] Toolbar — action grouping with separators
 - [x] Splitter — resizable panels (horizontal/vertical)
 - [x] CommandPalette — fuzzy-search command launcher. A click on a result runs
       it and a click outside closes it; it used to cover the window with a
       hitbox and answer nothing
-- [x] VirtualList — virtualized scrolling for large datasets
+- [x] VirtualList — virtualized scrolling for large datasets, and the wheel
+      moves it by rows rather than by pixels, since `scroll_to` takes an index
 
 ### Utilities
 - [x] Fuzzy matching (Jaro-Winkler scoring)

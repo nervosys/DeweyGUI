@@ -460,6 +460,15 @@ impl<M: Model + 'static> HeadlessDriver<M> {
                     // included: a widget asking whether it is hovered is
                     // asking about the last one of these.
                     self.pointer = Some(m.position);
+                    // A wheel turn goes to whatever is under it, the same way
+                    // a click does. Before this it became an `Event::Mouse`
+                    // the application had to catch and turn into coordinates
+                    // itself — the arithmetic hit-testing exists to do.
+                    if let crate::event::MouseEventKind::Scroll { delta_x, delta_y } = m.kind {
+                        if let Some(id) = self.hit_map.hit_test(m.position).map(str::to_owned) {
+                            self.dispatch_scroll(&id, m.position, delta_x, delta_y);
+                        }
+                    }
                     if m.is_click() {
                         if let Some(id) = self.hit_map.hit_test(m.position).map(str::to_owned) {
                             // Clicking a widget focuses it, so a keyboard user
@@ -863,6 +872,23 @@ impl<M: Model + 'static> HeadlessDriver<M> {
             node.widget_type,
             advertised.join(", ")
         ))
+    }
+
+    fn dispatch_scroll(
+        &mut self,
+        agent_id: &str,
+        at: crate::core::Position,
+        delta_x: f32,
+        delta_y: f32,
+    ) -> bool {
+        let Some(cmd) =
+            self.handlers
+                .apply_scroll_at(agent_id, at, delta_x, delta_y, &mut self.model)
+        else {
+            return false;
+        };
+        self.process_command(cmd);
+        true
     }
 
     fn dispatch_primary(&mut self, agent_id: &str, at: Option<crate::core::Position>) -> bool {

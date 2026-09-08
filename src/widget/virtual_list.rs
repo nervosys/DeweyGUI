@@ -249,6 +249,32 @@ where
                 frame.register_widget(node);
             }
             frame.register_hitbox(self.agent_id.clone(), area, 1);
+            // The wheel over a virtual list moves it. `scroll_to` takes the
+            // index to bring into view, so a turn is converted from pixels to
+            // rows here — the widget is the only thing that knows its row
+            // height. Down is a negative `delta_y`.
+            let (item_height, total) = (self.item_height, state.total_items);
+            let first_visible = if item_height > 0.0 {
+                (state.scroll_offset / item_height).floor()
+            } else {
+                0.0
+            };
+            frame.register_scroll(
+                self.agent_id.clone(),
+                crate::runtime::ScrollParams::from_delta(move |_at, _dx, dy| {
+                    if total == 0 || item_height <= 0.0 {
+                        return None;
+                    }
+                    let rows = (dy.abs().max(1.0) * dy.signum()).round();
+                    let index = (first_visible - rows).clamp(0.0, (total - 1) as f32);
+                    if index == first_visible {
+                        return None;
+                    }
+                    Some(crate::runtime::Click::params(
+                        serde_json::json!({ "index": index as usize }),
+                    ))
+                }),
+            );
         }
 
         for i in range {

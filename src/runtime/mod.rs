@@ -245,6 +245,9 @@ pub struct Frame<'a> {
     /// Drawing deferred until every widget has had its turn. See
     /// [`Frame::overlay`].
     overlays: Vec<DeferredDraw>,
+    /// What a wheel turn over a widget means. See [`ClickParams`] for the
+    /// same arrangement on the other gesture.
+    scrolls: Vec<(std::borrow::Cow<'static, str>, ScrollParams)>,
     /// Interactive widgets that rendered without an id, and so cannot be
     /// clicked or addressed. Collected here because such a widget never
     /// reaches the UI tree to be noticed afterwards.
@@ -304,6 +307,7 @@ impl<'a> Frame<'a> {
             messages: Vec::new(),
             clicks: Vec::new(),
             overlays: Vec::new(),
+            scrolls: Vec::new(),
             unaddressable: Vec::new(),
             skipped: 0,
             pointer: None,
@@ -443,6 +447,20 @@ impl<'a> Frame<'a> {
         params: ClickParams,
     ) {
         self.clicks.push((agent_id.into(), params));
+    }
+
+    /// Say what a wheel turn over this widget means.
+    pub fn register_scroll(
+        &mut self,
+        agent_id: impl Into<std::borrow::Cow<'static, str>>,
+        params: ScrollParams,
+    ) {
+        self.scrolls.push((agent_id.into(), params));
+    }
+
+    /// Take the scroll behaviours widgets registered this frame.
+    pub fn take_scrolls(&mut self) -> Vec<(std::borrow::Cow<'static, str>, ScrollParams)> {
+        std::mem::take(&mut self.scrolls)
     }
 
     /// Take the click behaviours widgets registered this frame.
@@ -595,6 +613,37 @@ impl ClickParams {
     }
 }
 
+/// How a wheel turn supplies the parameters an action needs.
+///
+/// The same arrangement as [`ClickParams`], for the other pointer gesture. A
+/// wheel over a scrollable region reached no widget at all: `Scroll` and
+/// `VirtualList` advertise `scroll_to`, neither registered a hitbox, and no
+/// host hit-tested a scroll — so the wheel produced an `Event::Mouse` the
+/// application had to catch and turn into coordinates itself, which is the
+/// arithmetic hit-testing exists to do.
+pub enum ScrollParams {
+    /// The widget turns a wheel turn over a point into the parameters.
+    ///
+    /// Given where the pointer is and how far the wheel moved, in that order.
+    /// `None` means the turn means nothing here and no action fires.
+    FromDelta(Box<dyn Fn(crate::core::Position, f32, f32) -> Option<Click> + Send>),
+}
+
+impl ScrollParams {
+    /// Map a wheel turn to parameters with a closure.
+    pub fn from_delta(
+        f: impl Fn(crate::core::Position, f32, f32) -> Option<Click> + Send + 'static,
+    ) -> Self {
+        Self::FromDelta(Box::new(f))
+    }
+}
+
+impl std::fmt::Debug for ScrollParams {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("FromDelta")
+    }
+}
+
 /// What a click turned out to mean: which action, with which parameters.
 ///
 /// The action is usually the widget's primary one and is left unset. It is
@@ -666,6 +715,9 @@ pub struct Handlers<M> {
     /// What a click on a widget supplies, for the widgets that said. Absent
     /// means the handler takes no parameters, which is the Button case.
     clicks: Vec<(String, ClickParams)>,
+    /// What a wheel turn over a widget supplies. Absent means the widget does
+    /// not scroll, and a turn over it does nothing.
+    scrolls: Vec<(String, ScrollParams)>,
     model: std::marker::PhantomData<fn(&mut M)>,
 }
 
@@ -674,6 +726,7 @@ impl<M> Default for Handlers<M> {
         Self {
             entries: Vec::new(),
             clicks: Vec::new(),
+            scrolls: Vec::new(),
             model: std::marker::PhantomData,
         }
     }
@@ -701,6 +754,11 @@ impl<M: Model + 'static> Handlers<M> {
                 .into_iter()
                 .map(|(id, params)| (id.into_owned(), params))
                 .collect(),
+            scrolls: frame
+                .take_scrolls()
+                .into_iter()
+                .map(|(id, params)| (id.into_owned(), params))
+                .collect(),
             model: std::marker::PhantomData,
         }
     }
@@ -709,6 +767,7 @@ impl<M: Model + 'static> Handlers<M> {
     pub fn clear(&mut self) {
         self.entries.clear();
         self.clicks.clear();
+        self.scrolls.clear();
     }
 
     /// The `(widget, action)` pairs that have a handler, in registration order.
@@ -759,6 +818,30 @@ impl<M: Model + 'static> Handlers<M> {
             None => self.primary_action(agent_id)?,
         };
         self.apply(agent_id, action, &click.params, model)
+    }
+
+    /// Turn the wheel over `agent_id` by `(delta_x, delta_y)` at `at`.
+    ///
+    /// Returns `None` when the widget does not scroll or the turn means
+    /// nothing to it — a list already at its end, say. Every host goes through
+    /// here, for the same reason every host activates through
+    /// [`apply_primary_at`](Self::apply_primary_at).
+    pub fn apply_scroll_at(
+        &mut self,
+        agent_id: &str,
+        at: crate::core::Position,
+        delta_x: f32,
+        delta_y: f32,
+        model: &mut M,
+    ) -> Option<Command<M::Msg>> {
+        let (_, params) = self.scrolls.iter().find(|(id, _)| id == agent_id)?;
+        let ScrollParams::FromDelta(f) = params;
+        let scroll = f(at, delta_x, delta_y)?;
+        let action = match scroll.action {
+            Some(named) => named,
+            None => self.primary_action(agent_id)?,
+        };
+        self.apply(agent_id, action, &scroll.params, model)
     }
 
     /// The action a click on `agent_id` should fire: the first one registered.
@@ -1414,6 +1497,19 @@ impl<M: Model + 'static> eframe::App for DeweyApp<M> {
             // actually uses. It worked headless and under agpu, so every test
             // passed.
             if let crate::event::Event::Mouse(m) = &event {
+                if let crate::event::MouseEventKind::Scroll { delta_x, delta_y } = m.kind {
+                    if let Some(id) = self.hit_map.hit_test(m.position).map(str::to_owned) {
+                        if let Some(cmd) = self.handlers.apply_scroll_at(
+                            &id,
+                            m.position,
+                            delta_x,
+                            delta_y,
+                            self.driver.model_mut(),
+                        ) {
+                            self.process_command(cmd);
+                        }
+                    }
+                }
                 if m.is_click() {
                     if let Some(id) = self.hit_map.hit_test(m.position).map(str::to_owned) {
                         // Clicking a widget focuses it, so a keyboard user

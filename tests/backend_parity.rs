@@ -506,3 +506,50 @@ fn every_host_says_where_the_pointer_is() {
         "the default backend stopped reading the pointer from egui"
     );
 }
+
+/// Every host routes a wheel turn to the widget under it.
+///
+/// A turn used to become an `Event::Mouse` and stop there: `ScrollArea` and
+/// `VirtualList` advertise `scroll_to`, neither registered a hitbox, and no
+/// host hit-tested a scroll — so every application caught the event and did
+/// the coordinate arithmetic hit-testing exists to do. Exactly where the
+/// click path was before this session.
+#[test]
+fn every_host_routes_a_wheel_turn() {
+    for (name, file) in [
+        ("the default backend", "src/runtime/mod.rs"),
+        ("the agpu backend", "src/backend/agpu_backend.rs"),
+        ("the headless driver", "src/agent/driver.rs"),
+    ] {
+        let text: String = source(file)
+            .chars()
+            .filter(|c| !c.is_whitespace())
+            .collect();
+        assert!(
+            text.contains("MouseEventKind::Scroll{delta_x,delta_y}"),
+            "{name} does not look at a wheel turn at all"
+        );
+        assert!(
+            text.contains("apply_scroll_at(") || text.contains("dispatch_scroll("),
+            "{name} sees a wheel turn and never routes it to a widget, so a \
+             scrollable region does not scroll under the pointer on it"
+        );
+    }
+
+    // Routed to whatever is under the pointer, not to a fixed widget.
+    for (name, file) in [
+        ("the default backend", "src/runtime/mod.rs"),
+        ("the agpu backend", "src/backend/agpu_backend.rs"),
+        ("the headless driver", "src/agent/driver.rs"),
+    ] {
+        let text: String = source(file)
+            .chars()
+            .filter(|c| !c.is_whitespace())
+            .collect();
+        assert!(
+            text.matches("hit_test(m.position)").count() >= 2,
+            "{name} hit-tests a click and not a wheel turn, so the turn goes \
+             wherever the last click did"
+        );
+    }
+}
