@@ -492,12 +492,26 @@ impl<M: Model + 'static> McpServer<M> {
     }
 
     /// Run the MCP server loop, reading from stdin and writing to stdout.
-    pub fn run(mut self) -> io::Result<()> {
+    pub fn run(self) -> io::Result<()> {
         let stdin = io::stdin();
         let stdout = io::stdout();
-        let mut stdout = stdout.lock();
-        let mut reader = stdin.lock();
+        self.serve(stdin.lock(), stdout.lock())
+    }
 
+    /// The same loop over any reader and writer.
+    ///
+    /// Split out because `run` held stdin and stdout, so nothing could drive
+    /// it — and this is the surface a coding agent actually connects to. The
+    /// tool list and the argument parsing had unit tests; the loop that frames
+    /// them, refuses a wrong `jsonrpc` version, answers an unknown method with
+    /// the right code and returns `INSTRUCTIONS` from `initialize` had none.
+    /// The instructions are the highest-leverage text in this project and
+    /// nothing checked that they were ever sent.
+    pub fn serve(
+        mut self,
+        mut reader: impl std::io::BufRead,
+        mut stdout: impl Write,
+    ) -> io::Result<()> {
         while let Some((raw, oversized)) = super::read_capped_line(&mut reader, MAX_LINE_BYTES)? {
             // Reject oversized requests before attempting to parse them. The
             // reader caps buffering at MAX_LINE_BYTES, so an unbounded line can

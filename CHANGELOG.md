@@ -955,6 +955,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Internal
 
+- **The MCP loop a coding agent connects to had no tests, for the same reason
+  the stdio one did not.** `McpServer::run` held `io::stdin()` and
+  `io::stdout()`, so nothing could drive it. The tool list and the argument
+  parsing had unit tests; the loop that frames them had none — not the
+  JSON-RPC envelope, not the refusal of a wrong version, not the code an
+  unknown method answers with, and not `initialize`.
+
+  `initialize` is where `INSTRUCTIONS` reaches the model. That string is the
+  whole of this project's argument that an agent should ask the application
+  rather than read its source, and **nothing checked it was ever sent** —
+  `src/agent/mcp.rs` asserts what the text says, and no test asserted the
+  client receives it. Verified by emptying it and watching the new test fail.
+
+  `McpServer::serve(reader, writer)` is the same loop over anything, and
+  `run` calls it with stdin and stdout. `tests/mcp_server.rs` drives it: the
+  instructions arriving and still naming `get_tree`, every advertised tool
+  carrying a description and an input schema, a `tools/call` reaching the
+  model and changing it, `-32601` for an unknown method, `-32700` for
+  malformed JSON with the connection surviving, `-32600` for a wrong
+  `jsonrpc` version carrying the id back, and every line written being an
+  addressed JSON-RPC message.
 - **The stdio protocol loop had no tests, because it could not have any.**
   `serve_stdio` held `io::stdin()` and `io::stdout()` directly, so nothing
   could drive it: the rate limit, the oversize guard, the reply to malformed
