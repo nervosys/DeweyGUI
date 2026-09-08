@@ -107,11 +107,11 @@ Agentic-first GUI framework for Rust with pluggable rendering backends.
       barrier registers at z 0, not `u32::MAX`: blocking is done by *being* a
       barrier, and a backdrop that also outranked everything meant the dialog's
       own buttons could not be pressed
-- [~] ColorPicker — the preview only. It paints a swatch of the current
-      colour, the label and the hex value; there is no hue strip and no
-      saturation-value square, so nothing on screen offers a colour to choose
-      and a person cannot pick one. `set_color` works through
-      `execute_action`, which makes this a display an agent can write to
+- [x] ColorPicker — HSV/hex colour selection with preview. The swatch opens a
+      saturation-value square and a hue strip, drawn through `Frame::overlay`
+      as a grid of flat fills because `Painter` has no gradient primitive. A
+      click in the square picks a saturation and a value, a click on the strip
+      moves the hue and keeps the rest
 - [x] Toolbar — action grouping with separators
 - [x] Splitter — resizable panels (horizontal/vertical)
 - [x] CommandPalette — fuzzy-search command launcher. A click on a result runs

@@ -2165,6 +2165,7 @@ fn multi_action_widgets_answer_to_every_action_they_advertise() {
         date: Vec<String>,
         palette: Vec<String>,
         color: Option<dewey::core::Color>,
+        color_open: Option<bool>,
         scroll: Option<(Option<f32>, Option<f32>)>,
     }
 
@@ -2198,10 +2199,14 @@ fn multi_action_widgets_answer_to_every_action_they_advertise() {
                     w.log.palette.push(format!("{c:?}"));
                 })
                 .render(r[2], frame, &mut self.pal_s.borrow_mut());
+            // Both of its actions: a picker that wires only `set_color` now
+            // advertises a `toggle_open` with nothing behind it, and this
+            // file's own strict check reports exactly that.
             ColorPicker::new("Colour")
                 .on_color("color", |w: &mut W, c: ColorChange| {
                     w.log.color = Some(c.applied_to(dewey::core::Color::BLACK));
                 })
+                .on_open("color", |w: &mut W, open| w.log.color_open = Some(open))
                 .render(r[3], frame, &mut self.col_s.borrow_mut());
             ScrollArea::vertical()
                 .on_scroll("scroll", |w: &mut W, x, y| w.log.scroll = Some((x, y)))

@@ -406,6 +406,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`ColorPicker` had nothing to pick from.** It called itself "HSV/hex color
+  selection" and painted a swatch of the current colour, the label and the hex
+  value. There was no hue strip and no saturation-value square, so `set_color`
+  was reachable only through `execute_action` — a display an agent could write
+  to and a person could only look at.
+
+  The swatch now opens a real picker: a saturation-value square and a hue
+  strip, drawn through `Frame::overlay` as a grid of flat fills, because
+  `Painter` has nine primitives and none of them is a gradient. A click in the
+  square picks a saturation and a value at full precision — the drawing is
+  quantised into cells, the reading is not — and a click on the strip moves the
+  hue while keeping the saturation and value the colour already had.
+
+  That last part is why the conversion goes both ways: `set_color` speaks in
+  `r`, `g`, `b`, so changing only the hue means reading the other two back out
+  of the current colour first. Both directions are unit-tested against each
+  other, including grey, which has no hue and would divide by the zero
+  difference between its channels.
+
+  As with `Select` and `Menu`, adding `toggle_open` made `validate --strict`
+  report every picker wiring only `on_color`. It found the gap in this
+  repository's own fixture again, which is three for three.
 - **A wheel turn over a scrollable region reached no widget.** `ScrollArea`
   and `VirtualList` both advertise `scroll_to`, neither registered a hitbox,
   and no host hit-tested a scroll — so a turn became an `Event::Mouse` the

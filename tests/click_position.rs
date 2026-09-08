@@ -1505,3 +1505,150 @@ mod dragdrop {
         );
     }
 }
+
+// -- a picker that had nothing to pick from ----------------------------
+
+/// `ColorPicker` was a preview calling itself "HSV/hex color selection".
+///
+/// It painted a swatch of the current colour, the label and the hex value.
+/// There was no hue strip and no saturation-value square, so nothing on screen
+/// offered a colour to choose and `set_color` was reachable only through
+/// `execute_action` — a display an agent could write to and a person could
+/// only look at. It is the widget I claimed two rounds ago was not there.
+mod picker {
+    use super::*;
+    use dewey::core::Color;
+    use dewey::widget::color_picker::{ColorPicker, ColorPickerState};
+
+    struct Paint {
+        state: std::cell::RefCell<ColorPickerState>,
+        open: bool,
+    }
+
+    impl Model for Paint {
+        type Msg = ();
+
+        fn update(&mut self, _m: ()) -> Command<()> {
+            Command::None
+        }
+
+        fn view(&self, frame: &mut Frame<'_>) {
+            ColorPicker::new("Ink")
+                .open(self.open)
+                .on_color("ink", |p: &mut Paint, change| {
+                    let mut s = p.state.borrow_mut();
+                    let c = s.color;
+                    s.color = Color::rgba(
+                        change.r.map_or(c.r, |v| v as f32 / 255.0),
+                        change.g.map_or(c.g, |v| v as f32 / 255.0),
+                        change.b.map_or(c.b, |v| v as f32 / 255.0),
+                        change.a.map_or(c.a, |v| v as f32 / 255.0),
+                    );
+                })
+                .on_open("ink", |p: &mut Paint, open| p.open = open)
+                .render(
+                    Rect::new(0.0, 0.0, 200.0, 260.0),
+                    frame,
+                    &mut self.state.borrow_mut(),
+                );
+        }
+    }
+
+    fn paint(open: bool, colour: Color) -> dewey::agent::driver::HeadlessDriver<Paint> {
+        let mut d = dewey::agent::driver::HeadlessDriver::new(
+            Paint {
+                state: std::cell::RefCell::new(ColorPickerState::new(colour)),
+                open,
+            },
+            300.0,
+            300.0,
+        );
+        d.init();
+        d.process_request(&AgentRequest::GetTree {
+            since: None,
+            viewport: None,
+        });
+        d
+    }
+
+    fn click_at(d: &mut dewey::agent::driver::HeadlessDriver<Paint>, x: f32, y: f32) {
+        d.process_request(&AgentRequest::InjectEvent {
+            event: InjectedEvent::MouseClick {
+                x,
+                y,
+                button: "left".into(),
+            },
+        });
+    }
+
+    fn colour(d: &dewey::agent::driver::HeadlessDriver<Paint>) -> Color {
+        d.model().state.borrow().color
+    }
+
+    #[test]
+    fn clicking_the_swatch_opens_the_picker() {
+        let mut d = paint(false, Color::rgba(1.0, 0.0, 0.0, 1.0));
+        click_at(&mut d, 10.0, 10.0);
+        assert!(
+            d.model().open,
+            "clicking the swatch did not open the picker"
+        );
+    }
+
+    /// The square and the strip are painted. A picker nobody can see offers
+    /// nothing to pick, which is the whole finding.
+    #[test]
+    fn an_open_picker_paints_a_square_and_a_strip() {
+        let d = paint(true, Color::rgba(1.0, 0.0, 0.0, 1.0));
+        let fills = d
+            .painted()
+            .iter()
+            .filter(|op| matches!(op, dewey::backend::test::RenderOp::FillRect { .. }))
+            .count();
+        assert!(
+            fills > 200,
+            "an open picker drew {fills} filled rectangles; the square alone is \
+             16x16 of them"
+        );
+    }
+
+    /// The top-right corner of the square is full saturation and full value:
+    /// the pure hue. Red in, red out.
+    #[test]
+    fn clicking_the_square_picks_a_saturation_and_a_value() {
+        let mut d = paint(true, Color::rgba(1.0, 0.0, 0.0, 1.0));
+        // The square sits below the swatch (32) and the hex line (20).
+        // Bottom-left is saturation 0, value 0: black.
+        click_at(&mut d, 1.0, 52.0 + 127.0);
+        let c = colour(&d);
+        assert!(
+            c.r < 0.1 && c.g < 0.1 && c.b < 0.1,
+            "the bottom-left of the square is black and gave {c:?}"
+        );
+    }
+
+    /// The strip moves the hue and keeps the saturation and value. Reading
+    /// those back out of the current colour is why `color_to_hsv` exists.
+    #[test]
+    fn clicking_the_strip_changes_the_hue_and_keeps_the_rest() {
+        let mut d = paint(true, Color::rgba(1.0, 0.0, 0.0, 1.0));
+        // A third of the way along the strip is around 120 degrees: green.
+        click_at(&mut d, 128.0 / 3.0, 52.0 + 128.0 + 6.0 + 8.0);
+        let c = colour(&d);
+        assert!(
+            c.g > c.r && c.g > c.b,
+            "a third of the way along the hue strip should be green, got {c:?}"
+        );
+        assert!((c.g - 1.0).abs() < 0.1, "the value was not kept: {c:?}");
+    }
+
+    /// A click inside the widget and on neither control picks nothing.
+    #[test]
+    fn clicking_the_label_picks_nothing() {
+        let mut d = paint(true, Color::rgba(1.0, 0.0, 0.0, 1.0));
+        let before = colour(&d);
+        click_at(&mut d, 120.0, 10.0);
+        assert_eq!(colour(&d).r, before.r);
+        assert_eq!(colour(&d).g, before.g);
+    }
+}
