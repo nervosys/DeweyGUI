@@ -52,6 +52,21 @@ intervention across 184 recorded runs: MCP tools raised ontology consultation
 from 4% to 42%, trigger prompts took it to 83%, and score, cost and turns did
 not move — one task got monotonically worse. Consultation is not the metric.
 
-`benches/agentic/` is the harness for finding out whether it changes anything
-here. Until it has been run, this fragment is a cheap and plausible measure,
-not a demonstrated one.
+`benches/agentic/` has now been run, and the answer is in two halves.
+
+**Writing a Dewey application: it changed nothing.** Twelve runs on
+`t1-counter`, four of them with the MCP server attached and reporting
+`connected`, its tools listed and these instructions delivered by `initialize`.
+Not one run invoked a single tool. Every run scored 1.000 anyway, by reading
+`examples/counter.rs`, `examples/agent_headless.rs` and `llms.txt` — only three
+reads in twelve runs touched `src/` at all.
+
+**Driving one it did not write: the tools were the cheapest route.** Twelve runs
+on `t3-inspect`, 12/12 correct, and the arm with the MCP server took 19.8 turns
+at $0.37 a run against 29.0 and $0.58 without it.
+
+So this fragment earns its place for an agent that has to operate a running
+interface, and does not appear to for one that is writing code against the
+crate. If you are shipping an application for agents to drive, use it. If you
+are asking a model to write Dewey code, spend the effort on your examples: that
+is what twelve runs actually read.

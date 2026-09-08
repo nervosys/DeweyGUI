@@ -14,8 +14,19 @@
 //! # What this does not measure
 //!
 //! Not model behaviour. Nothing here calls a model or observes what one
-//! chooses; it prices the strategies a model picks between. Whether it picks
-//! well is what `INSTRUCTIONS` in `src/agent/mcp.rs` is for.
+//! chooses; it prices the strategies a model picks between.
+//!
+//! What one chooses is now measured next door, and the answer is not
+//! comfortable for these numbers. On a writing task, twelve runs in
+//! `benches/agentic/` never asked the application anything — including four
+//! with the MCP server connected and these tools in front of the model — and
+//! scored 1.000 regardless, by reading two examples and `llms.txt`. Every
+//! saving priced below assumes an agent that asks. On a *driving* task the
+//! same harness found the opposite: 12/12 correct and the tooled arm cheapest,
+//! because there the interface is the only way to know anything.
+//!
+//! So read this file as the price of asking, for the case where asking is the
+//! only option. It is not evidence that anybody asks.
 //!
 //! Token counts are estimated, and bytes are exact. The estimator is
 //! documented at [`tokens`] and is deliberately generous to the source-reading

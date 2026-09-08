@@ -562,3 +562,53 @@ fn the_machine_readable_index_is_true() {
         );
     }
 }
+
+/// The Rust in `llms.txt` is the same compiled example the README shows.
+///
+/// Twelve paid runs read `llms.txt` in seven of them, which makes it the most
+/// consulted file in the repository and the worst place for a sample nothing
+/// compiles. It had none at all until the runs showed what agents actually
+/// reach for; the one it has now is `examples/quickstart.rs`, so cargo checks
+/// it on every build and there is one source of truth for two documents.
+#[test]
+fn the_llms_index_shows_the_compiled_example() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let index = std::fs::read_to_string(root.join("llms.txt"))
+        .expect("llms.txt")
+        .replace("\r\n", "\n");
+
+    let mut samples = Vec::new();
+    let mut current: Option<String> = None;
+    for line in index.lines() {
+        match (line.trim_end(), current.as_mut()) {
+            ("```rust", None) => current = Some(String::new()),
+            ("```", Some(_)) => samples.push(current.take().unwrap_or_default()),
+            (_, Some(buffer)) => {
+                buffer.push_str(line);
+                buffer.push('\n');
+            }
+            _ => {}
+        }
+    }
+    assert_eq!(
+        samples.len(),
+        1,
+        "llms.txt should carry exactly one Rust sample, and it should be the \
+         one cargo compiles"
+    );
+
+    let example = std::fs::read_to_string(root.join("examples/quickstart.rs"))
+        .expect("examples/quickstart.rs")
+        .replace("\r\n", "\n");
+    let body: String = example
+        .lines()
+        .skip_while(|l| l.starts_with("//!") || l.trim().is_empty())
+        .collect::<Vec<_>>()
+        .join("\n");
+    assert_eq!(
+        samples[0].trim(),
+        body.trim(),
+        "the Rust in llms.txt has drifted from examples/quickstart.rs, so the \
+         file agents read most is showing code nothing compiles"
+    );
+}

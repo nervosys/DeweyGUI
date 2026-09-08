@@ -873,6 +873,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Documentation
 
+- **The claims the runs contradicted, corrected; and the file agents actually
+  read, fixed.**
+
+  `docs/agent-prompt.md` said this fragment was "a cheap and plausible measure,
+  not a demonstrated one". It is demonstrated now, in two halves that point
+  opposite ways: on a writing task twelve runs never called a tool, four of them
+  with the server connected and the instructions delivered, and scored 1.000
+  anyway; on a driving task the tooled arm was the cheapest of three. The file
+  now says both, and says which case each applies to.
+
+  `observation_cost.rs` said "not model behaviour" and left it there. It now
+  says that every saving it prices assumes an agent that asks, that twelve runs
+  on a writing task did not ask, and that on a driving task the same harness
+  found the opposite. It is the price of asking, not evidence that anybody does.
+
+  `llms.txt` was read in **7 of the 12** writing runs, which makes it the most
+  consulted file in the repository — and its "Writing an application" section
+  contained no Rust at all. It pointed the reader at the MCP server, the exact
+  thing every one of those runs declined to use. It now opens with a whole
+  working application, the three mistakes that are easiest to make, and the
+  `--dewey-validate` invocation that catches them.
+
+  That sample is `examples/quickstart.rs` verbatim — the same file the README
+  quick start is checked against — so cargo compiles it on every build and two
+  documents share one source of truth.
+  `the_llms_index_shows_the_compiled_example` fails if they drift, because an
+  unverified sample in the most-read file in the repository is the worst place
+  in the project to have one, and I very nearly left it there.
 - **The protocol reference showed what to ask and, for thirteen of fifteen
   requests, not what comes back.** `documented_responses_match_what_the_server
   _sends` had a floor of `checked >= 1`, so it could pass having compared a

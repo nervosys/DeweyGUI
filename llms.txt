@@ -51,13 +51,72 @@ Four worth knowing before you start:
 
 ## Writing an application
 
-- `cargo run --release --example mcp_server` — an MCP server that answers
-  `query_ontology` and `get_schema` for all 29 built-in widget schemas. This is
-  the catalogue, and it is what you want before there is an interface to read.
-- `docs/agent-protocol.md` — the reference the server implements
+A whole one. Every widget follows this shape: a builder, an id, and a change to
+apply when it is used.
 
-`query_ontology` returns the whole catalogue and is the most expensive call in
-the protocol; ask it once, or filter it by `query` or `role`.
+```rust
+use dewey::prelude::*;
+
+struct App {
+    count: i32,
+}
+
+#[derive(Debug)]
+enum Msg {
+    Increment,
+    Decrement,
+}
+
+impl Model for App {
+    type Msg = Msg;
+
+    fn update(&mut self, msg: Msg) -> Command<Msg> {
+        match msg {
+            Msg::Increment => self.count += 1,
+            Msg::Decrement => self.count -= 1,
+        }
+        Command::None
+    }
+
+    fn view(&self, frame: &mut Frame<'_>) {
+        let rows = frame.area.rows_of(&[40.0, 40.0, 40.0]);
+        Label::new(format!("Count: {}", self.count))
+            .agent_id("count")
+            .render(rows[0], frame);
+        // `action` names the widget and gives it the message to send, so a
+        // person clicking it and an agent calling `execute_action("inc",
+        // "click")` take the same path.
+        Button::new("+")
+            .action("inc", Msg::Increment)
+            .render(rows[1], frame);
+        Button::new("-")
+            .action("dec", Msg::Decrement)
+            .render(rows[2], frame);
+    }
+}
+
+fn main() -> std::result::Result<(), eframe::Error> {
+    Program::new(App { count: 0 }).run()
+}
+```
+
+Three things that are easy to get wrong:
+
+- **Give every interactive widget an `agent_id`.** One without an id renders,
+  looks right, and cannot be clicked or named by anything.
+- `.action(id, msg)` sends a message through `update`. `.on(id, |m| ...)` mutates
+  the model directly and is the shorter form when there is no message to name.
+- A widget with more than one action wires them all or none: `validate --strict`
+  reports one that advertises an action nothing is bound to.
+
+Run `cargo run --example <name> -- --dewey-validate` on anything you build: it
+renders one frame with no window and reports widgets that cannot be operated.
+
+More: `examples/counter.rs` is the above with keyboard handling,
+`examples/showcase.rs` uses every widget, and `docs/agent-protocol.md` is the
+protocol reference. `cargo run --release --example mcp_server` serves the widget
+catalogue over MCP for `query_ontology` and `get_schema`, which is the same
+information as the examples in a form a tool call can filter.
 
 ## Facts
 
