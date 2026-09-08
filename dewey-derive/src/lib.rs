@@ -26,6 +26,13 @@
 //! }
 //! ```
 //!
+//! Ignored because the generated code names `dewey::ontology`, and this crate
+//! cannot depend on the one that depends on it. `tests/derive_widget.rs` in
+//! `deweygui` compiles exactly this struct and checks what it generates —
+//! which nothing did until then: the macro was re-exported, documented, listed
+//! as complete, used by no widget, no test and no example, and built by no CI
+//! job, since `--features derive` was never passed.
+//!
 //! Fields marked `#[widget(skip)]` are excluded from `agent_state()` output.
 
 use proc_macro::TokenStream;

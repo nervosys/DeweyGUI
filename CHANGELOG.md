@@ -955,6 +955,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Internal
 
+- **Three declared features were built by no CI job.** `ws-transport`,
+  `derive` and `agpu-backend` are in `Cargo.toml`, documented, and listed as
+  complete in the roadmap; every job ran with the default features or
+  `accesskit`. Each could have stopped compiling at any point with nothing to
+  notice. All three build clean today — checked under `-D warnings` — and CI
+  and `scripts/check.sh --all` now compile them, and run the tests for the two
+  that have any.
+
+- `#[derive(Widget)]` had no user at all: not a widget, not a test, not an
+  example, and its only usage example was an `ignore`d doctest, so nothing
+  compiled that either. A proc macro nobody invokes is worse off than an
+  unused function — it can emit code that does not compile, and there is
+  nothing to find out. `tests/derive_widget.rs` compiles the struct from the
+  macro's own documentation and checks what it generates: the container
+  attributes reaching the schema, the documented defaults, `#[widget(skip)]`
+  keeping a field out of `agent_state`, and the refusal naming the widget and
+  the action. The `ignore` stays — the generated code names `dewey::ontology`
+  and the macro crate cannot depend on the crate that depends on it — but it
+  now says why, and points at the test that does compile it.
 - CI runs. It was configured to trigger on `main` in a repository whose branch
   is `master`, and had never executed; the crate did not build on Linux when it
   was first switched on. The workflow now covers the sibling `agpu` crate and

@@ -30,6 +30,16 @@ export RUSTDOCFLAGS="${RUSTDOCFLAGS:--Dwarnings}"
 run cargo doc --no-deps
 
 if [ "${1:-}" = "--all" ]; then
+    # The features CI never built. `ws-transport`, `derive` and
+    # `agpu-backend` are declared, documented and advertised in the roadmap,
+    # and nothing compiled any of them on a push: they could have stopped
+    # building at any point with nobody to notice.
+    for feature in ws-transport derive agpu-backend; do
+        run cargo clippy --features "$feature" --all-targets -- -D warnings
+    done
+    run cargo test --features derive
+    run cargo test --features ws-transport
+
     run cargo test --manifest-path agpu/Cargo.toml
     for bench in comparative scaffold; do
         run cargo check --all-targets --manifest-path "benches/$bench/Cargo.toml"

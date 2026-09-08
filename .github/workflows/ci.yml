@@ -32,6 +32,14 @@ jobs:
       # different egui feature set, which is where the version skew lives.
       - run: cargo test --features accesskit
 
+      # The features nothing built. `ws-transport`, `derive` and
+      # `agpu-backend` are declared in Cargo.toml, documented, and listed as
+      # complete in the roadmap, and no CI job compiled any of them — so each
+      # could have stopped building at any point with nobody to notice.
+      - run: cargo test --features derive
+      - run: cargo test --features ws-transport
+      - run: cargo check --features agpu-backend --all-targets
+
   clippy:
     name: Clippy
     runs-on: ubuntu-latest
