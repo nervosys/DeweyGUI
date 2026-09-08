@@ -137,6 +137,18 @@ jobs:
       - name: Observation cost holds its shape
         run: cargo run --release --bin observation_cost --manifest-path benches/scaffold/Cargo.toml
 
+      # Every windowed example, asked whether what it builds can be operated.
+      # They were compiled and never run, and three shipped with widgets
+      # advertising actions that had no handler: an agent calling one was
+      # told it worked and nothing happened. `--dewey-validate` renders one
+      # frame headlessly and exits non-zero on any error, so this needs no
+      # display.
+      - name: Every example builds an interface that can be operated
+        run: |
+          for example in hello counter quickstart canvas_drawing chat showcase; do
+            cargo run --quiet --example "$example" -- --dewey-validate
+          done
+
       # The agentic harness scores a model's work. The scoring is what runs
       # here: reference solutions must come out at 1.000 and a deliberately
       # unaddressable one must not. Driving an actual model costs money and

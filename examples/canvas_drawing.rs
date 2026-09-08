@@ -118,7 +118,10 @@ impl Model for App {
 
         // Build canvas with all accumulated shapes
         let mut canvas = Canvas::new()
-            .agent_id("drawing_canvas")
+            // `clear` is advertised, so something has to answer it: an agent
+            // calling it on an unwired canvas is told the call worked and the
+            // drawing stays where it was.
+            .on_clear("drawing_canvas", |app: &mut App| app.shapes.clear())
             .background([24, 24, 24, 255]);
 
         for shape in &self.shapes {

@@ -40,6 +40,13 @@ if [ "${1:-}" = "--all" ]; then
     run cargo run --release --bin agent_loop --manifest-path benches/comparative/Cargo.toml
     run cargo run --release --bin agent_task --manifest-path benches/scaffold/Cargo.toml
     run cargo run --release --bin observation_cost --manifest-path benches/scaffold/Cargo.toml
+
+    # Every windowed example, asked whether the interface it builds can be
+    # operated. They were compiled and never run: three of them shipped with
+    # widgets advertising actions that had no handler.
+    for example in hello counter quickstart canvas_drawing chat showcase; do
+        run cargo run --quiet --example "$example" -- --dewey-validate
+    done
 fi
 
 echo

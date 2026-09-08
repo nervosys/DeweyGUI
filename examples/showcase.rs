@@ -9,6 +9,9 @@ struct App {
     checkbox_checked: bool,
     radio_selected: usize,
     show_modal: bool,
+    select_open: bool,
+    canvas_cleared: bool,
+    expanded: std::collections::HashMap<String, bool>,
 }
 
 impl App {
@@ -18,6 +21,9 @@ impl App {
             list_state: RefCell::new(dewey::widget::list::ListState::new()),
             checkbox_checked: false,
             radio_selected: 0,
+            select_open: false,
+            canvas_cleared: false,
+            expanded: std::collections::HashMap::new(),
             show_modal: false,
         }
     }
@@ -82,12 +88,16 @@ impl Model for App {
             .agent_id("demo_btn")
             .render(left_rows[0], frame);
 
+        // Every widget here is wired. A showcase is what an agent reads to
+        // learn what this framework's widgets do, and six of these advertised
+        // actions with nothing behind them: calling one was reported as
+        // success and changed nothing.
         Checkbox::new("Enable feature", self.checkbox_checked)
-            .agent_id("demo_checkbox")
+            .action("demo_checkbox", Msg::ToggleCheckbox)
             .render(left_rows[1], frame);
 
         Radio::new("Option A", self.radio_selected == 0)
-            .agent_id("radio_a")
+            .on_select("radio_a", |a: &mut App| a.radio_selected = 0)
             .render(left_rows[2], frame);
 
         ProgressBar::new(0.65)
@@ -119,7 +129,10 @@ impl Model for App {
                 "Date".into(),
             ],
         )
-        .agent_id("demo_select")
+        .on_select("demo_select", |a: &mut App, i| {
+            a.select_state.borrow_mut().selected = i;
+        })
+        .on_open("demo_select", |a: &mut App, open| a.select_open = open)
         .render(right_rows[0], frame, &mut self.select_state.borrow_mut());
 
         List::new(vec![
@@ -129,7 +142,9 @@ impl Model for App {
             "Item 4".into(),
             "Item 5".into(),
         ])
-        .agent_id("demo_list")
+        .on_select("demo_list", |a: &mut App, i| {
+            a.list_state.borrow_mut().selected = Some(i);
+        })
         .render(right_rows[1], frame, &mut self.list_state.borrow_mut());
 
         // Tree
@@ -144,12 +159,18 @@ impl Model for App {
                 TreeNode::leaf("Cargo.toml"),
             ],
         ))
-        .agent_id("demo_tree")
+        .on_change("demo_tree", |a: &mut App, change| {
+            use dewey::widget::tree::TreeChange;
+            let expanded = matches!(change, TreeChange::Expand(_) | TreeChange::ExpandAll);
+            if let TreeChange::Expand(path) | TreeChange::Collapse(path) = change {
+                a.expanded.insert(path.to_string(), expanded);
+            }
+        })
         .render(right_rows[2], frame);
 
         // Canvas with some drawing commands
         Canvas::new()
-            .agent_id("demo_canvas")
+            .on_clear("demo_canvas", |a: &mut App| a.canvas_cleared = true)
             .background([32, 32, 32, 255])
             .filled_rect(5.0, 5.0, 40.0, 40.0, [200, 50, 50, 255])
             .filled_circle(70.0, 25.0, 15.0, [50, 200, 50, 255])

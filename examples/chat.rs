@@ -223,11 +223,14 @@ impl Model for App {
         let line_height = 22.0;
 
         // Render scroll area
-        ScrollArea::vertical().agent_id("chat_scroll").render(
-            msg_area,
-            frame,
-            &mut self.scroll_state.borrow_mut(),
-        );
+        ScrollArea::vertical()
+            // `scroll_to` is advertised, so something has to answer it.
+            .on_scroll("chat_scroll", |app: &mut App, _x, y| {
+                if let Some(y) = y {
+                    app.scroll_state.borrow_mut().offset_y = y;
+                }
+            })
+            .render(msg_area, frame, &mut self.scroll_state.borrow_mut());
 
         // Render messages as labels inside the message area
         let mut y_offset = 0.0;
@@ -312,7 +315,11 @@ impl Model for App {
             } else {
                 "Type a message... (Enter to send)"
             })
-            .agent_id("chat_input")
+            // Same for the field's own actions: an agent setting the text of
+            // an unwired input is told it worked and types into nothing.
+            .on_input("chat_input", |app: &mut App, text| {
+                app.input_state.borrow_mut().text = text.to_string();
+            })
             .render(input_row[0], frame, &mut self.input_state.borrow_mut());
 
         let send_label = if self.is_generating {

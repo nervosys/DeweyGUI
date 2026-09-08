@@ -1106,8 +1106,59 @@ impl<M: Model + 'static> Program<M> {
         self
     }
 
+    /// Check the first frame and exit, without opening a window.
+    ///
+    /// Renders once through `HeadlessDriver` and reports the strict
+    /// diagnostics: widgets that rendered with no id, duplicate ids, empty or
+    /// offscreen bounds, text nobody can read, and actions advertised with
+    /// nothing wired to any of them. Exits 1 if any of them is an error.
+    fn validate_and_exit(mut self) -> ! {
+        let mut ontology = OntologyRegistry::new();
+        self.model.register_ontology(&mut ontology);
+        // Plugins first: one may register the widgets the model then uses, and
+        // validating without them reports faults the application does not have.
+        let contributions = crate::plugin::initialise(&mut self.plugins, &mut ontology);
+        self.model.plugins_ready(&contributions);
+
+        let mut driver = crate::agent::driver::HeadlessDriver::new(
+            self.model,
+            self.options.width,
+            self.options.height,
+        );
+        *driver.ontology_mut() = ontology;
+        let findings = driver.validate_strict();
+        let errors = findings
+            .iter()
+            .filter(|d| d.severity == crate::ontology::Severity::Error)
+            .count();
+        for finding in &findings {
+            println!(
+                "{:?} {}: {}",
+                finding.severity, finding.code, finding.message
+            );
+        }
+        println!("{} diagnostic(s), {errors} error(s)", findings.len());
+        std::process::exit(if errors == 0 { 0 } else { 1 });
+    }
+
     /// Run the application. This blocks until the window closes.
     pub fn run(self) -> Result<(), eframe::Error> {
+        // `--dewey-validate` proves the interface is operable and exits,
+        // without opening a window.
+        //
+        // Every example in this repository is a windowed binary, so nothing in
+        // CI ever looked at what one of them builds: they were compiled and
+        // never run. `tests/examples_validate.rs` reads their source text for
+        // two mistakes visible from outside, which is not the same as asking
+        // the interface whether it works.
+        //
+        // It lives here rather than in each example because an application
+        // built with this crate wants it for the same reason: a check that the
+        // screen it ships is operable, on a machine with no display.
+        if std::env::args().any(|a| a == "--dewey-validate") {
+            self.validate_and_exit();
+        }
+
         let options = eframe::NativeOptions {
             viewport: {
                 // Every field here was already declared on `ProgramOptions` or

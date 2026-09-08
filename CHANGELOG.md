@@ -103,6 +103,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`--dewey-validate`**: any application built with this crate can prove its
+  first frame is operable and exit, without opening a window. `Program::run`
+  checks for it before starting eframe, renders once through `HeadlessDriver`,
+  prints the strict diagnostics and exits non-zero if any is an error.
+
+  It exists because the examples were compiled and never run. Eleven windowed
+  binaries, and `tests/examples_validate.rs` read their source text for two
+  mistakes visible from outside — which is not the same as asking the interface
+  whether it works. Asking found faults in three of the six:
+
+  | example | widgets advertising actions with no handler |
+  |---|---|
+  | `canvas_drawing` | `drawing_canvas` |
+  | `chat` | `chat_input`, `chat_scroll` |
+  | `showcase` | `demo_canvas`, `demo_checkbox`, `demo_list`, `demo_select`, `demo_tree`, `radio_a` |
+
+  Nine widgets, all now wired. The showcase is what an agent reads to learn
+  what these widgets do, and six of them reported success and changed nothing —
+  the defect this whole project exists to catch, shipping in its own
+  demonstration.
+
+  `scripts/check.sh --all` and CI run every windowed example with the flag, so
+  a demonstration that stops working fails the build rather than waiting for
+  somebody to open it.
 - **Drag-and-drop, which no host could deliver.** `Event::DragDrop` shipped in
   v1.1 with a complete vocabulary — five kinds, four payload types, a source
   and a target — and nothing produced any of it. The agpu backend converted an
