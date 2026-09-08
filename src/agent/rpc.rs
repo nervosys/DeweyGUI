@@ -3,7 +3,7 @@
 //! Implements the stdio-based JSON Lines protocol used by AI coding agents
 //! to embed and control Dewey applications.
 
-use std::io::{self, Write};
+use std::io::{self, BufRead, Write};
 use std::time::Instant;
 
 use super::driver::HeadlessDriver;
@@ -103,9 +103,23 @@ impl<M: Model + 'static> RequestSink for HeadlessDriver<M> {
 /// Returns when stdin closes or the application stops.
 pub fn serve_stdio(sink: &mut impl RequestSink) -> io::Result<()> {
     let stdin = io::stdin();
-    let mut stdout = io::stdout();
-    let mut reader = stdin.lock();
+    let stdout = io::stdout();
+    serve(sink, stdin.lock(), stdout.lock())
+}
 
+/// The protocol loop, over any reader and writer.
+///
+/// Split out from [`serve_stdio`] because that function held stdin and stdout
+/// directly, so nothing could drive it. Every request an agent makes over the
+/// stdio transport passes through here, and none of it — the rate limit, the
+/// oversize guard, the reply to malformed JSON, the events a subscriber is
+/// sent, the shutdown on `quit` — could be checked by a test. The one part of
+/// this crate an agent cannot avoid was the one part with no tests at all.
+pub fn serve(
+    sink: &mut impl RequestSink,
+    mut reader: impl BufRead,
+    mut stdout: impl Write,
+) -> io::Result<()> {
     let mut window_start = Instant::now();
     let mut request_count: u32 = 0;
 

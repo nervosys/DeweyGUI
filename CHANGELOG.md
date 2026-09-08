@@ -955,6 +955,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Internal
 
+- **The stdio protocol loop had no tests, because it could not have any.**
+  `serve_stdio` held `io::stdin()` and `io::stdout()` directly, so nothing
+  could drive it: the rate limit, the oversize guard, the reply to malformed
+  JSON, the events a subscriber is sent and the shutdown on `quit` were all
+  unverifiable. `src/agent/rpc.rs` — the transport every agent uses — had zero
+  tests, on the one surface an agent cannot avoid.
+
+  `serve(sink, reader, writer)` is the same loop over anything, and
+  `serve_stdio` calls it with stdin and stdout. `tests/stdio_transport.rs`
+  drives it against a real `HeadlessDriver`, so a reply is what an application
+  would actually send: ids matched one-to-one and in order, malformed JSON
+  answered without closing the connection, blank lines skipped, an oversized
+  line refused by size while the loop continues, `quit` closing it, a
+  subscriber receiving `state_changed` after the reply that caused it, and a
+  thousand-and-first request in one window refused rather than dropped.
+
+  Everything passed on the first run. The transport was correct and
+  unverifiable, which is the same position `HeadlessDriver` was in before the
+  backends were held to it — and it is where every defect in this cycle has
+  come from. Two of the tests were checked by breaking what they cover.
 - **Three declared features were built by no CI job.** `ws-transport`,
   `derive` and `agpu-backend` are in `Cargo.toml`, documented, and listed as
   complete in the roadmap; every job ran with the default features or
