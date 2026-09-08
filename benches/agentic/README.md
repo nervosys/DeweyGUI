@@ -159,8 +159,41 @@ from zero.
 The performance case for the ontology rests on an agent asking, and on this task
 an agent given every encouragement did not ask once. Before quoting any
 token-saving number from `observation_cost`, that assumption has to be earned on
-a task where observing is the only way to answer — which this is not, and which
-`t2-todo` was written for.
+a task where observing is the only way to answer.
+
+**No such task exists here.** `t2-todo` is a writing task as well — build a
+to-do list from a specification — so both tasks hand the agent a spec and ask
+for a program, and neither ever puts a running application in front of it. An
+earlier version of this paragraph said `t2-todo` was the one that would ask the
+other half. That was written without reading it. Asking the driving question
+needs a third task, where the agent is given an application it did not write and
+the answers are only in the running state.
+
+### `t3-inspect`, the task that asks it
+
+Written and not yet run. The agent is handed a **running to-do application**
+(`subject/`) and asked one question: how many items are urgent and not yet
+done? It writes the number to `answer.txt` and is scored on that alone.
+
+The list is built from a seed chosen when the program starts. The seed is never
+given to the agent, and the source is identical on every run — so the answer
+moves and the code does not. Reading the source cannot produce it. Asking the
+program can, with a single `get_tree`.
+
+The same three arms apply. `bare` gets the binary and the protocol described in
+the prompt; `mcp` additionally attaches the subject itself as an MCP server, so
+the tools point at *this* application rather than at an empty catalogue, which
+is the difference that makes the arm mean something for a driving task.
+
+`runner/selftest_drive.py` runs in CI and costs nothing. It checks that the
+answer is reachable by asking, that it varies across 120 seeds while the source
+stands still, that an agent which always guesses the commonest answer scores
+only 27%, and that the prompt leaks neither the seed nor the answer. Nine
+harness defects have been paid for at about a dollar each; this is where the
+tenth is cheap.
+
+What it will cost to run: twelve runs at roughly $1 each, on the evidence of
+8 September.
 
 ## First runs, 2026-09-03 — all discarded
 

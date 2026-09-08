@@ -103,6 +103,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`t3-inspect`: the task that asks the half the other two cannot.** Written,
+  self-checked and not yet run.
+
+  The twelve runs of 8 September came with a caveat, and checking it turned up
+  a mistake in the write-up published an hour earlier: `t2-todo` is a writing
+  task as well. Both existing tasks hand the agent a specification and score
+  the program it returns, so **neither ever puts a running application in
+  front of it** — and the claim that `t2-todo` would ask the driving question
+  was written without reading it. Corrected in both places it appeared.
+
+  `benches/agentic/subject/` is an application the agent does not write. Its
+  to-do list is built from a seed chosen at startup; the seed is never given
+  to the agent and the source is identical every run, so the answer moves and
+  the code does not. Reading the source cannot produce it; one `get_tree`
+  can. The subject serves the JSON Lines protocol on stdin, and `--mcp` wraps
+  the same model as an MCP server — so in that arm the tools point at *this*
+  application rather than at an empty catalogue, which is what makes the arm
+  mean anything for a driving task.
+
+  `runner/selftest_drive.py` runs in CI and costs nothing. It checks the
+  answer is reachable by asking, that 120 seeds give 8 distinct answers while
+  the source stands still, that always guessing the commonest answer scores
+  only 27%, and that the prompt leaks neither seed nor answer. Nine harness
+  defects have been paid for at about a dollar each; this is where the tenth
+  is cheap.
 - **The agentic benchmark has run. Twelve valid runs, $11.98, and the answer is
   no.** Four runs in each of three arms on `t1-counter`. Every run built and
   scored 1.000. **Not one consulted the ontology.**

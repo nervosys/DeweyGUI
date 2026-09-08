@@ -1,0 +1,23 @@
+# The application under inspection.
+#
+# Every other task in this harness hands an agent a specification and asks for
+# a program. This one hands it a program it did not write and asks a question
+# about the state that program is in — which is the half the twelve runs of
+# 8 September never touched, and the half `observation_cost` prices.
+#
+# The initial state is seeded and the seed is never given to the agent, so the
+# source is the same every run and the answer is not. Reading the code cannot
+# produce it. Only asking the running program can.
+[package]
+name = "dewey-agentic-subject"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+dewey = { package = "deweygui", path = "../../..", default-features = false }
+serde_json = "1"
+
+[[bin]]
+name = "subject"
+path = "src/main.rs"

@@ -57,6 +57,11 @@ if [ "${1:-}" = "--all" ]; then
     for example in hello counter quickstart canvas_drawing chat showcase; do
         run cargo run --quiet --example "$example" -- --dewey-validate
     done
+
+    # The agentic harness, the parts that cost nothing. Nine defects in it
+    # have been found by paying for them; these are where the tenth is cheap.
+    run python benches/agentic/runner/selftest.py
+    run python benches/agentic/runner/selftest_drive.py
 fi
 
 echo

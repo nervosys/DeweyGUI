@@ -120,8 +120,14 @@ interface and a good example, the model took the example.
 
 The caveat matters as much as the finding: `t1-counter` is a **writing** task,
 so there was no running application to observe and the driving case —
-everything `observation_cost` prices — was never exercised. `t2-todo` is the
-task that would.
+everything `observation_cost` prices — was never exercised.
+
+**And no task here can exercise it.** `t2-todo` is a writing task too: build a
+to-do list from a specification. Both tasks hand the agent a spec and ask for a
+program, so neither ever puts a running application in front of it. This
+harness cannot ask the driving question at all, and the line that first
+appeared here saying `t2-todo` would was written without checking. Asking it
+needs a task that does not exist yet.
 
 The history below is what it cost to get here.
 

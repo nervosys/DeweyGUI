@@ -1,0 +1,5 @@
+{
+  "kind": "drive",
+  "answer_file": "answer.txt",
+  "note": "The agent is given a running application it did not write. The answer exists only in that program's state, which is seeded per run, so reading its source cannot produce it."
+}

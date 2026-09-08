@@ -164,6 +164,14 @@ jobs:
       - name: The agentic verifier scores what it claims to
         run: python benches/agentic/runner/selftest.py
 
+      # The inspection task is the one that puts a running application in
+      # front of the agent, which is the half twelve paid runs never touched.
+      # Checked here for free: that the answer is reachable by asking, that it
+      # moves with the seed while the source stands still, that guessing is a
+      # bad plan, and that the prompt gives nothing away.
+      - name: The inspection task can be answered, and only by looking
+        run: python benches/agentic/runner/selftest_drive.py
+
       # And the path a real attempt takes: a scratch crate holding the
       # `src/contract.rs` the prompt hands out, built and scored by the same
       # code `run.py` uses. Three paid runs were spoiled by defects that lived

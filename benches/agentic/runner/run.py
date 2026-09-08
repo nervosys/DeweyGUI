@@ -30,6 +30,7 @@ import argparse
 import json
 import os
 import re
+import secrets
 import shutil
 import subprocess
 import sys
@@ -112,7 +113,7 @@ def mcp_binary():
     raise SystemExit("run.py: cargo did not say where it put the MCP server")
 
 
-def run_agent(prompt, workdir, condition, model):
+def run_agent(prompt, workdir, condition, model, mcp_command=None, env=None):
     """Run the agent once in `workdir`. Returns (transcript, meta)."""
     cmd = [
         "claude",
@@ -159,9 +160,20 @@ def run_agent(prompt, workdir, condition, model):
                             # compiles on first use and the client gives up
                             # waiting for the handshake, which is the second
                             # way this arm silently became the other one.
-                            "command": mcp_binary(),
-                            "args": [],
+                            "command": (
+                                mcp_command[0] if mcp_command else mcp_binary()
+                            ),
+                            "args": list(mcp_command[1]) if mcp_command else [],
                             "cwd": str(CRATE),
+                            # A drive task's server is the application under
+                            # inspection, and it needs the run's seed or it
+                            # would serve a different list from the one the
+                            # answer was computed against.
+                            **(
+                                {"env": dict(mcp_command[2])}
+                                if mcp_command and mcp_command[2]
+                                else {}
+                            ),
                         }
                     }
                 }
@@ -174,6 +186,7 @@ def run_agent(prompt, workdir, condition, model):
     proc = subprocess.run(
         cmd,
         cwd=workdir,
+        env=dict(os.environ, **env) if env else None,
         capture_output=True,
         text=True,
         # Explicit, because Windows defaults to cp1252 and a model's output is
@@ -306,8 +319,130 @@ def contract_source():
     ).lstrip()
 
 
+SUBJECT = ROOT / "subject"
+
+
+def subject_binary():
+    """Build the application under inspection and say where it went."""
+    proc = subprocess.run(
+        [
+            "cargo",
+            "build",
+            "--release",
+            "--manifest-path",
+            str(SUBJECT / "Cargo.toml"),
+            "--message-format",
+            "json-render-diagnostics",
+        ],
+        capture_output=True,
+        text=True,
+    )
+    if proc.returncode != 0:
+        sys.stderr.write(proc.stderr)
+        raise SystemExit("run.py: the subject application does not build")
+    for line in proc.stdout.splitlines():
+        try:
+            message = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if message.get("executable"):
+            return message["executable"]
+    raise SystemExit("run.py: cargo did not say where it put the subject")
+
+
+def subject_truth(binary, seed):
+    """The answer, straight from the program. The agent is never told it."""
+    env = dict(os.environ, DEWEY_SUBJECT_SEED=str(seed))
+    proc = subprocess.run(
+        [binary, "--truth"], capture_output=True, text=True, env=env
+    )
+    if proc.returncode != 0:
+        raise SystemExit(f"run.py: the subject could not state the truth: {proc.stderr}")
+    return int(proc.stdout.strip())
+
+
+def drive_run(task, task_dir, spec, condition, model, keep):
+    """One run of a task where the agent inspects a program it did not write.
+
+    The other tasks hand over a specification and score the program that comes
+    back. This hands over a running program and scores an answer, because the
+    question this benchmark exists for — does an agent look, or does it read? —
+    cannot be asked of an agent with nothing to look at.
+    """
+    binary = subject_binary()
+    # A fresh seed per run, so the answer cannot be carried over from a
+    # previous one and cannot be in the model's training data.
+    seed = secrets.randbelow(1_000_000) + 1
+    truth = subject_truth(binary, seed)
+
+    workdir = Path(tempfile.mkdtemp(prefix=f"dewey-{task}-"))
+    try:
+        prompt = build_prompt(task_dir, condition).replace("{{SUBJECT}}", str(binary))
+        events, meta = run_agent(
+            prompt,
+            workdir,
+            condition,
+            model,
+            mcp_command=(binary, ["--mcp"], {"DEWEY_SUBJECT_SEED": str(seed)}),
+            env={"DEWEY_SUBJECT_SEED": str(seed)},
+        )
+
+        transcripts = RESULTS / "transcripts"
+        transcripts.mkdir(parents=True, exist_ok=True)
+        stamp = time.strftime("%Y%m%d-%H%M%S")
+        raw = transcripts / f"{task}-{condition}-{stamp}.jsonl"
+        with raw.open("w", encoding="utf-8") as f:
+            for event in events:
+                f.write(json.dumps(event) + "\n")
+
+        record = {
+            "task": task,
+            "condition": condition,
+            "transcript": raw.name,
+            "seed": seed,
+            "truth": truth,
+            **meta,
+            **summarise(events),
+        }
+
+        if condition in ("mcp", "warned") and meta.get("mcp_status") != "connected":
+            raise SystemExit(
+                f"run.py: the MCP server reported `{meta.get('mcp_status')}`, so "
+                "this run is not the condition it claims to be. Nothing was "
+                f"recorded; the transcript is at {raw}."
+            )
+
+        answer_path = workdir / spec.get("answer_file", "answer.txt")
+        if answer_path.exists():
+            written = answer_path.read_text(encoding="utf-8", errors="replace").strip()
+        else:
+            written = None
+        record["answer"] = written
+        # Scored on the answer alone. There is no partial credit for a number
+        # that is nearly right: the point is whether the agent looked.
+        try:
+            record["score"] = 1.0 if int(written) == truth else 0.0
+        except (TypeError, ValueError):
+            record["score"] = 0.0
+        record["built"] = written is not None
+        record["contract_failed"] = written is None
+        record["checks_passed"] = int(record["score"])
+        record["checks_total"] = 1
+        record["failed_checks"] = [] if record["score"] == 1.0 else ["answer"]
+        record["verify_error"] = None if written is not None else "no answer file"
+        record["first_frame"] = None
+        return record
+    finally:
+        if not keep:
+            shutil.rmtree(workdir, ignore_errors=True)
+
 def one_run(task, condition, model, keep):
     task_dir = TASKS / task
+    spec_path = task_dir / "task.json"
+    if spec_path.exists():
+        spec = json.loads(spec_path.read_text(encoding="utf-8"))
+        if spec.get("kind") == "drive":
+            return drive_run(task, task_dir, spec, condition, model, keep)
     prompt = build_prompt(task_dir, condition)
     workdir = Path(tempfile.mkdtemp(prefix=f"dewey-{task}-"))
     try:
