@@ -1,20 +1,40 @@
 # Handoff
 
-**Date:** 3 September 2026 · **Range:** `65f67d0..0cebcd3`, 26 commits ·
-**State:** green on CI, 332 tests passing across 13 binaries
+**Date:** 8 September 2026 · **Range:** `65f67d0..HEAD`, 46 commits ·
+**State:** green, 407 tests across 14 binaries, five features built
 
 Read this before picking the work up. It says what was wrong, what is fixed,
-what is knowingly still broken, and the one thing that costs money to finish.
+what is knowingly still broken, and what the money bought.
 
 ---
 
-## The one pattern
+## The two patterns
 
-Nearly every defect fixed here had a single shape: **something reported
-success and did nothing.** It compiled, it was documented, it was on the
-roadmap as complete, and no code path reached it.
+Nearly every defect in this range was one of two shapes.
 
-The ones that mattered most, in the order a user would notice them:
+**Something reported success and did nothing.** It compiled, it was documented,
+it was on the roadmap as complete, and no code path reached it. Or it reached
+somewhere nobody asked for: a click carries a point, every host passed `null`
+as the action's parameters, and fourteen widgets applied their handler's
+`unwrap_or` default instead — a 0..100 slider went to 0 wherever you clicked.
+
+**Something could not be tested, so it was not.** The stdio transport, the MCP
+loop, the examples: each owned stdin, stdout or a window, and none could be
+driven. Every one of them turned out to be correct. The risk was never that the
+code was broken; it was that nothing would have said so. Untestable and untested
+are one fact seen from two sides, and the fix each time was the same move —
+separate the part that owns the world from the part that has the logic.
+
+The third thing worth knowing is that most of the later finds came from
+**distrusting a check rather than trusting it**. A check that passes tells you
+nothing until you know what it would fail on. `both_backends_handle_every_command`
+asked whether each host *mentioned* each variant, and a `log::debug!` mentions
+it; `documented_responses_match_what_the_server_sends` had a floor of one and was
+comparing two pairs; `examples_validate` read source text and never ran an
+example. Each of those, interrogated, gave up real defects.
+
+
+The ones a user would notice, in that order:
 
 | what | it was |
 |---|---|
@@ -27,7 +47,12 @@ The ones that mattered most, in the order a user would notice them:
 | **Clicking a slider, tab, list, table, toolbar, text field or splitter** | did something other than what the click said. A click carries a point and the hosts passed no parameters, so each handler applied its own `unwrap_or` default: a 0..100 slider went to 0, any tab selected the first, a text field cleared itself. Fourteen widgets, and nothing reported it — the action succeeded. |
 | **A button inside a modal** | could not be pressed. The backdrop blocked correctly *and* outranked the dialog's own widgets, because it registered at `u32::MAX` and nothing can register above that. |
 | **A `Tree`** | could be expanded by an agent and by no person: it registered handlers and no hitbox, so no click reached it and Tab could not either. |
-| **`Event::DragDrop`** | cannot be delivered by any host. Documented as such rather than fixed. |
+| **`Event::DragDrop`** | could be delivered by no host. The vocabulary was complete — five kinds, four payloads, a source and a target — and agpu converted an event the agpu crate never constructs. A drag is a reading of a press, some movement and a release, and `drag::DragTracker` is that reading; every host feeds it. |
+| **A wheel turn** | reached no widget at all. `ScrollArea` and `VirtualList` advertise `scroll_to`, neither registered a hitbox, and no host hit-tested a scroll — so every application caught `Event::Mouse` and did the arithmetic hit-testing exists to do. |
+| **`Select`, `Menu`, `Tooltip`, `ColorPicker`** | described more than they drew. A dropdown that never dropped down, a menu bar with no items, a tip drawn by nothing while an agent could read it, and "HSV/hex color selection" that was a swatch. All four are drawn now, through `Frame::overlay`. |
+| **`Command::SetTickRate`** | was dropped by the default backend, whose arm was a comment saying egui handled it. egui schedules from a field that arm never wrote. |
+| **Nine widgets in the examples** | advertised actions with no handler, six of them in `showcase.rs` — the file an agent reads to learn what these widgets do. The examples were compiled and never run; `--dewey-validate` runs them now, in CI. |
+| **`ping` in the protocol reference** | documented a `version` field the server has never sent. It was written as prose rather than a fenced block, so the check that compares documented replies against real ones never parsed it. |
 
 Three modules described work they do not do (`memory`, `gpu`, `theme`), two
 more were undriven (`focus` — now driven — and `overlay`), and the README and
@@ -54,13 +79,25 @@ Every one of these was verified by breaking the thing it catches.
 | check | refuses |
 |---|---|
 | `tests/reachability.rs` | a subsystem that is neither driven, declared types-only, nor carrying the exact sentence *"Nothing in this crate drives it."* It caught its own entry going stale when focus was wired. |
-| `tests/backend_parity.rs` | a click, an `AgentAction`, a window option, an event kind or the focus ring reaching one host and not another |
-| `tests/docs_conformance.rs` | a documented request that does not deserialise, a documented response field the server does not send, an `ignore`d doctest with no stated reason, a README quick start that has drifted from `examples/quickstart.rs`, and an `llms.txt` claim that is not true |
+| `tests/backend_parity.rs` | a click, an `AgentAction`, a window option, an event kind, the focus ring, a frame measurement, the pointer position, a wheel turn, a drag or the deferred-overlay pass reaching one host and not another. Also a `Command` arm that is only a comment or a log line — the older check asked whether each host *mentioned* each variant, which a `log::debug!` does. |
+| `tests/click_position.rs` | a widget whose action takes a parameter and does not say what a click supplies; a widget reachable by no pointer at all; and wiring registered inside `if frame.describes(..)`, which exists only on frames that build an ontology tree — a `Menu` had a handler when an agent looked and none when a person clicked. |
+| `tests/frame_cost.rs` | frame timings that are not measurements |
+| `tests/stdio_transport.rs`, `tests/mcp_server.rs` | the two protocol loops every agent's traffic passes through, which had no tests at all because they held stdin and stdout directly |
+| `tests/derive_widget.rs` | `#[derive(Widget)]`, which was re-exported, documented and used by nothing |
+| `--dewey-validate` | an example whose interface cannot be operated. CI runs all six. |
+| `tests/docs_conformance.rs` | a documented request that does not deserialise; a documented response field the server does not send, at any depth, with the handshake's capability list compared element by element; an `ignore`d doctest with no stated reason; a README quick start or `llms.txt` sample that has drifted from `examples/quickstart.rs`; and an `llms.txt` claim that is not true |
 | `src/agent/mcp.rs` tests | a tool description that stops telling a model not to read the source, or promises atomicity |
 | `scripts/check.sh` | nothing — it is what CI runs, in one command. `--all` adds the sibling crate and both benchmark workspaces. |
 
 `scripts/check.sh` exists because this session pushed a red Test job once and a
-red Format job once. Run it before pushing.
+red Format job once. Run it before pushing — and run it with `--all`, which adds
+the sibling crate, both benchmark workspaces, the six examples, the two free
+agentic self-tests and the three features CI had never compiled.
+
+Two of these were added after the check that should have caught the defect
+failed to. Interrogating a passing check is the highest-yield thing in this
+repository, and the questions that worked were always the same: what would this
+fail on, and is that the thing I care about?
 
 ---
 
@@ -80,11 +117,39 @@ These are honest `[~]` entries, not oversights:
 
 ---
 
-## The open question, and what it costs
+## The question, and what it cost to answer
 
 **Does an agent actually use the ontology?** Every performance number this
 project publishes assumes it does. An ontology nobody queries costs the same
 and buys nothing.
+
+**Answered, 8 September 2026, for $19.15 across 24 valid runs. In two halves
+that point opposite ways.**
+
+| | writing an application (`t1-counter`) | driving one it did not write (`t3-inspect`) |
+|---|---|---|
+| runs | 12, four per arm | 12, four per arm |
+| score | 1.000 every run | 12/12 correct |
+| ontology calls | **0 in every run** | 3.8 / 8.2 / 6.0 per run by arm |
+| the `mcp` arm | server `connected`, tools listed, instructions delivered — **not one tool invoked** | cheapest of the three: 19.8 turns at $0.37 against 29.0 and $0.58 |
+
+Writing: it read `examples/counter.rs` (12 reads), `examples/agent_headless.rs`
+(9) and `llms.txt` (7). Three reads in twelve runs touched `src/` at all. It did
+not grind through the crate — it read the curated static files, and preferred a
+good example to a live interface it was told about.
+
+Driving: it has no choice, and it does it well. The best run took a `get_tree`,
+checked it against a text `screenshot`, then used `get_performance` to confirm
+`widget_count` matched the tree before trusting it.
+
+**So: typed tools earn their maintenance for agents that operate an interface,
+and appear not to for agents writing code against the crate.** If you are
+shipping an application for agents to drive, ship the MCP server. If you want a
+model to write Dewey code, spend the effort on examples and `llms.txt` — that is
+what twelve runs actually read, and `llms.txt` had no Rust in it at all until
+those runs said so.
+
+Read all of it as a direction: one model, n=4 per arm, two tasks.
 
 What is measured (`benches/scaffold/src/bin/observation_cost.rs`, in CI):
 
@@ -96,9 +161,10 @@ What is measured (`benches/scaffold/src/bin/observation_cost.rs`, in CI):
 - on an application three times the size, asking is ahead from the first
   observation
 
-What is **not** measured: a model choosing. `benches/agentic/` is the harness
-for that. It drives a real model, scores what it built by what it rendered,
-and reads the transcript for turns, cost, source reads and ontology calls.
+What `observation_cost` does **not** measure is a model choosing, and its
+header now says so: every saving it prices assumes an agent that asks, and on a
+writing task twelve runs did not. `benches/agentic/` is what measured the
+choosing.
 
 ### Its state
 
@@ -107,67 +173,30 @@ Everything that does not cost money is checked and passing in CI —
 builds what a perfect attempt would have written and scores it **1.000 through
 the same code a real run uses**. The task is passable and the plumbing works.
 
-**Answered, 8 September 2026: no. See `benches/agentic/README.md`.** Twelve
-runs, four per arm, $11.98. Every one scored 1.000 and **not one consulted the
-ontology** — including the four where the MCP server reported `connected`, its
-tools were listed and `initialize` delivered the instructions. Those runs used
-`Bash`, `PowerShell`, `Read` and `Write` and never invoked an `mcp__` tool at
-all.
+The results are in `benches/agentic/README.md`, arm by arm, with the twelve
+harness defects that were paid for on the way and the four runs excluded
+because the harness failed them rather than the agent.
 
-What they read instead was `examples/counter.rs` (12 reads), `agent_headless.rs`
-(9) and `llms.txt` (7); only three reads touched `src/`. Offered a live
-interface and a good example, the model took the example.
-
-The caveat matters as much as the finding: `t1-counter` is a **writing** task,
-so there was no running application to observe and the driving case —
-everything `observation_cost` prices — was never exercised.
-
-**Since answered, for the driving half.** `t3-inspect` hands an agent a running
-application it did not write and asks a question only the running state can
-answer. Twelve runs, four per arm, **12/12 correct, $5.43** — an agent can drive
-a Dewey application, and the `mcp` arm was the cheapest of the three (19.8 turns
-and $0.37 a run against 29.0 and $0.58 bare). Typed tools earn their keep for
-driving, which is the opposite of what the same arm showed for writing.
-
-Read that as a direction: n=4, one task, one model. Four further runs were lost
-to harness permission gaps and are named in the benchmark README rather than
-averaged in.
-
-**When that was written, no task here could exercise it.** `t2-todo` is a writing task too: build a
-to-do list from a specification. Both tasks hand the agent a spec and ask for a
-program, so neither ever puts a running application in front of it. This
-harness cannot ask the driving question at all, and the line that first
-appeared here saying `t2-todo` would was written without checking. Asking it
-needs a task that does not exist yet.
-
-The history below is what it cost to get here.
-
-**Before that, no valid model run existed.** Twenty attempts, about $10, all quarantined in
-`results/*/runs.*.jsonl`. Seven harness defects consumed them; the last and
-worst was that `--permission-mode acceptEdits` gave the agent no read access to
-the framework, so every arm measured an agent that was *denied* rather than one
-that chose not to look. `--add-dir` is now passed. `benches/agentic/README.md`
-lists all seven with what each cost.
-
-**Do not quote any number from those runs.** One observation survives and is
-about the task, not the ontology: placing `src/contract.rs` in the work tree
-instead of asking the agent to transcribe it took builds from 1-of-8 to 9-of-12.
-
-### To finish it
+### Running it again
 
 ```
-python benches/agentic/runner/run.py --task t1-counter --condition bare   --runs 4
-python benches/agentic/runner/run.py --task t1-counter --condition mcp    --runs 4
-python benches/agentic/runner/run.py --task t1-counter --condition warned --runs 4
-python benches/agentic/runner/analyze.py results/bare/runs.jsonl results/warned/runs.jsonl
+python benches/agentic/runner/run.py --task t3-inspect --condition mcp --runs 4
+python benches/agentic/runner/analyze.py results/bare/runs.jsonl results/mcp/runs.jsonl
 ```
 
-Roughly $5. The account was at **94% of its seven-day rate limit** when this
-stopped, which is why it stopped.
+About $0.40 a run for `t3-inspect` and $1.00 for `t1-counter`. Run
+`selftest.py` and `selftest_drive.py` first; they cost nothing and they are the
+only cheap place to find the next harness defect. Twelve have been paid for at
+roughly a dollar each, and the free self-tests never spawn a model, which is
+precisely how the last three got through.
 
-The three arms: `bare` is the prompt and the crate; `mcp` attaches
-`examples/mcp_server.rs` so `initialize` puts the instructions from
-`src/agent/mcp.rs` in front of the model; `warned` adds four sentences saying
+The estimate that used to sit here said $5 for twelve runs. It was $11.98.
+
+The three arms: `bare` is the prompt and the crate; `mcp` attaches an MCP
+server so `initialize` puts the instructions from `src/agent/mcp.rs` in front of
+the model — `examples/mcp_server.rs` for a writing task, and for `t3-inspect`
+the application under inspection itself, so the tools point at *that* program
+rather than at an empty catalogue; `warned` adds four sentences saying
 Dewey is not iced, remembered signatures will not compile, and where to look.
 `warned` states no part of the API on purpose — giving that away would measure
 spec-following rather than discovery.
@@ -196,12 +225,24 @@ scripts/check.sh              what CI runs, in one command
 llms.txt                      the machine-readable index; a test keeps it true
 docs/agent-prompt.md          paste-in fragment for clients with no MCP instructions
 docs/agent-protocol.md        the protocol reference
-examples/quickstart.rs        the README quick start, compiled by cargo
+examples/quickstart.rs        the sample in both the README and llms.txt
 examples/mcp_server.rs        MCP server over the widget catalogue
+src/drag.rs                   press + movement + release, read as a drag
 benches/comparative/          frame-build cost against egui and iced
 benches/scaffold/             what an agent must write, and observation_cost.rs
-benches/agentic/              the model-in-the-loop harness
+benches/agentic/              the model-in-the-loop harness, and its results
+benches/agentic/subject/      an application an agent is asked about, not to write
 ```
+
+Any application built with this crate can prove its first screen is operable
+without a display:
+
+```
+cargo run --example showcase -- --dewey-validate
+```
+
+That flag found nine widgets in this repository's own examples advertising
+actions with no handler, six of them in `showcase.rs`.
 
 `CHANGELOG.md` carries the full list of what changed and why, including the
 findings that were unflattering.
