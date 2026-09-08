@@ -929,3 +929,250 @@ mod tooltip {
         );
     }
 }
+
+// -- two more that only an agent could work -----------------------------
+
+/// `DatePicker` painted a calendar and answered no click on it.
+///
+/// `set_date` takes a year, a month and a day; a click passed none, so the
+/// handler read its `unwrap_or`s — 1 January 1970, wherever you clicked. The
+/// month arrows were worse: they were drawn inside one string with the month
+/// name between them, so their positions depended on the width of the word
+/// "September" and could not be hit-tested at all. They are painted as their
+/// own runs now, in the cells the click map names.
+mod date_picker {
+    use super::*;
+    use dewey::widget::date_picker::{DateChange, DatePicker, DatePickerState, DateValue};
+
+    struct Booking {
+        state: std::cell::RefCell<DatePickerState>,
+        picked: Option<(i32, u32, u32)>,
+    }
+
+    impl Model for Booking {
+        type Msg = ();
+
+        fn update(&mut self, _m: ()) -> Command<()> {
+            Command::None
+        }
+
+        fn view(&self, frame: &mut Frame<'_>) {
+            DatePicker::new()
+                .label("When")
+                .on_change("when", |b: &mut Booking, change| match change {
+                    DateChange::Set { year, month, day } => {
+                        b.picked = Some((year, month, day));
+                        b.state.borrow_mut().selected = DateValue::new(year, month, day);
+                    }
+                    DateChange::PrevMonth => {
+                        let mut s = b.state.borrow_mut();
+                        s.view_month = if s.view_month == 1 {
+                            12
+                        } else {
+                            s.view_month - 1
+                        };
+                    }
+                    DateChange::NextMonth => {
+                        let mut s = b.state.borrow_mut();
+                        s.view_month = if s.view_month == 12 {
+                            1
+                        } else {
+                            s.view_month + 1
+                        };
+                    }
+                    DateChange::Toggle => {
+                        let open = b.state.borrow().open;
+                        b.state.borrow_mut().open = !open;
+                    }
+                })
+                .render(
+                    Rect::new(0.0, 0.0, 210.0, 220.0),
+                    frame,
+                    &mut self.state.borrow_mut(),
+                );
+        }
+    }
+
+    /// March 2024 starts on a Friday, so the first row is blank until column 4.
+    fn booking(open: bool) -> dewey::agent::driver::HeadlessDriver<Booking> {
+        let state = DatePickerState {
+            open,
+            view_year: 2024,
+            view_month: 3,
+            selected: DateValue::new(2024, 3, 1),
+        };
+        let mut d = dewey::agent::driver::HeadlessDriver::new(
+            Booking {
+                state: std::cell::RefCell::new(state),
+                picked: None,
+            },
+            300.0,
+            300.0,
+        );
+        d.init();
+        d.process_request(&AgentRequest::GetTree {
+            since: None,
+            viewport: None,
+        });
+        d
+    }
+
+    fn click_at(d: &mut dewey::agent::driver::HeadlessDriver<Booking>, x: f32, y: f32) {
+        d.process_request(&AgentRequest::InjectEvent {
+            event: InjectedEvent::MouseClick {
+                x,
+                y,
+                button: "left".into(),
+            },
+        });
+    }
+
+    #[test]
+    fn clicking_the_display_row_opens_the_calendar() {
+        let mut d = booking(false);
+        click_at(&mut d, 50.0, 14.0);
+        assert!(d.model().state.borrow().open);
+    }
+
+    /// Cells are 30 wide (210 / 7) and 24 tall; the grid starts 80 below the
+    /// top. 1 March 2024 is a Friday, so it is column 4 of the first row.
+    #[test]
+    fn clicking_a_day_picks_that_day() {
+        let mut d = booking(true);
+        click_at(&mut d, 4.0 * 30.0 + 15.0, 80.0 + 12.0);
+        assert_eq!(
+            d.model().picked,
+            Some((2024, 3, 1)),
+            "clicking the first of the month picked something else"
+        );
+    }
+
+    /// The blanks before the first of the month are not days.
+    #[test]
+    fn clicking_a_blank_cell_picks_nothing() {
+        let mut d = booking(true);
+        click_at(&mut d, 15.0, 80.0 + 12.0);
+        assert_eq!(
+            d.model().picked,
+            None,
+            "a blank cell before the first of the month answered a click"
+        );
+    }
+
+    #[test]
+    fn the_arrows_change_the_month() {
+        let mut d = booking(true);
+        click_at(&mut d, 15.0, 32.0 + 12.0);
+        assert_eq!(d.model().state.borrow().view_month, 2, "the left arrow");
+        click_at(&mut d, 210.0 - 15.0, 32.0 + 12.0);
+        click_at(&mut d, 210.0 - 15.0, 32.0 + 12.0);
+        assert_eq!(d.model().state.borrow().view_month, 4, "the right arrow");
+    }
+}
+
+/// `CommandPalette` covered the window with a hitbox and answered no click.
+///
+/// `execute` takes a `command_id`; a click supplied none, so the handler read
+/// the empty string and ran nothing. The palette is a fuzzy launcher whose
+/// entire point is to be clicked.
+mod palette {
+    use super::*;
+    use dewey::widget::command_palette::{
+        CommandPalette, CommandPaletteState, PaletteChange, PaletteCommand,
+    };
+
+    struct App {
+        state: std::cell::RefCell<CommandPaletteState>,
+        ran: String,
+    }
+
+    impl Model for App {
+        type Msg = ();
+
+        fn update(&mut self, _m: ()) -> Command<()> {
+            Command::None
+        }
+
+        fn view(&self, frame: &mut Frame<'_>) {
+            CommandPalette::new(vec![
+                PaletteCommand::new("save", "Save file"),
+                PaletteCommand::new("quit", "Quit"),
+            ])
+            .on_change("palette", |a: &mut App, change| match change {
+                PaletteChange::Execute(id) => a.ran = id.to_string(),
+                PaletteChange::Close => a.state.borrow_mut().open = false,
+                PaletteChange::Open => a.state.borrow_mut().open = true,
+                PaletteChange::Search(_) => {}
+            })
+            .render(
+                Rect::new(0.0, 0.0, 400.0, 300.0),
+                frame,
+                &mut self.state.borrow_mut(),
+            );
+        }
+    }
+
+    fn app() -> dewey::agent::driver::HeadlessDriver<App> {
+        let state = CommandPaletteState {
+            open: true,
+            ..Default::default()
+        };
+        let mut d = dewey::agent::driver::HeadlessDriver::new(
+            App {
+                state: std::cell::RefCell::new(state),
+                ran: String::new(),
+            },
+            400.0,
+            300.0,
+        );
+        d.init();
+        d.process_request(&AgentRequest::GetTree {
+            since: None,
+            viewport: None,
+        });
+        d
+    }
+
+    fn click_at(d: &mut dewey::agent::driver::HeadlessDriver<App>, x: f32, y: f32) {
+        d.process_request(&AgentRequest::InjectEvent {
+            event: InjectedEvent::MouseClick {
+                x,
+                y,
+                button: "left".into(),
+            },
+        });
+    }
+
+    /// The window is 400x300, so the palette is 280 wide at x 60, y 40. Rows
+    /// start 56 below the top of the palette — y 96 — and are 24 tall, so the
+    /// second one is y 120..144.
+    #[test]
+    fn clicking_a_result_runs_it() {
+        let mut d = app();
+        click_at(&mut d, 200.0, 132.0);
+        assert_eq!(d.model().ran, "quit");
+    }
+
+    /// The title and the query line are inside the palette and are not results.
+    #[test]
+    fn clicking_the_query_line_runs_nothing() {
+        let mut d = app();
+        click_at(&mut d, 200.0, 75.0);
+        assert_eq!(d.model().ran, "");
+        assert!(
+            d.model().state.borrow().open,
+            "clicking inside the palette closed it"
+        );
+    }
+
+    #[test]
+    fn clicking_outside_the_palette_closes_it() {
+        let mut d = app();
+        click_at(&mut d, 10.0, 290.0);
+        assert!(
+            !d.model().state.borrow().open,
+            "a click on the dimmed area did not close the palette"
+        );
+        assert_eq!(d.model().ran, "", "and it must not have run anything");
+    }
+}

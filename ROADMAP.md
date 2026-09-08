@@ -108,7 +108,9 @@ Agentic-first GUI framework for Rust with pluggable rendering backends.
 - [x] ColorPicker — HSV/hex color selection with preview
 - [x] Toolbar — action grouping with separators
 - [x] Splitter — resizable panels (horizontal/vertical)
-- [x] CommandPalette — fuzzy-search command launcher
+- [x] CommandPalette — fuzzy-search command launcher. A click on a result runs
+      it and a click outside closes it; it used to cover the window with a
+      hitbox and answer nothing
 - [x] VirtualList — virtualized scrolling for large datasets
 
 ### Utilities
@@ -181,7 +183,11 @@ duration breaks every `match` on `Event`, so it waits for a major version.
       a different event and do work on both backends
 - [x] Rich text / Markdown rendering (`RichText` widget with `TextSpan` and `parse_markdown()`)
 - [x] Data-bound Table with sorting (`SortDirection`), filtering, pagination
-- [x] Date/time picker widget (`DatePicker` with calendar grid, `DateValue`, `DatePickerState`)
+- [x] Date/time picker widget (`DatePicker` with calendar grid, `DateValue`,
+      `DatePickerState`) — every cell answers for itself, and the month arrows
+      are painted where the click map says they are. They used to be drawn
+      inside one string with the month name between them, so their positions
+      depended on the width of the month's name
 - [x] Chart widget (`Chart` with `Line`/`Bar`/`Pie` kinds via `Series` data)
 
 ### v1.2 — Framework Features

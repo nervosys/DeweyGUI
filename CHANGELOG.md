@@ -380,6 +380,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`DatePicker` and `CommandPalette` could be operated by an agent and by
+  nobody else.** Both were left declaring `ClickParams::Unavailable` two
+  commits ago with the reason "mapping a point to a day means reproducing that
+  layout here, which is not written". It is written now.
+
+  `DatePicker` paints a calendar and answered no click on it. `set_date` takes
+  a year, a month and a day; a click supplied none, so the handler read its
+  `unwrap_or`s — **1 January 1970, wherever you clicked**. The month arrows
+  were worse than unmapped: they were painted inside one string with the month
+  name between them, so where the `▶` ended up depended on the width of the
+  word "September" and could not be hit-tested at any price. They are painted
+  as their own runs now, in the cells the click map names. A blank cell before
+  the first of the month refuses the click rather than rounding to a day.
+
+  `CommandPalette` covered the window with a hitbox and answered nothing.
+  `execute` takes a `command_id`; a click supplied none, so the handler ran the
+  empty string. A click on a result now runs it, a click on the dimmed area
+  around the palette closes it, and a click on the title or the query line does
+  neither. The palette is a fuzzy launcher whose entire point is being clicked.
+
+  Both now compute their layout once and share it between the painting and the
+  click map, for the same reason `List`, `Table`, `Tree` and `Menu` do: the
+  same arithmetic written twice is how a click lands a row off.
 - **`Tooltip` drew its label and never its tip.** The text was held,
   published to the ontology, and painted by nothing — while the widget's own
   doc comment said "visual tooltip popups are handled by the backend". None

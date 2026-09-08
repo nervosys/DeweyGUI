@@ -292,6 +292,10 @@ impl Discoverable for CommandPalette {
     }
 }
 
+/// Where the result rows start inside the palette window, and how tall one is.
+const ROWS_TOP: f32 = 56.0;
+const ROW_HEIGHT: f32 = 24.0;
+
 impl StatefulWidget for CommandPalette {
     type State = CommandPaletteState;
 
@@ -300,13 +304,6 @@ impl StatefulWidget for CommandPalette {
             for (action, handler) in self.handlers.drain(..) {
                 frame.register_message(self.agent_id.clone(), action, handler);
             }
-            // The palette's hitbox covers the whole window, most of which is
-            // the dimmed backdrop rather than a result. A click there is not
-            // a choice of command, and it used to be read as the first one.
-            frame.register_click(
-                self.agent_id.clone(),
-                crate::runtime::ClickParams::Unavailable,
-            );
         }
 
         if !state.open {
@@ -317,6 +314,15 @@ impl StatefulWidget for CommandPalette {
         if state.selected_index >= filtered.len() {
             state.selected_index = 0;
         }
+
+        // The palette window, computed once: the painting below and the click
+        // map above have to agree about where a result is, and the same
+        // arithmetic written twice is how they stop agreeing.
+        let pw = area.width * 0.7;
+        let ph = area.height * 0.5;
+        let px = area.x + area.width * 0.15;
+        let py = area.y + 40.0;
+        let palette_rect = Rect::new(px, py, pw, ph);
 
         if !self.agent_id.is_empty() {
             if frame.describes(area) {
@@ -334,14 +340,41 @@ impl StatefulWidget for CommandPalette {
                 frame.register_widget(node);
             }
             frame.register_hitbox(self.agent_id.clone(), area, 10);
-        }
 
-        // Palette window dimensions
-        let pw = area.width * 0.7;
-        let ph = area.height * 0.5;
-        let px = area.x + area.width * 0.15;
-        let py = area.y + 40.0;
-        let palette_rect = Rect::new(px, py, pw, ph);
+            // A click on a result runs it; a click on the dimmed area around
+            // the palette closes it, which is what clicking outside a command
+            // palette means everywhere it exists. Until this the hitbox
+            // covered the whole window and a click on any of it did nothing:
+            // `execute` takes a `command_id` and a point supplied none, so the
+            // handler read the empty string.
+            let ids: Vec<String> = filtered.iter().map(|c| c.id.clone()).collect();
+            let rows = Rect::new(px, py + ROWS_TOP, pw, ph - ROWS_TOP - 4.0);
+            frame.register_click(
+                self.agent_id.clone(),
+                crate::runtime::ClickParams::from_position(move |at| {
+                    if !palette_rect.contains(at) {
+                        return Some(crate::runtime::Click::action(
+                            "close",
+                            serde_json::Value::Null,
+                        ));
+                    }
+                    if !rows.contains(at) {
+                        // The title and the query line. Inside the palette, on
+                        // nothing that runs.
+                        return None;
+                    }
+                    let row = ((at.y - rows.y) / ROW_HEIGHT).floor();
+                    if row < 0.0 {
+                        return None;
+                    }
+                    let id = ids.get(row as usize)?;
+                    Some(crate::runtime::Click::action(
+                        "execute",
+                        serde_json::json!({ "command_id": id }),
+                    ))
+                }),
+            );
+        }
 
         let palette_bg = self.style.background.unwrap_or(Color::DARK_GRAY);
         frame.painter().fill_rect(palette_rect, palette_bg, 8.0);
@@ -383,10 +416,10 @@ impl StatefulWidget for CommandPalette {
         // Filtered items
         frame
             .painter()
-            .push_clip(Rect::new(px, py + 56.0, pw, ph - 60.0));
+            .push_clip(Rect::new(px, py + ROWS_TOP, pw, ph - ROWS_TOP - 4.0));
         let item_ts = self.style.resolved_text();
         for (i, cmd) in filtered.iter().enumerate() {
-            let iy = py + 56.0 + i as f32 * 24.0;
+            let iy = py + ROWS_TOP + i as f32 * ROW_HEIGHT;
             if i == state.selected_index {
                 frame.painter().fill_rect(
                     Rect::new(px + 2.0, iy, pw - 4.0, 22.0),

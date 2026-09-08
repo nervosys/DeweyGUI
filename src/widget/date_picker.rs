@@ -389,6 +389,12 @@ impl Discoverable for DatePickerState {
     }
 }
 
+/// The layout the painting and the click map both use. Written once,
+/// because a constant written twice is how a click lands on the wrong day.
+const DISPLAY_HEIGHT: f32 = 28.0;
+const CAL_TOP: f32 = 32.0;
+const CELL_HEIGHT: f32 = 24.0;
+
 impl StatefulWidget for DatePicker {
     type State = DatePickerState;
 
@@ -397,13 +403,72 @@ impl StatefulWidget for DatePicker {
             for (action, handler) in self.handlers.drain(..) {
                 frame.register_message(self.agent_id.clone(), action, handler);
             }
-            // The calendar grid is painted only when the picker is open, and
-            // mapping a point to a day means reproducing that layout here.
-            // Until it is, a click says nothing about which date was meant —
-            // it used to say the default one.
+            // Every cell of the calendar answers for itself. Until this a
+            // click passed no date at all, and `set_date` read its
+            // `unwrap_or`s: 1 January 1970, wherever you clicked.
+            let open = state.open;
+            let (view_year, view_month) = (state.view_year, state.view_month);
+            let view = DateValue::new(view_year, view_month, 1);
+            let (first_dow, days_in_month) = (view.first_weekday(), view.days_in_month());
             frame.register_click(
                 self.agent_id.clone(),
-                crate::runtime::ClickParams::Unavailable,
+                crate::runtime::ClickParams::from_position(move |at| {
+                    let cell_w = area.width / 7.0;
+                    let display = Rect::new(area.x, area.y, area.width, DISPLAY_HEIGHT);
+                    if display.contains(at) {
+                        return Some(crate::runtime::Click::action(
+                            "toggle",
+                            serde_json::Value::Null,
+                        ));
+                    }
+                    if !open {
+                        return None;
+                    }
+                    let cal_y = area.y + CAL_TOP;
+                    let header = Rect::new(area.x, cal_y, area.width, CELL_HEIGHT);
+                    if header.contains(at) {
+                        // The two arrow cells, and nothing between them: the
+                        // month name is a label, not a control.
+                        if at.x < area.x + cell_w {
+                            return Some(crate::runtime::Click::action(
+                                "prev_month",
+                                serde_json::Value::Null,
+                            ));
+                        }
+                        if at.x >= area.x + area.width - cell_w {
+                            return Some(crate::runtime::Click::action(
+                                "next_month",
+                                serde_json::Value::Null,
+                            ));
+                        }
+                        return None;
+                    }
+                    let grid_y = cal_y + CELL_HEIGHT * 2.0;
+                    if at.y < grid_y {
+                        return None;
+                    }
+                    let col = ((at.x - area.x) / cell_w).floor();
+                    let row = ((at.y - grid_y) / CELL_HEIGHT).floor();
+                    if col < 0.0 || col > 6.0 || row < 0.0 {
+                        return None;
+                    }
+                    let index = row * 7.0 + col;
+                    let day = index as i64 - first_dow as i64 + 1;
+                    // The blanks before the first of the month and after the
+                    // last are not days. Clamping to the nearest one is how a
+                    // click on empty space books an appointment.
+                    if day < 1 || day > days_in_month as i64 {
+                        return None;
+                    }
+                    Some(crate::runtime::Click::action(
+                        "set_date",
+                        serde_json::json!({
+                            "year": view_year,
+                            "month": view_month,
+                            "day": day,
+                        }),
+                    ))
+                }),
             );
         }
 
@@ -432,7 +497,7 @@ impl StatefulWidget for DatePicker {
         // Date display row
         let display_text = format!("{}: {}", self.label, state.selected.to_iso());
         frame.painter().fill_rect(
-            Rect::new(area.x, area.y, area.width, 28.0),
+            Rect::new(area.x, area.y, area.width, DISPLAY_HEIGHT),
             Color::DARK_GRAY,
             4.0,
         );
@@ -447,13 +512,13 @@ impl StatefulWidget for DatePicker {
         }
 
         // Calendar grid
-        let cal_y = area.y + 32.0;
+        let cal_y = area.y + CAL_TOP;
         let cell_w = area.width / 7.0;
-        let cell_h = 24.0;
+        let cell_h = CELL_HEIGHT;
 
         // Month/year header
         let view_date = DateValue::new(state.view_year, state.view_month, 1);
-        let header = format!("◀  {} {}  ▶", view_date.month_name(), state.view_year);
+        let header = format!("{} {}", view_date.month_name(), state.view_year);
         let header_ts = TextStyle {
             font_size: 14.0,
             color: Color::WHITE,
@@ -465,8 +530,23 @@ impl StatefulWidget for DatePicker {
             Color::rgba(0.15, 0.15, 0.2, 1.0),
             0.0,
         );
+        // The arrows are painted where the click map says they are. Drawn as
+        // one string with the month between them, their positions depended on
+        // the width of the month name and could not be hit-tested at all.
+        let prev = Rect::new(area.x, cal_y, cell_w, cell_h);
+        let next = Rect::new(area.x + area.width - cell_w, cal_y, cell_w, cell_h);
         frame.painter().text(
-            Position::new(area.x + 8.0, cal_y + 4.0),
+            Position::new(prev.x + cell_w / 2.0 - 6.0, cal_y + 4.0),
+            "◀",
+            &header_ts,
+        );
+        frame.painter().text(
+            Position::new(next.x + cell_w / 2.0 - 6.0, cal_y + 4.0),
+            "▶",
+            &header_ts,
+        );
+        frame.painter().text(
+            Position::new(area.x + cell_w + 8.0, cal_y + 4.0),
             &header,
             &header_ts,
         );
