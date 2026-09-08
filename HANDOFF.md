@@ -122,7 +122,18 @@ The caveat matters as much as the finding: `t1-counter` is a **writing** task,
 so there was no running application to observe and the driving case —
 everything `observation_cost` prices — was never exercised.
 
-**And no task here can exercise it.** `t2-todo` is a writing task too: build a
+**Since answered, for the driving half.** `t3-inspect` hands an agent a running
+application it did not write and asks a question only the running state can
+answer. Twelve runs, four per arm, **12/12 correct, $5.43** — an agent can drive
+a Dewey application, and the `mcp` arm was the cheapest of the three (19.8 turns
+and $0.37 a run against 29.0 and $0.58 bare). Typed tools earn their keep for
+driving, which is the opposite of what the same arm showed for writing.
+
+Read that as a direction: n=4, one task, one model. Four further runs were lost
+to harness permission gaps and are named in the benchmark README rather than
+averaged in.
+
+**When that was written, no task here could exercise it.** `t2-todo` is a writing task too: build a
 to-do list from a specification. Both tasks hand the agent a spec and ask for a
 program, so neither ever puts a running application in front of it. This
 harness cannot ask the driving question at all, and the line that first

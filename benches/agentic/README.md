@@ -215,8 +215,61 @@ along without anybody checking an agent could actually do it. It is not the
 headline the first framing of this task implied, and the numbers should not be
 reported as if it were.
 
-What it will cost to run: twelve runs at roughly $1 each, on the evidence of
-8 September.
+#### Results — 8 September 2026
+
+Twelve valid runs, four per arm. **$5.43**, plus **$1.74** on four runs lost to
+harness permission gaps, which are described below because they are the more
+useful half.
+
+| arm | n | correct | turns | cost/run | ontology calls | source reads |
+|---|---|---|---|---|---|---|
+| `bare` | 4 | **4/4** | 29.0 | $0.58 | 3.8 | 0 |
+| `mcp` | 4 | **4/4** | 19.8 | $0.37 | 8.2 | 0 |
+| `warned` | 4 | **4/4** | 23.5 | $0.41 | 6.0 | 0 |
+
+The twelve seeds gave answers of 0, 1, 2, 2, 3, 4, 5, 5, 5, 6, 6 and 7, so
+nothing here was carried by guessing the mode.
+
+**An agent can drive a Dewey application it did not write.** Every run got the
+right number, and no run read the crate's source even once — there was nothing
+there to read, which is the design. The best of them ran the program, took a
+`get_tree`, checked it against a text `screenshot`, then used `get_performance`
+to confirm `widget_count` matched what the tree contained before answering, and
+said so.
+
+`mcp` is the cheapest arm: fewest turns, lowest cost, most ontology calls per
+run. Typed tools appear to be worth their maintenance for a driving task — the
+opposite of what the same arm showed on `t1-counter`, where an agent writing
+code declined the tools entirely. That is the comparison this task was built
+for, and it is a real difference, but n=4 and one task: read it as a direction,
+not a measurement.
+
+#### What the four lost runs cost, and what they showed
+
+They were harness defects, all of one kind: **the agent could not start the
+program it was asked about.**
+
+| defect | what happened |
+|---|---|
+| 10th | `--permission-mode acceptEdits` refuses to execute an arbitrary binary. Copying it into the work tree changed nothing. |
+| 11th | `ontology_calls` counted only `mcp__` calls, so a run that sent 29 requests down a pipe scored `ontology 0`. |
+| 12th | The allowlist named `Bash(subject.exe:*)` alone: one agent reached for PowerShell, another for the MCP tools, and both were denied. |
+
+Every blocked run ended the same way — the agent stated exactly what was denied
+and **refused to write a guessed number**:
+
+> Nothing was written to `answer.txt` — I have no data to base a number on, and
+> I won't guess.
+
+That is the behaviour anybody would want, and it cost four runs. A benchmark
+that scores an agent for a door the harness forgot to unlock is measuring the
+harness, so those runs are excluded by seed and named here rather than averaged
+in.
+
+The eleventh is the one to remember. It would not have failed anything: it would
+have reported `ontology 0` for runs whose transcripts show the agent doing
+nothing but ask the ontology, and that number would have been quoted.
+
 
 ## First runs, 2026-09-03 — all discarded
 

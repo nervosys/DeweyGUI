@@ -431,9 +431,19 @@ def drive_run(task, task_dir, spec, condition, model, keep):
             model,
             mcp_command=(str(local), ["--mcp"], {"DEWEY_SUBJECT_SEED": str(seed)}),
             env={"DEWEY_SUBJECT_SEED": str(seed)},
-            # Only this binary, and only in this task. Widening it further
-            # would let an attempt do things the benchmark is not measuring.
-            allow=[f"Bash({local.name}:*)", f"Bash(./{local.name}:*)"],
+            # Every route to this one program, and nothing else. The first
+            # version listed `Bash(subject.exe:*)` alone and two runs were
+            # lost to the gaps in it: one agent reached for PowerShell, another
+            # for the MCP tools, and both were denied and correctly refused to
+            # guess. A benchmark that scores an agent for a door the harness
+            # forgot to unlock is measuring the harness.
+            allow=[
+                f"Bash({local.name}:*)",
+                f"Bash(./{local.name}:*)",
+                f"Bash(*{local.name}*)",
+                f"PowerShell(*{local.name}*)",
+                "mcp__dewey",
+            ],
         )
 
         transcripts = RESULTS / "transcripts"
