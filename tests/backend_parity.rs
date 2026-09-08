@@ -593,3 +593,90 @@ fn every_host_reads_a_drag() {
         "the tracker no longer decides between a drop and a cancel"
     );
 }
+
+/// A command a host claims to handle must do something on that host.
+///
+/// `both_backends_handle_every_command` asks whether each file *mentions* each
+/// variant, and the `AgentAction` defect showed what mentioning is worth: a
+/// `log::debug!` mentions it. `SetTickRate` was the same shape — agpu stored
+/// the new rate, the default backend had an empty arm with a comment saying
+/// egui handled it, and egui schedules from a field that arm never wrote.
+///
+/// So an arm that is only a comment, only a log line, or empty is a command
+/// dropped. The variants genuinely inapplicable to a host are named below,
+/// which is the same bargain `reachability` strikes with undriven modules.
+#[test]
+fn no_command_arm_is_only_a_comment() {
+    // Nothing to do, and said so rather than pretended.
+    const NOT_APPLICABLE: [(&str, &str, &str); 2] = [
+        (
+            "src/agent/driver.rs",
+            "SetTickRate",
+            "a headless driver does not tick; the caller decides when to step it",
+        ),
+        (
+            "src/runtime/mod.rs",
+            "None",
+            "the empty command, whose whole meaning is doing nothing",
+        ),
+    ];
+
+    let runtime = source("src/runtime/mod.rs");
+    let variants = command_variants(&runtime);
+    assert!(variants.len() >= 10, "{variants:?}");
+    let mut checked = 0;
+
+    for file in [
+        "src/runtime/mod.rs",
+        "src/backend/agpu_backend.rs",
+        "src/agent/driver.rs",
+    ] {
+        let text = source(file);
+        let Some(start) = text.find("fn process_command") else {
+            continue;
+        };
+        let body = &text[start..];
+        for variant in &variants {
+            if variant == "None" && file != "src/runtime/mod.rs" {
+                continue;
+            }
+            if NOT_APPLICABLE
+                .iter()
+                .any(|(f, v, _)| *f == file && v == variant)
+            {
+                continue;
+            }
+            let marker = format!("Command::{variant}");
+            let Some(at) = body.find(&marker) else {
+                continue;
+            };
+            let rest = &body[at + marker.len()..];
+            let end = rest.find("\n            Command::").unwrap_or(rest.len());
+            // What the arm actually does, with comments and logging removed.
+            let doing: String = rest[..end]
+                .lines()
+                .map(str::trim)
+                .filter(|l| !l.starts_with("//"))
+                .filter(|l| !l.starts_with("log::"))
+                .collect::<Vec<_>>()
+                .join("")
+                .chars()
+                .filter(|c| !c.is_whitespace())
+                .collect();
+            let empty = doing.trim_matches(|c| "{}|,=>()_".contains(c)).is_empty();
+            assert!(
+                !empty,
+                "{file} handles `Command::{variant}` with nothing but a comment \
+                 or a log line. That is what `Command::AgentAction` looked like \
+                 on three hosts, and what `SetTickRate` looked like on one. Do \
+                 it, or name it in NOT_APPLICABLE with the reason"
+            );
+            checked += 1;
+        }
+    }
+    assert!(
+        checked >= 24,
+        "only {checked} command arms were examined; the check has stopped \
+         finding them"
+    );
+}

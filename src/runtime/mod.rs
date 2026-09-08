@@ -1333,8 +1333,13 @@ impl<M: Model + 'static> DeweyApp<M> {
                 let cmd = self.driver.update_model(msg);
                 self.process_command(cmd);
             }
-            Command::SetTickRate(_duration) => {
-                // Handled by egui's repaint scheduling
+            Command::SetTickRate(duration) => {
+                // The comment here said "handled by egui's repaint
+                // scheduling", and egui schedules from `options.tick_rate`,
+                // which nothing updated — so a model asking to tick faster
+                // was answered on agpu and ignored on the backend
+                // `Program::run` uses.
+                self.options.tick_rate = Some(duration);
             }
             Command::ExportOntology => {
                 self.driver.reregister_ontology();

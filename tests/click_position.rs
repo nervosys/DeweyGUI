@@ -1652,3 +1652,125 @@ mod picker {
         assert_eq!(colour(&d).g, before.g);
     }
 }
+
+// -- commands that arrived nowhere -------------------------------------
+
+/// `Command::AgentAction` is how a model drives one of its own widgets.
+///
+/// It was a `log::debug!` on all three hosts. Two were fixed; the third — the
+/// headless driver, which is the host an agent actually drives — was not,
+/// because the parity check written to catch it listed only the two backends.
+///
+/// These go through the driver rather than calling `update` directly, because
+/// running the returned command is exactly the part that was missing.
+mod commands {
+    use super::*;
+
+    struct Panel {
+        /// Bumped by the button an agent clicks.
+        first: i32,
+        /// Bumped only by the widget `Command::AgentAction` reaches for.
+        second: i32,
+    }
+
+    enum Msg {
+        /// Fired by the first button: asks the runtime to press the second.
+        Relay,
+        /// Fired by the second button, and by nothing else.
+        Bump,
+        /// Asks for a window this host does not have.
+        GoFullscreen,
+    }
+
+    impl Model for Panel {
+        type Msg = Msg;
+
+        fn update(&mut self, msg: Msg) -> Command<Msg> {
+            match msg {
+                Msg::Relay => {
+                    self.first += 1;
+                    Command::AgentAction {
+                        agent_id: "second".into(),
+                        action: "click".into(),
+                        params: serde_json::Value::Null,
+                    }
+                }
+                Msg::Bump => {
+                    self.second += 1;
+                    Command::None
+                }
+                Msg::GoFullscreen => Command::SetFullscreen(true),
+            }
+        }
+
+        fn view(&self, frame: &mut Frame<'_>) {
+            let rows = frame.area.rows_of(&[30.0, 30.0, 30.0]);
+            Button::new("relay")
+                .action("first", Msg::Relay)
+                .render(rows[0], frame);
+            Button::new("bump")
+                .action("second", Msg::Bump)
+                .render(rows[1], frame);
+            Button::new("window")
+                .action("window", Msg::GoFullscreen)
+                .render(rows[2], frame);
+        }
+    }
+
+    fn panel() -> dewey::agent::driver::HeadlessDriver<Panel> {
+        let mut d = dewey::agent::driver::HeadlessDriver::new(
+            Panel {
+                first: 0,
+                second: 0,
+            },
+            200.0,
+            200.0,
+        );
+        d.init();
+        d.process_request(&AgentRequest::GetTree {
+            since: None,
+            viewport: None,
+        });
+        d
+    }
+
+    fn press(d: &mut dewey::agent::driver::HeadlessDriver<Panel>, id: &str) {
+        let response = d.process_request(&AgentRequest::ExecuteAction {
+            agent_id: id.into(),
+            action: "click".into(),
+            params: serde_json::Value::Null,
+        });
+        assert!(response.success, "{:?}", response.error);
+    }
+
+    /// Pressing the first button returns `Command::AgentAction` naming the
+    /// second. If the driver runs it, the second button's message arrives.
+    #[test]
+    fn an_agent_action_command_reaches_a_widget_on_the_headless_driver() {
+        let mut d = panel();
+        press(&mut d, "first");
+        assert_eq!(d.model().first, 1, "the button itself did not fire");
+        assert_eq!(
+            d.model().second,
+            1,
+            "`Command::AgentAction` named `second` and never reached it — which \
+             is what a `log::debug!` in that arm looks like from outside"
+        );
+    }
+
+    /// A window command cannot be carried out on a windowless host, and is
+    /// recorded so a test can assert the application asked. The comment over
+    /// that arm claimed exactly this, above code that only logged.
+    #[test]
+    fn a_window_command_is_recorded_rather_than_dropped() {
+        let mut d = panel();
+        assert!(d.window_requests().is_empty());
+        press(&mut d, "window");
+        assert_eq!(
+            d.window_requests(),
+            ["set_fullscreen"],
+            "the application asked to go fullscreen and the driver kept no \
+             record of it"
+        );
+    }
+}

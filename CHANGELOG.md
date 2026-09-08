@@ -406,6 +406,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`Command::AgentAction` was still a `log::debug!` on the headless driver.**
+  It is how a model drives one of its own widgets. The same line, in the same
+  position, was found and fixed in both backends earlier in this cycle — and
+  survived in the third host, the one an agent actually drives, because the
+  parity check written to catch it listed only the two that open a window.
+
+- **`Command::SetTickRate` was dropped by the default backend.** Its arm was a
+  comment saying "handled by egui's repaint scheduling"; egui schedules from
+  `options.tick_rate`, which that arm never wrote. A model asking to tick
+  faster was answered under agpu and ignored under the backend `Program::run`
+  uses.
+
+- The headless driver's window commands were a `log::debug!` under a comment
+  saying they were "recorded rather than ignored so a test can assert the
+  application asked". There was no record. `HeadlessDriver::window_requests`
+  is one now: names, in order, which is what a windowless host can honestly
+  say about a request to go fullscreen.
+
+  All three came out of one audit, prompted by a check I already knew was
+  weak. `both_backends_handle_every_command` asks whether each host *mentions*
+  each variant, and the `AgentAction` defect had already shown what mentioning
+  is worth. `no_command_arm_is_only_a_comment` replaces that reasoning: an arm
+  that is only a comment, only a log line, or empty is a command dropped, and
+  the two genuinely inapplicable cases are named with the reason. It found the
+  window-command arm on its first run.
 - **`ColorPicker` had nothing to pick from.** It called itself "HSV/hex color
   selection" and painted a swatch of the current colour, the label and the hex
   value. There was no hue strip and no saturation-value square, so `set_color`

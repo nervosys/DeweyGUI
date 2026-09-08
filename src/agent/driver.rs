@@ -62,6 +62,9 @@ pub struct HeadlessDriver<M: Model> {
     /// Reads a drag out of press, movement and release. `Event::DragDrop` was
     /// deliverable by no host at all before this.
     drag: crate::drag::DragTracker,
+    /// Window commands the application asked for, which this driver cannot
+    /// carry out. See [`window_requests`](Self::window_requests).
+    window_requests: Vec<&'static str>,
     /// Which host is driving. Reported with a performance answer, because
     /// frame cost measured without a display loop is a different number from
     /// frame cost measured with one, and an agent cannot tell them apart.
@@ -98,6 +101,7 @@ impl<M: Model + 'static> HeadlessDriver<M> {
             widget_count_known: true,
             pointer: None,
             drag: crate::drag::DragTracker::new(),
+            window_requests: Vec::new(),
             host: "headless",
             painted: Vec::new(),
         }
@@ -197,6 +201,25 @@ impl<M: Model + 'static> HeadlessDriver<M> {
             out["avg_fps"] = serde_json::json!(self.profiler.avg_fps());
         }
         out
+    }
+
+    /// The window commands the application asked for, in order.
+    ///
+    /// A headless driver has no window, so `Command::SetFullscreen` and the
+    /// rest cannot be carried out. They are named here rather than dropped, so
+    /// a test can assert that the application asked — which the comment over
+    /// that arm claimed for a while above code that only logged.
+    ///
+    /// Names only: enough to assert the request happened, which is what a
+    /// windowless host can honestly say about it.
+    #[must_use]
+    pub fn window_requests(&self) -> &[&'static str] {
+        &self.window_requests
+    }
+
+    fn note_window_request(&mut self, what: &'static str) {
+        log::debug!("window command recorded, not carried out: {what}");
+        self.window_requests.push(what);
     }
 
     /// Whether the application is still running.
@@ -959,10 +982,28 @@ impl<M: Model + 'static> HeadlessDriver<M> {
                 action,
                 params,
             } => {
-                log::debug!(
-                    "HeadlessDriver: AgentAction {agent_id}.{action}({})",
-                    params
-                );
+                // This arm was a `log::debug!` and nothing else — the third
+                // copy of the same line, in the same position, that had
+                // already been found and fixed in both backends. It survived
+                // in the one host an agent actually drives, and
+                // `backend_parity`'s check for it listed only the two that
+                // open a window.
+                if self.dispatch(&agent_id, &action, &params) {
+                    return;
+                }
+                if let Some(node) = self.ontology.tree().and_then(|t| t.find(&agent_id)) {
+                    if let Err(e) =
+                        self.ontology
+                            .validate_action_params(&node.widget_type, &action, &params)
+                    {
+                        log::warn!("AgentAction validation failed for {agent_id}.{action}: {e}");
+                        return;
+                    }
+                }
+                let result = self.model.execute_action(&agent_id, &action, &params);
+                if result.is_null() {
+                    log::debug!("AgentAction reached nothing: {agent_id}.{action}({params})");
+                }
             }
             Command::Task(task) => {
                 // Spawn the task on a background thread and feed the result message back.
@@ -970,19 +1011,18 @@ impl<M: Model + 'static> HeadlessDriver<M> {
                 let cmd = self.update_model(msg);
                 self.process_command(cmd);
             }
-            // A headless driver has no window. These are recorded rather than
-            // ignored so a test can assert the application asked, and so a
-            // future virtual-window driver has somewhere to put them.
-            Command::SetWindowVisible(_)
-            | Command::FocusWindow
-            | Command::MinimiseWindow
-            | Command::SetWindowPosition { .. }
-            | Command::SetWindowSize { .. }
-            | Command::SetAlwaysOnTop(_)
-            | Command::SetFullscreen(_)
-            | Command::SetWindowTitle(_) => {
-                log::debug!("window command ignored: this driver has no window");
-            }
+            // A headless driver has no window, so these are recorded rather
+            // than carried out — which is what this comment already claimed,
+            // above an arm that only logged. `window_requests` is the record
+            // it described, so a test can assert the application asked.
+            Command::SetWindowVisible(_) => self.note_window_request("set_window_visible"),
+            Command::FocusWindow => self.note_window_request("focus_window"),
+            Command::MinimiseWindow => self.note_window_request("minimise_window"),
+            Command::SetWindowPosition { .. } => self.note_window_request("set_window_position"),
+            Command::SetWindowSize { .. } => self.note_window_request("set_window_size"),
+            Command::SetAlwaysOnTop(_) => self.note_window_request("set_always_on_top"),
+            Command::SetFullscreen(_) => self.note_window_request("set_fullscreen"),
+            Command::SetWindowTitle(_) => self.note_window_request("set_window_title"),
             Command::TaskWithTimeout {
                 task,
                 timeout,
