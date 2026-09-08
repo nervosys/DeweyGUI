@@ -103,6 +103,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `Frame::overlay` — drawing deferred until every widget has had its turn.
+  A dropdown, a menu and a tooltip all have to appear over whatever comes
+  after them in the view, and a widget painting inline is painted before it.
+  The closure owns what it needs and runs at the end of the frame; anything it
+  registers — a hitbox, a click map, a UI node — registers later than the
+  widgets underneath, and a later hitbox wins a tie, so an option in an open
+  list takes the click rather than the field it covers.
+
+  Every host now renders through `runtime::render`, which runs the view and
+  then the deferred pass. Three hosts each remembering to do the second half
+  is the arrangement that left the click path, Tab, modal input blocking and
+  the plugin system working on one host and not another;
+  `tests/backend_parity.rs` fails for a host that calls `Model::view` directly
+  and for a `render` that stops running the overlays.
+
+  `OverlayStack` is not what does this and is still driven by nothing. It
+  keeps bounds and z-order, which `HitMap` already keeps; forcing the deferred
+  queue through it would have been the same mistake as the rest of this
+  crate's dead subsystems, so ROADMAP.md says plainly that it is unused.
+
+- `Select` draws its option list. It called itself a dropdown, painted the
+  current value and an arrow, and never rendered the options — so a person
+  could not see them, could not aim at one, and clicking the arrow had nothing
+  to fire. It now has `Select::open(bool)`, whose state the application owns
+  the way it owns a `Modal`'s (`SelectState` holds only the selection, and a
+  second field would break every `SelectState { selected }` already written),
+  and `on_open` for the toggle. A click on the field opens or closes the list
+  and a click on an option picks that option — both naming their action, since
+  neither is "whichever handler was registered first".
+
+  Adding `toggle_open` made `validate --strict` report every `Select` that
+  wires only `on_select`, which is correct: the action is advertised and an
+  agent calling it would be told it worked. That check found the gap in this
+  repository's own test fixture before a person did.
 - `get_performance`, the fifteenth request: what the running interface costs
   per frame — render time, `Model::update` time, the widget count, and
   `avg_fps` where the host runs a display loop. This is one of the questions

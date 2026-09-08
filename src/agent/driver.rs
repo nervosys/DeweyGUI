@@ -627,7 +627,7 @@ impl<M: Model + 'static> HeadlessDriver<M> {
                 view.height,
             ));
         }
-        self.model.view(&mut frame);
+        crate::runtime::render(&self.model, &mut frame);
 
         self.unaddressable = frame.take_unaddressable();
         // Render order is tab order, and a widget registers a hitbox exactly

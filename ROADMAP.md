@@ -29,10 +29,13 @@ Agentic-first GUI framework for Rust with pluggable rendering backends.
       `Table` and `Toolbar` map the point; the rest declare that a click
       cannot answer and do nothing rather than applying a default
 - [x] Theme system (semantic tokens, dark/light presets, custom themes)
-- [~] Overlay manager for layered rendering (`OverlayStack`) — no frame
-      renders a stack and no backend hit-tests against one, so an overlay
-      pushed here appears nowhere and blocks nothing. The `Modal` widget draws
-      its own backdrop and does not go through it
+- [~] Overlay manager for layered rendering (`OverlayStack`) — still nothing:
+      no frame renders a stack and no backend hit-tests against one. Deferred
+      drawing is done by `Frame::overlay`, which queues a closure to run after
+      every widget has had its turn and is what `Select` opens its list with;
+      it keeps no stack and needs none, since `HitMap` already orders by
+      registration and z. `OverlayStack` remains unused, and this entry exists
+      to say so rather than to imply the feature is missing
 - [~] Animation interpolation (linear, ease-in/out, spring, bounce) — offered
       to applications; no host advances one, and `Event::Tick` carries no
       elapsed time, so an application must keep its own clock
@@ -74,7 +77,9 @@ Agentic-first GUI framework for Rust with pluggable rendering backends.
 - [x] TextArea — multi-line text editing with selection
 - [x] Slider — numeric value selection with range
 - [x] ProgressBar — determinate progress indicator
-- [x] Select — dropdown selection with label
+- [x] Select — dropdown selection with label. The option list is drawn: it
+      goes through `Frame::overlay` so it appears over the field beneath it
+      rather than under it, and a click picks the option it landed on
 - [x] List — scrollable item list with selection
 - [x] Tabs — tabbed navigation
 - [x] Table — columnar data with sortable headers

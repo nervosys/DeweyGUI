@@ -26,7 +26,12 @@ pub struct Select {
     style: Style,
     agent_id: std::borrow::Cow<'static, str>,
     on_value: Option<Box<dyn std::any::Any + Send>>,
+    open: bool,
+    on_open: Option<Box<dyn std::any::Any + Send>>,
 }
+
+/// The height of one row of the open option list.
+const OPTION_HEIGHT: f32 = 24.0;
 
 impl Select {
     #[must_use]
@@ -37,7 +42,38 @@ impl Select {
             style: Style::default(),
             agent_id: std::borrow::Cow::Borrowed(""),
             on_value: None,
+            open: false,
+            on_open: None,
         }
+    }
+
+    /// Whether the option list is showing.
+    ///
+    /// The application owns this, the way it owns a `Modal`'s. `SelectState`
+    /// holds only the selection, and giving it a second field would break
+    /// every `SelectState { selected }` already written.
+    #[must_use]
+    pub fn open(mut self, open: bool) -> Self {
+        self.open = open;
+        self
+    }
+
+    /// Give this select the change to apply when the list is opened or closed.
+    ///
+    /// The bool is the state it should move to. Without this a `Select` cannot
+    /// be opened by a person at all: it drew a value and an arrow, the list
+    /// was never painted, and clicking the arrow had nothing to fire.
+    #[must_use]
+    pub fn on_open<M: 'static>(
+        mut self,
+        id: impl Into<std::borrow::Cow<'static, str>>,
+        f: impl FnOnce(&mut M, bool) + Send + 'static,
+    ) -> Self {
+        let open = !self.open;
+        let wrapped: crate::runtime::Mutation<M> = Box::new(move |m: &mut M| f(m, open));
+        self.agent_id = id.into();
+        self.on_open = Some(Box::new(wrapped));
+        self
     }
 
     pub fn style(mut self, style: Style) -> Self {
@@ -111,16 +147,19 @@ impl Discoverable for Select {
     }
 
     fn actions(&self) -> Vec<AgentAction> {
-        vec![AgentAction::with_params(
-            "select",
-            "Select an option by index",
-            vec![ActionParam::required(
-                "index",
-                "Option index",
-                ActionParamType::Index,
-            )],
-            true,
-        )]
+        vec![
+            AgentAction::with_params(
+                "select",
+                "Select an option by index",
+                vec![ActionParam::required(
+                    "index",
+                    "Option index",
+                    ActionParamType::Index,
+                )],
+                true,
+            ),
+            AgentAction::simple("toggle_open", "Show or hide the option list", true),
+        ]
     }
 
     fn semantic_role(&self) -> SemanticRole {
@@ -128,7 +167,11 @@ impl Discoverable for Select {
     }
 
     fn agent_state(&self) -> serde_json::Value {
-        serde_json::json!({ "options": self.options, "label": self.label })
+        serde_json::json!({
+            "options": self.options,
+            "label": self.label,
+            "open": self.open,
+        })
     }
 
     fn agent_id(&self) -> Option<&str> {
@@ -148,21 +191,52 @@ impl StatefulWidget for Select {
     type State = SelectState;
 
     fn render(mut self, area: Rect, frame: &mut Frame<'_>, state: &mut SelectState) {
+        let list = Rect::new(
+            area.x,
+            area.y + area.height,
+            area.width,
+            self.options.len() as f32 * OPTION_HEIGHT,
+        );
+
         if !self.agent_id.is_empty() {
             frame.register_hitbox(self.agent_id.clone(), area, 1);
             if let Some(handler) = self.on_value.take() {
                 frame.register_message(self.agent_id.clone(), "select", handler);
-                // `select` needs an index and this widget paints no options
-                // to aim at: it shows the current value and an arrow, and
-                // the list is never drawn. A click therefore says nothing
-                // about which option was meant, and used to say `0`.
-                // Opening a real dropdown is what `OverlayStack` is for, and
-                // nothing drives that yet.
-                frame.register_click(
-                    self.agent_id.clone(),
-                    crate::runtime::ClickParams::Unavailable,
-                );
             }
+            if let Some(handler) = self.on_open.take() {
+                frame.register_message(self.agent_id.clone(), "toggle_open", handler);
+            }
+
+            // A click on the field opens or closes the list; a click on an
+            // option picks it. Both name their action, because the primary one
+            // is whichever handler was registered first and neither of these
+            // is "whichever".
+            //
+            // Until the list was drawn there was nothing to aim at, so a click
+            // could say nothing about which option was meant, and said `0`.
+            let open = self.open;
+            frame.register_click(
+                self.agent_id.clone(),
+                crate::runtime::ClickParams::from_position(move |at| {
+                    if area.contains(at) {
+                        return Some(crate::runtime::Click::action(
+                            "toggle_open",
+                            serde_json::Value::Null,
+                        ));
+                    }
+                    if !open || !list.contains(at) {
+                        return None;
+                    }
+                    let row = ((at.y - list.y) / OPTION_HEIGHT).floor();
+                    if row < 0.0 {
+                        return None;
+                    }
+                    Some(crate::runtime::Click::action(
+                        "select",
+                        serde_json::json!({ "index": row as usize }),
+                    ))
+                }),
+            );
         }
 
         // Draw select box
@@ -197,6 +271,42 @@ impl StatefulWidget for Select {
             .painter()
             .text(Position::new(arrow_x, arrow_y - 7.0), "\u{25BC}", &ts);
 
+        // The open list is drawn after every other widget, not here: painted
+        // inline it would be covered by whatever the view renders next, which
+        // for a form is the field underneath. The hitbox it registers is later
+        // than theirs too, and a later hitbox wins a tie, so an option takes
+        // the click rather than the control it is covering.
+        if self.open && !self.options.is_empty() {
+            let options = std::mem::take(&mut self.options);
+            let selected = state.selected;
+            let id = self.agent_id.clone();
+            let bg = self.style.background.unwrap_or(Color::DARK_GRAY);
+            frame.overlay(move |frame| {
+                frame.painter().fill_rect(list, bg, 4.0);
+                frame.painter().stroke_rect(list, Color::GRAY, 1.0, 4.0);
+                let ts = TextStyle::default();
+                for (i, option) in options.iter().enumerate() {
+                    let row = Rect::new(
+                        list.x,
+                        list.y + i as f32 * OPTION_HEIGHT,
+                        list.width,
+                        OPTION_HEIGHT,
+                    );
+                    if i == selected {
+                        frame
+                            .painter()
+                            .fill_rect(row, Color::BLUE.with_alpha(0.3), 0.0);
+                    }
+                    frame
+                        .painter()
+                        .text(Position::new(row.x + 4.0, row.y + 4.0), option, &ts);
+                }
+                if !id.is_empty() {
+                    frame.register_hitbox(id, list, 1);
+                }
+            });
+        }
+
         // Built last so owned fields move into the state instead of being
         // cloned; painting above only borrows them.
         if frame.describes(area) && !self.agent_id.is_empty() {
@@ -210,7 +320,8 @@ impl StatefulWidget for Select {
                 .with_bounds(area.into())
                 .with_property("options", serde_json::Value::from(self.options))
                 .with_property("selected", serde_json::json!(state.selected))
-                .with_property("selected_text", serde_json::json!(selected_text));
+                .with_property("selected_text", serde_json::json!(selected_text))
+                .with_property("open", serde_json::json!(self.open));
             frame.register_widget(node);
         }
     }

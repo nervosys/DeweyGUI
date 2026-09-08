@@ -474,3 +474,141 @@ mod modal {
         );
     }
 }
+
+// -- a dropdown that drops down ----------------------------------------
+
+/// `Select` called itself a dropdown and never drew one.
+///
+/// It painted the current value and an arrow. The option list was held,
+/// described to an agent, and never rendered — so a person could not see the
+/// options, could not aim at one, and clicking the arrow had nothing to fire.
+/// Drawing it inline would not have worked either: the next field down is
+/// rendered after, and would have covered it. It goes through
+/// `Frame::overlay`, which draws after every widget has had its turn.
+mod select {
+    use super::*;
+    use dewey::widget::Select;
+    use dewey::widget::select::SelectState;
+
+    struct Form {
+        colour: usize,
+        open: bool,
+        state: std::cell::RefCell<SelectState>,
+    }
+
+    impl Model for Form {
+        type Msg = ();
+
+        fn update(&mut self, _m: ()) -> Command<()> {
+            Command::None
+        }
+
+        fn view(&self, frame: &mut Frame<'_>) {
+            Select::new("Colour", vec!["red".into(), "green".into(), "blue".into()])
+                .open(self.open)
+                .on_select("colour", |f: &mut Form, i| {
+                    f.colour = i;
+                    f.state.borrow_mut().selected = i;
+                    f.open = false;
+                })
+                .on_open("colour", |f: &mut Form, open| f.open = open)
+                .render(
+                    Rect::new(0.0, 0.0, 120.0, 30.0),
+                    frame,
+                    &mut self.state.borrow_mut(),
+                );
+            // Rendered after the select, and directly under it: the field the
+            // open list covers. Before overlays this button was painted over
+            // the dropdown and took its clicks.
+            Button::new("underneath")
+                .on("underneath", |f: &mut Form| f.colour = 99)
+                .render(Rect::new(0.0, 30.0, 120.0, 40.0), frame);
+        }
+    }
+
+    fn form(open: bool) -> dewey::agent::driver::HeadlessDriver<Form> {
+        let mut d = dewey::agent::driver::HeadlessDriver::new(
+            Form {
+                colour: 0,
+                open,
+                state: std::cell::RefCell::new(SelectState { selected: 0 }),
+            },
+            200.0,
+            200.0,
+        );
+        d.init();
+        d.process_request(&AgentRequest::GetTree {
+            since: None,
+            viewport: None,
+        });
+        d
+    }
+
+    fn click_at(d: &mut dewey::agent::driver::HeadlessDriver<Form>, x: f32, y: f32) {
+        d.process_request(&AgentRequest::InjectEvent {
+            event: InjectedEvent::MouseClick {
+                x,
+                y,
+                button: "left".into(),
+            },
+        });
+    }
+
+    #[test]
+    fn clicking_a_closed_select_opens_it() {
+        let mut d = form(false);
+        click_at(&mut d, 60.0, 15.0);
+        assert!(
+            d.model().open,
+            "clicking the field did not open the option list"
+        );
+    }
+
+    /// The options are painted. Nothing about a list an agent is told exists
+    /// and a person cannot see is a dropdown.
+    #[test]
+    fn an_open_select_paints_its_options() {
+        let d = form(true);
+        let drawn: Vec<&str> = d
+            .painted()
+            .iter()
+            .filter_map(|op| match op {
+                dewey::backend::test::RenderOp::Text { text, .. } => Some(text.as_str()),
+                _ => None,
+            })
+            .collect();
+        for option in ["red", "green", "blue"] {
+            assert!(
+                drawn.iter().any(|t| t.contains(option)),
+                "`{option}` is an option of an open select and was not drawn: {drawn:?}"
+            );
+        }
+    }
+
+    /// The click lands on the option under the pointer, and on the option
+    /// rather than on the control the list is covering.
+    #[test]
+    fn clicking_an_option_selects_that_option() {
+        let mut d = form(true);
+        // The list starts below the 30-tall field; rows are 24. The third
+        // option spans y 78..102, which is also over the button underneath.
+        click_at(&mut d, 60.0, 90.0);
+        assert_eq!(
+            d.model().colour,
+            2,
+            "clicking the third option did not select it — 99 means the button              the list covers took the click"
+        );
+    }
+
+    /// A click below the last option is on the backdrop of nothing.
+    #[test]
+    fn clicking_past_the_last_option_selects_nothing() {
+        let mut d = form(true);
+        click_at(&mut d, 60.0, 150.0);
+        assert_eq!(
+            d.model().colour,
+            0,
+            "a click past the list changed the selection"
+        );
+    }
+}

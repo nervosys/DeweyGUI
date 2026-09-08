@@ -2057,6 +2057,7 @@ fn every_extended_widget_dispatches_under_its_advertised_action() {
     struct Hits {
         list: Option<usize>,
         select: Option<usize>,
+        select_open: Option<bool>,
         tab: Option<usize>,
         area: String,
         radio: bool,
@@ -2080,8 +2081,13 @@ fn every_extended_widget_dispatches_under_its_advertised_action() {
             List::new(vec!["a".into(), "b".into()])
                 .on_select("lst", |w: &mut W, i: usize| w.hits.list = Some(i))
                 .render(r[0], frame, &mut self.list_s.borrow_mut());
+            // Both of its actions: a `Select` that wires only `select` now
+            // advertises a `toggle_open` with nothing behind it, and this
+            // file's own strict check reports exactly that — which is how the
+            // new action was found to need wiring here at all.
             Select::new("pick", vec!["x".into(), "y".into()])
                 .on_select("sel", |w: &mut W, i: usize| w.hits.select = Some(i))
+                .on_open("sel", |w: &mut W, open| w.hits.select_open = Some(open))
                 .render(r[1], frame, &mut self.sel_s.borrow_mut());
             Tabs::new(vec!["one".into(), "two".into()])
                 .on_select("tabs", |w: &mut W, i: usize| w.hits.tab = Some(i))

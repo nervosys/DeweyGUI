@@ -398,3 +398,35 @@ fn every_host_measures_a_frame() {
         "the default backend calls `Model::update` directly again, going around the only place that times it"
     );
 }
+
+/// Every host runs a view through `runtime::render`, not `Model::view`.
+///
+/// `view` alone leaves whatever the widgets queued with `Frame::overlay`
+/// undrawn — an open `Select` simply would not appear, and the field it
+/// covers would take its clicks. Three hosts each remembering to run the
+/// deferred pass is the arrangement that left the click path, Tab, modal
+/// input blocking and the plugin system working on one host and not another.
+#[test]
+fn every_host_renders_through_one_function() {
+    for (name, file) in [
+        ("the default backend", "src/runtime/mod.rs"),
+        ("the agpu backend", "src/backend/agpu_backend.rs"),
+        ("the headless driver", "src/agent/driver.rs"),
+    ] {
+        let text = source(file);
+        assert!(
+            text.contains("render(") && !text.contains(".view(&mut frame)"),
+            "{name} calls `Model::view` directly instead of going through \
+             `runtime::render`, so anything a widget deferred to an overlay \
+             is never drawn on it"
+        );
+    }
+
+    // And the one function does the deferred pass. Without this the check
+    // above passes on a `render` that forgot it.
+    let runtime = source("src/runtime/mod.rs");
+    assert!(
+        runtime.contains("frame.run_overlays()"),
+        "`runtime::render` no longer runs the overlays it exists to run"
+    );
+}

@@ -239,6 +239,9 @@ pub struct Frame<'a> {
     /// What a click on a widget means, for the widgets whose action takes
     /// parameters a click has to supply. See [`ClickParams`].
     clicks: Vec<(std::borrow::Cow<'static, str>, ClickParams)>,
+    /// Drawing deferred until every widget has had its turn. See
+    /// [`Frame::overlay`].
+    overlays: Vec<Box<dyn for<'b> FnOnce(&mut Frame<'b>) + Send>>,
     /// Interactive widgets that rendered without an id, and so cannot be
     /// clicked or addressed. Collected here because such a widget never
     /// reaches the UI tree to be noticed afterwards.
@@ -288,6 +291,7 @@ impl<'a> Frame<'a> {
             ontology,
             messages: Vec::new(),
             clicks: Vec::new(),
+            overlays: Vec::new(),
             unaddressable: Vec::new(),
             skipped: 0,
             viewport: None,
@@ -405,6 +409,51 @@ impl<'a> Frame<'a> {
     /// Take the click behaviours widgets registered this frame.
     pub fn take_clicks(&mut self) -> Vec<(std::borrow::Cow<'static, str>, ClickParams)> {
         std::mem::take(&mut self.clicks)
+    }
+
+    /// Draw this after every widget has had its turn.
+    ///
+    /// A dropdown, a menu and a tooltip all have to appear over whatever comes
+    /// after them in the view, and a widget painting inline is painted before
+    /// it — so an open `Select` drawn where it stands is covered by the next
+    /// field down. The closure owns what it needs (`Frame` is borrowed, so it
+    /// cannot borrow anything from the widget) and runs once the frame's
+    /// ordinary pass is finished.
+    ///
+    /// Anything registered from inside — a hitbox, a click map, a UI node —
+    /// registers later than the widgets underneath, and a hitbox registered
+    /// later wins a tie, so an option in an open dropdown takes the click
+    /// rather than the field it covers.
+    pub fn overlay(&mut self, draw: impl for<'b> FnOnce(&mut Frame<'b>) + Send + 'static) {
+        self.overlays.push(Box::new(draw));
+    }
+
+    /// Run everything [`overlay`](Self::overlay) queued, and everything they
+    /// queue in turn.
+    ///
+    /// Called by [`render`], which is what every host uses to run a view —
+    /// three hosts each calling `Model::view` and each remembering to do this
+    /// is the arrangement that has gone wrong in this crate four times.
+    pub fn run_overlays(&mut self) {
+        // A dropdown may open a submenu, which may open another. Bounded so a
+        // widget that queues itself cannot hang the frame; eight is far more
+        // nesting than an interface has, and stopping is better than freezing
+        // in front of a user.
+        const MAX_DEPTH: usize = 8;
+        for _ in 0..MAX_DEPTH {
+            let queued = std::mem::take(&mut self.overlays);
+            if queued.is_empty() {
+                return;
+            }
+            for draw in queued {
+                draw(self);
+            }
+        }
+        debug_assert!(
+            self.overlays.is_empty(),
+            "overlays still queued after {MAX_DEPTH} rounds: a widget is              queueing itself"
+        );
+        self.overlays.clear();
     }
 
     /// Record that an interactive widget rendered with no id.
@@ -754,6 +803,18 @@ pub enum OntologyMode {
     Disabled,
 }
 
+/// Run a model's view, then everything it deferred.
+///
+/// Every host renders through here. `Model::view` alone leaves whatever the
+/// widgets queued with [`Frame::overlay`] undrawn — an open dropdown would
+/// simply not appear — and three hosts each remembering to run them is the
+/// arrangement that left the click path, Tab, modal blocking and the plugin
+/// system working on one host and not another.
+pub fn render<M: Model + ?Sized>(model: &M, frame: &mut Frame<'_>) {
+    model.view(frame);
+    frame.run_overlays();
+}
+
 /// Build an ontology tree for a model without painting anything.
 ///
 /// Runs `view` against a [`NullPainter`](crate::paint::NullPainter), so it
@@ -763,7 +824,7 @@ pub fn build_ontology_tree<M: Model>(model: &M, area: Rect) -> crate::ontology::
     let mut painter = crate::paint::NullPainter;
     let mut hit_map = crate::event::HitMap::new();
     let mut frame = Frame::with_ontology(area, &mut hit_map, &mut painter, true);
-    model.view(&mut frame);
+    render(model, &mut frame);
 
     let mut root = crate::ontology::UiNode::new("root", crate::ontology::SemanticRole::Container);
     root.children = frame.take_nodes();
@@ -1411,7 +1472,7 @@ impl<M: Model + 'static> eframe::App for DeweyApp<M> {
             let mut egui_painter = crate::backend::egui_backend::EguiPainter::new(ctx);
             let mut frame =
                 Frame::with_ontology(area, &mut self.hit_map, &mut egui_painter, build_tree);
-            self.driver.model().view(&mut frame);
+            render(self.driver.model(), &mut frame);
             // Render order is tab order, and a widget registers a hitbox
             // exactly when it is interactive and addressable.
             focus.rebuild(frame.hit_map.focusables());

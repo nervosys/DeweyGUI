@@ -705,7 +705,7 @@ impl<M: Model + 'static> RunningApp<M> {
                 &mut painter,
                 self.ontology_mode == crate::runtime::OntologyMode::EveryFrame,
             );
-            self.model.view(&mut dewey_frame);
+            crate::runtime::render(&self.model, &mut dewey_frame);
 
             // Render order is tab order, and a widget registers a hitbox
             // exactly when it is interactive and addressable.
