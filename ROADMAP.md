@@ -86,10 +86,11 @@ Agentic-first GUI framework for Rust with pluggable rendering backends.
 - [x] Scroll — scrollable content container
 - [x] Container — styled box with padding/border
 - [x] Panel — named content section
-- [~] Menu — the vocabulary only. `render` paints a title bar and no items:
-      the submenu structure is held, described to an agent and never drawn, so
-      there is nothing on screen to click and `select_item` is reachable only
-      through `execute_action`
+- [x] Menu — a bar that opens. The items are drawn through `Frame::overlay`
+      so they fall over what is beneath, a click on the bar toggles them and a
+      click on an item chooses it; a disabled item is greyed and refuses. The
+      node publishes the items, which it did not: it carried a title and
+      nothing else, so an agent could not learn what there was to pick
 - [x] Tooltip — hover text with label display
 - [x] Tree — hierarchical expand/collapse with path-based actions, reachable
       by pointer and by Tab. It registered handlers and no hitbox, so an agent
@@ -321,7 +322,7 @@ evidence yet that they change what a model does.
 | Core runtime        | Complete                               |
 | Agent protocol (15) | Complete                               |
 | Ontology system     | Complete                               |
-| Widgets (30)        | 29 complete; `Menu` paints no items    |
+| Widgets (30)        | Complete                               |
 | Animation           | Works, undriven — nothing calls `tick` |
 | Accessibility       | Complete                               |
 | State persistence   | Complete                               |

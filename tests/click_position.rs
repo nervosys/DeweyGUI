@@ -335,17 +335,13 @@ mod tree {
 fn a_widget_with_a_handler_is_reachable_by_pointer_or_says_why_not() {
     // Actions that are not pointer gestures. A click is a point; none of these
     // is a question a point answers.
-    const NOT_A_CLICK: [(&str, &str); 4] = [
+    const NOT_A_CLICK: [(&str, &str); 3] = [
         (
             "chart.rs",
             "add_series/remove_series/clear are data operations",
         ),
         ("rich_text.rs", "set_markdown/clear replace content"),
         ("scroll.rs", "scroll_to is a wheel or a drag, not a click"),
-        (
-            "menu.rs",
-            "select_item names an item, and this widget paints only a title              bar — there are no items on screen to click. The gap is the              painting, not the wiring, and ROADMAP.md says so",
-        ),
     ];
 
     let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/widget");
@@ -611,4 +607,192 @@ mod select {
             "a click past the list changed the selection"
         );
     }
+}
+
+// -- a menu bar with no menu -------------------------------------------
+
+/// `Menu` held its items, advertised `select_item` for them, and painted a bar
+/// with a title and nothing else. There was nothing on screen to pick, the
+/// node it published carried no items either, and its handler was registered
+/// inside `if frame.describes(area)` — so on an ordinary frame, which the
+/// default backend renders without building a tree, there was no handler at
+/// all.
+mod menu {
+    use super::*;
+    use dewey::widget::menu::{Menu, MenuItem};
+
+    struct Editor {
+        open: bool,
+        chosen: String,
+    }
+
+    impl Model for Editor {
+        type Msg = ();
+
+        fn update(&mut self, _m: ()) -> Command<()> {
+            Command::None
+        }
+
+        fn view(&self, frame: &mut Frame<'_>) {
+            Menu::new(
+                "File",
+                vec![
+                    MenuItem::new("Open").shortcut("Ctrl+O"),
+                    MenuItem::new("Save").shortcut("Ctrl+S"),
+                    MenuItem::new("Revert").enabled(false),
+                ],
+            )
+            .open(self.open)
+            .on_item("file", |e: &mut Editor, label| e.chosen = label.to_string())
+            .on_open("file", |e: &mut Editor, open| e.open = open)
+            .render(Rect::new(0.0, 0.0, 300.0, 200.0), frame);
+        }
+    }
+
+    fn editor(open: bool) -> dewey::agent::driver::HeadlessDriver<Editor> {
+        let mut d = dewey::agent::driver::HeadlessDriver::new(
+            Editor {
+                open,
+                chosen: String::new(),
+            },
+            300.0,
+            200.0,
+        );
+        d.init();
+        d.process_request(&AgentRequest::GetTree {
+            since: None,
+            viewport: None,
+        });
+        d
+    }
+
+    fn click_at(d: &mut dewey::agent::driver::HeadlessDriver<Editor>, x: f32, y: f32) {
+        d.process_request(&AgentRequest::InjectEvent {
+            event: InjectedEvent::MouseClick {
+                x,
+                y,
+                button: "left".into(),
+            },
+        });
+    }
+
+    #[test]
+    fn clicking_the_bar_opens_the_menu() {
+        let mut d = editor(false);
+        click_at(&mut d, 20.0, 14.0);
+        assert!(d.model().open, "clicking the menu bar did not open it");
+    }
+
+    #[test]
+    fn an_open_menu_paints_its_items() {
+        let d = editor(true);
+        let drawn: Vec<&str> = d
+            .painted()
+            .iter()
+            .filter_map(|op| match op {
+                dewey::backend::test::RenderOp::Text { text, .. } => Some(text.as_str()),
+                _ => None,
+            })
+            .collect();
+        for item in ["Open", "Save", "Revert", "Ctrl+O"] {
+            assert!(
+                drawn.iter().any(|t| t.contains(item)),
+                "`{item}` is in this menu and was not drawn: {drawn:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn clicking_an_item_chooses_it() {
+        let mut d = editor(true);
+        // The bar is 28 tall and items are 24 each, so "Save" spans y 52..76.
+        click_at(&mut d, 40.0, 60.0);
+        assert_eq!(d.model().chosen, "Save");
+    }
+
+    /// A greyed item is drawn as unavailable and must behave that way.
+    #[test]
+    fn clicking_a_disabled_item_chooses_nothing() {
+        let mut d = editor(true);
+        click_at(&mut d, 40.0, 84.0);
+        assert_eq!(d.model().chosen, "", "a disabled item answered a click");
+    }
+
+    /// The items an agent is told about must be the items on screen.
+    #[test]
+    fn the_tree_describes_the_items() {
+        let mut d = editor(true);
+        let reply = d.process_request(&AgentRequest::GetState {
+            agent_id: "file".into(),
+        });
+        let text = serde_json::to_string(&reply.data).expect("state");
+        for item in ["Open", "Save", "Revert"] {
+            assert!(
+                text.contains(item),
+                "the menu published no `{item}`, so an agent cannot know what                  there is to pick: {text}"
+            );
+        }
+    }
+}
+
+/// Wiring must not be conditional on the ontology being built.
+///
+/// `Menu` registered its `select_item` handler inside
+/// `if frame.describes(area)`. That block is for publishing a `UiNode`, and
+/// it is skipped on every frame that is not building a tree — which, under
+/// `OntologyMode::OnDemand`, is every ordinary frame the default backend
+/// draws. So the menu had a handler when an agent was looking and none when a
+/// person clicked it.
+///
+/// The two things look alike in the source and are not: describing a widget
+/// is optional, wiring it is not.
+#[test]
+fn no_widget_registers_its_wiring_only_when_describing_itself() {
+    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/widget");
+    let mut checked = 0;
+    for entry in std::fs::read_dir(&dir).expect("src/widget") {
+        let path = entry.expect("entry").path();
+        if path.extension().is_none_or(|e| e != "rs") {
+            continue;
+        }
+        let name = path.file_name().unwrap().to_string_lossy().into_owned();
+        let text = std::fs::read_to_string(&path).expect("read");
+        let lines: Vec<&str> = text.lines().collect();
+        for (n, line) in lines.iter().enumerate() {
+            if !(line.trim_start().starts_with("if") && line.contains("frame.describes(")) {
+                continue;
+            }
+            checked += 1;
+            let indent = line.len() - line.trim_start().len();
+            for inner in &lines[n + 1..] {
+                let trimmed = inner.trim_start();
+                let closed = !trimmed.is_empty()
+                    && inner.len() - trimmed.len() <= indent
+                    && trimmed.starts_with('}');
+                if closed {
+                    break;
+                }
+                for call in [
+                    "register_message(",
+                    "register_hitbox(",
+                    "register_click(",
+                    "register_barrier(",
+                ] {
+                    assert!(
+                        !inner.contains(call),
+                        "{name} calls `{call}` inside `if frame.describes(..)`, \
+                         so it is wired only on frames that build the ontology \
+                         tree. The default backend builds one when an agent \
+                         asks and not otherwise, so this widget answers an \
+                         agent and ignores a person"
+                    );
+                }
+            }
+        }
+    }
+    assert!(
+        checked >= 15,
+        "only {checked} `describes` blocks found; the check has stopped \
+         finding them"
+    );
 }

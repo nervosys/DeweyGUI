@@ -380,6 +380,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`Menu` was a bar with no menu, and was wired only while an agent was
+  watching.** It held its items, advertised `select_item` for them, and
+  painted a title and nothing else — so there was nothing on screen to pick.
+  The `UiNode` it published carried the title alone, so an agent could not
+  learn what there was to pick either. And its handler was registered inside
+  `if frame.describes(area)`, a block that exists for publishing that node and
+  is skipped on every frame which is not building a tree — which, under the
+  default `OntologyMode::OnDemand`, is every ordinary frame the windowed
+  backend draws. The menu had a handler when an agent looked and none when a
+  person clicked.
+
+  It now opens: `Menu::open(bool)` and `on_open` follow `Select`, the items
+  are drawn through `Frame::overlay` so they fall over what is beneath, a
+  click on the bar toggles them and a click on an item chooses it. A disabled
+  item is greyed and refuses the click rather than answering it. The node
+  publishes every item with its shortcut and whether it is enabled.
+
+  `tests/click_position.rs` gained the general form of the second half:
+  **no widget may register a hitbox, a handler, a click map or a barrier
+  inside `if frame.describes(..)`**. Describing a widget is optional; wiring
+  it is not, and the two look alike in the source. Verified by moving
+  `Toolbar`'s hitbox into its describe block and watching the check fail.
 - **A widget inside an open `Modal` could not be pressed.** The backdrop
   registers a barrier so a click cannot fall through to what the dialog
   covers — but it registered it at `u32::MAX`, and `hit_test` takes the

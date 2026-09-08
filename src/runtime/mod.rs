@@ -214,6 +214,9 @@ pub trait Model: Sized {
     }
 }
 
+/// Drawing a widget deferred to the end of the frame. See [`Frame::overlay`].
+pub type DeferredDraw = Box<dyn for<'b> FnOnce(&mut Frame<'b>) + Send>;
+
 /// A rendering frame — abstraction over the GUI backend.
 ///
 /// During `Model::view`, the frame provides methods to draw widgets
@@ -241,7 +244,7 @@ pub struct Frame<'a> {
     clicks: Vec<(std::borrow::Cow<'static, str>, ClickParams)>,
     /// Drawing deferred until every widget has had its turn. See
     /// [`Frame::overlay`].
-    overlays: Vec<Box<dyn for<'b> FnOnce(&mut Frame<'b>) + Send>>,
+    overlays: Vec<DeferredDraw>,
     /// Interactive widgets that rendered without an id, and so cannot be
     /// clicked or addressed. Collected here because such a widget never
     /// reaches the UI tree to be noticed afterwards.
@@ -810,7 +813,7 @@ pub enum OntologyMode {
 /// simply not appear — and three hosts each remembering to run them is the
 /// arrangement that left the click path, Tab, modal blocking and the plugin
 /// system working on one host and not another.
-pub fn render<M: Model + ?Sized>(model: &M, frame: &mut Frame<'_>) {
+pub fn render<M: Model>(model: &M, frame: &mut Frame<'_>) {
     model.view(frame);
     frame.run_overlays();
 }
