@@ -113,7 +113,9 @@ def mcp_binary():
     raise SystemExit("run.py: cargo did not say where it put the MCP server")
 
 
-def run_agent(prompt, workdir, condition, model, mcp_command=None, env=None):
+def run_agent(
+    prompt, workdir, condition, model, mcp_command=None, env=None, allow=None
+):
     """Run the agent once in `workdir`. Returns (transcript, meta)."""
     cmd = [
         "claude",
@@ -138,6 +140,14 @@ def run_agent(prompt, workdir, condition, model, mcp_command=None, env=None):
         # the operator's allowed-directory list.
         "--strict-mcp-config",
     ]
+    if allow:
+        # An inspection task has to be able to start the program it is asked
+        # about, and `acceptEdits` refuses to execute an arbitrary binary
+        # wherever it sits — moving it into the work tree changed nothing.
+        # Two runs were spent finding that out, both of them ending with the
+        # agent saying so precisely and declining to guess an answer, which
+        # is the behaviour anybody would want and cost the runs anyway.
+        cmd += ["--allowedTools", *allow]
     if model:
         cmd += ["--model", model]
     if condition in ("mcp", "warned"):
@@ -232,6 +242,32 @@ def classify(name, args):
     """
     lowered = args.lower()
     if name.startswith("mcp__dewey"):
+        return "ontology"
+    # Asking the application over the raw protocol is using the ontology just
+    # as much as calling a tool is. Counting only `mcp__` calls reported
+    # `ontology 0` for a run that sent more than two hundred requests down a
+    # pipe and cross-checked `get_tree` against `screenshot` and
+    # `get_performance` — the metric would have said an agent ignored the
+    # ontology while the transcript showed it doing nothing else.
+    # By request name alone. Matching `"type": "get_tree"` missed every one
+    # of them: a transcript stores the tool input as JSON, so the quotes the
+    # agent typed arrive backslash-escaped and no literal spelling matches.
+    if any(
+        request in lowered
+        for request in (
+            "get_tree",
+            "get_state",
+            "query_ontology",
+            "get_schema",
+            "execute_action",
+            "inject_event",
+            "screenshot",
+            "validate",
+            "get_performance",
+            "batch_actions",
+            "negotiate",
+        )
+    ):
         return "ontology"
     if name in ("Read", "Grep", "Glob"):
         looks_like_dewey = "dewey" in lowered
@@ -377,14 +413,27 @@ def drive_run(task, task_dir, spec, condition, model, keep):
 
     workdir = Path(tempfile.mkdtemp(prefix=f"dewey-{task}-"))
     try:
-        prompt = build_prompt(task_dir, condition).replace("{{SUBJECT}}", str(binary))
+        # Into the work tree, not referenced where cargo left it. The tenth
+        # harness defect, and the same shape as the one that cost twelve runs:
+        # the binary sat in `CARGO_TARGET_DIR`, outside every directory the
+        # agent was allowed to touch, so every attempt to start it was denied.
+        # The transcript is exact about it — "every attempt to actually
+        # execute anything is auto-denied by the permission layer" — and the
+        # agent refused to write a guessed number, which is the right thing to
+        # have done and cost the run anyway.
+        local = workdir / Path(binary).name
+        shutil.copy2(binary, local)
+        prompt = build_prompt(task_dir, condition).replace("{{SUBJECT}}", local.name)
         events, meta = run_agent(
             prompt,
             workdir,
             condition,
             model,
-            mcp_command=(binary, ["--mcp"], {"DEWEY_SUBJECT_SEED": str(seed)}),
+            mcp_command=(str(local), ["--mcp"], {"DEWEY_SUBJECT_SEED": str(seed)}),
             env={"DEWEY_SUBJECT_SEED": str(seed)},
+            # Only this binary, and only in this task. Widening it further
+            # would let an attempt do things the benchmark is not measuring.
+            allow=[f"Bash({local.name}:*)", f"Bash(./{local.name}:*)"],
         )
 
         transcripts = RESULTS / "transcripts"

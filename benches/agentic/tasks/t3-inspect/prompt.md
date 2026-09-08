@@ -1,10 +1,11 @@
-There is a **running to-do application** at:
+There is a to-do application in your working directory:
 
 ```
-{{SUBJECT}}
+./{{SUBJECT}}
 ```
 
 You did not write it, and its contents are different every time it is started.
+Run it yourself — it is yours to start, stop and talk to.
 
 ## What to find out
 
