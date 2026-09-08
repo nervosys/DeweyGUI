@@ -248,3 +248,126 @@ fn past_the_rate_limit_a_request_is_refused_not_dropped() {
         "1010 requests in one window and only {refused} were rate limited"
     );
 }
+
+// -- the half both transports share ------------------------------------
+
+/// `Protocol` is the rate limit, the oversize guard, the parse, the dispatch
+/// and the event drain, with no socket and no stdin.
+///
+/// The stdio loop and the WebSocket loop each carried their own copy of all
+/// five. Two copies of a rate limiter drift, and this crate has spent a long
+/// time on three copies of a click — so there is one, and these drive it
+/// directly rather than through either transport.
+///
+/// The WebSocket transport binds a `TcpListener` and accepts inside `run`, so
+/// it cannot be driven by a test at all. What can be checked is that it is
+/// answering with the same code the stdio transport is, which is what these
+/// pin.
+mod shared {
+    use super::*;
+    use dewey::agent::rpc::Protocol;
+
+    fn driver() -> HeadlessDriver<Counter> {
+        let mut d = HeadlessDriver::new(Counter { count: 0 }, 200.0, 200.0);
+        d.init();
+        d
+    }
+
+    fn parse(lines: Vec<String>) -> Vec<serde_json::Value> {
+        lines
+            .iter()
+            .map(|l| serde_json::from_str(l).unwrap_or_else(|e| panic!("{l:?}: {e}")))
+            .collect()
+    }
+
+    #[test]
+    fn a_blank_message_is_answered_with_nothing() {
+        let mut p = Protocol::new();
+        let mut d = driver();
+        assert!(p.handle(&mut d, "   ", false).is_empty());
+        assert!(p.handle(&mut d, "", false).is_empty());
+    }
+
+    /// A transport that says a message was oversized is believed, without the
+    /// message having to be held in memory to prove it.
+    #[test]
+    fn an_oversized_flag_is_refused_without_parsing() {
+        let mut p = Protocol::new();
+        let mut d = driver();
+        let out = parse(p.handle(
+            &mut d,
+            "{\"id\":\"1\",\"request\":{\"type\":\"ping\"}}",
+            true,
+        ));
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0]["success"], false);
+        assert!(
+            out[0]["error"]
+                .as_str()
+                .is_some_and(|e| e.contains("too large")),
+            "{out:?}"
+        );
+    }
+
+    /// A message over the cap is refused on its own length, for a transport
+    /// that hands over whole messages and cannot flag them as it reads.
+    #[test]
+    fn a_message_over_the_cap_is_refused_on_its_length() {
+        let mut p = Protocol::new();
+        let mut d = driver();
+        let huge = format!(
+            "{{\"id\":\"1\",\"request\":{{\"type\":\"ping\"}},\"pad\":\"{}\"}}",
+            "x".repeat(1_100_000)
+        );
+        let out = parse(p.handle(&mut d, &huge, false));
+        assert!(
+            out[0]["error"]
+                .as_str()
+                .is_some_and(|e| e.contains("too large")),
+            "{:?}",
+            out[0]["error"]
+        );
+    }
+
+    #[test]
+    fn the_reply_comes_before_the_events_it_caused() {
+        let mut p = Protocol::new();
+        let mut d = driver();
+        p.handle(
+            &mut d,
+            "{\"id\":\"1\",\"request\":{\"type\":\"subscribe\",\"events\":[\"state_changed\"]}}",
+            false,
+        );
+        let out = parse(p.handle(
+            &mut d,
+            "{\"id\":\"2\",\"request\":{\"type\":\"execute_action\",\"agent_id\":\"inc\",\"action\":\"click\"}}",
+            false,
+        ));
+        assert!(out.len() >= 2, "{out:?}");
+        assert_eq!(out[0]["id"], "2", "the reply is not first: {out:?}");
+        assert!(
+            out[1..].iter().any(|e| e["type"] == "state_changed"),
+            "no event followed the reply: {out:?}"
+        );
+    }
+
+    /// One rate-limit window, shared by whichever transport is using it.
+    #[test]
+    fn the_rate_limit_is_the_same_one_for_every_transport() {
+        let mut p = Protocol::new();
+        let mut d = driver();
+        let line = "{\"id\":\"n\",\"request\":{\"type\":\"ping\"}}";
+        let mut refused = 0;
+        for _ in 0..1_010 {
+            let out = parse(p.handle(&mut d, line, false));
+            assert_eq!(out.len(), 1, "every message is answered");
+            if out[0]["error"]
+                .as_str()
+                .is_some_and(|e| e.contains("Rate limit"))
+            {
+                refused += 1;
+            }
+        }
+        assert!(refused >= 5, "only {refused} of 1010 were rate limited");
+    }
+}

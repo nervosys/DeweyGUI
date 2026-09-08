@@ -955,6 +955,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Internal
 
+- **The two transports carried two copies of the same protocol.** The stdio
+  loop and the WebSocket loop each had their own rate limit, oversize guard,
+  JSON parse, dispatch and event drain. Two copies of a rate limiter drift,
+  and this crate has spent much of its history on three copies of a click.
+
+  `rpc::Protocol` is the one copy. Each transport now owns only its reading
+  and writing: stdio holds a reader and a writer, the WebSocket loop holds the
+  socket, and both hand every message to the same `handle`. `WsTransport` lost
+  its own `MAX_REQUESTS_PER_SEC` in the process — a second limit that was
+  never checked against the first.
+
+  `WsTransport::run` still binds a `TcpListener` and accepts inside itself, so
+  the socket half remains undriveable by a test. What the last commit recorded
+  as untested is now mostly tested, because the part worth testing is no
+  longer inside it: `tests/stdio_transport.rs` drives `Protocol` directly for
+  blank messages, an oversize flag believed without parsing, a message refused
+  on its own length, the reply preceding the events it caused, and one
+  rate-limit window shared by whichever transport is using it.
+
+  The ten stdio tests written in the previous commit passed unchanged across
+  the refactor, which is what they were for.
 - **The MCP loop a coding agent connects to had no tests, for the same reason
   the stdio one did not.** `McpServer::run` held `io::stdin()` and
   `io::stdout()`, so nothing could drive it. The tool list and the argument

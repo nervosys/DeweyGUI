@@ -98,6 +98,88 @@ impl<M: Model + 'static> RequestSink for HeadlessDriver<M> {
     }
 }
 
+/// One transport's worth of protocol handling, without the transport.
+///
+/// The stdio loop and the WebSocket loop each carried their own copy of the
+/// rate limit, the oversize guard, the JSON parse, the dispatch and the event
+/// drain. Two copies of a rate limiter drift — this crate has spent a lot of
+/// its history on three copies of a click — so there is one, and each
+/// transport supplies only the reading and writing it owns.
+pub struct Protocol {
+    window_start: Instant,
+    request_count: u32,
+}
+
+impl Default for Protocol {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Protocol {
+    /// A session with a fresh rate-limit window.
+    #[must_use]
+    pub fn new() -> Self {
+        Self {
+            window_start: Instant::now(),
+            request_count: 0,
+        }
+    }
+
+    /// Answer one incoming message, giving the lines to write back.
+    ///
+    /// `oversized` is for a reader that stopped buffering at the cap and can
+    /// say so without holding the whole line. An empty result means the
+    /// message was nothing to answer — a blank line.
+    pub fn handle(
+        &mut self,
+        sink: &mut impl RequestSink,
+        text: &str,
+        oversized: bool,
+    ) -> Vec<String> {
+        let trimmed = text.trim();
+        if !oversized && trimmed.is_empty() {
+            return Vec::new();
+        }
+
+        // The window is a second wide and resets when it expires, so a client
+        // that pauses is not still paying for a burst it made a minute ago.
+        if self.window_start.elapsed().as_secs() >= 1 {
+            self.window_start = Instant::now();
+            self.request_count = 0;
+        }
+        self.request_count += 1;
+        if self.request_count > MAX_REQUESTS_PER_SEC {
+            return vec![err(format!(
+                "Rate limit exceeded ({MAX_REQUESTS_PER_SEC} req/s)"
+            ))];
+        }
+
+        if oversized || trimmed.len() > MAX_LINE_BYTES {
+            return vec![err(format!(
+                "Request too large (max {MAX_LINE_BYTES} bytes)"
+            ))];
+        }
+
+        let envelope: RequestEnvelope = match serde_json::from_str(trimmed) {
+            Ok(e) => e,
+            Err(e) => return vec![err(format!("Invalid JSON: {e}"))],
+        };
+
+        // The reply first, then anything a subscribed agent is owed by it. The
+        // protocol accepted `subscribe` for a long time and nothing ever sent
+        // anything back.
+        let mut out = vec![sink.answer(&envelope)];
+        out.extend(sink.drain_events());
+        out
+    }
+}
+
+/// An error reply, as a line.
+fn err(message: String) -> String {
+    serde_json::to_string(&AgentResponse::err(message)).unwrap_or_default()
+}
+
 /// Read JSON Lines requests from stdin and write the answers to stdout.
 ///
 /// Returns when stdin closes or the application stops.
@@ -120,64 +202,12 @@ pub fn serve(
     mut reader: impl BufRead,
     mut stdout: impl Write,
 ) -> io::Result<()> {
-    let mut window_start = Instant::now();
-    let mut request_count: u32 = 0;
+    let mut protocol = Protocol::new();
 
     while let Some((raw, oversized)) = super::read_capped_line(&mut reader, MAX_LINE_BYTES)? {
         let line = String::from_utf8_lossy(&raw);
-        let trimmed = line.trim();
-        if !oversized && trimmed.is_empty() {
-            continue;
-        }
-
-        // Rate limiting
-        let elapsed = window_start.elapsed();
-        if elapsed.as_secs() >= 1 {
-            window_start = Instant::now();
-            request_count = 0;
-        }
-        request_count += 1;
-        if request_count > MAX_REQUESTS_PER_SEC {
-            let resp = AgentResponse::err(format!(
-                "Rate limit exceeded ({MAX_REQUESTS_PER_SEC} req/s)"
-            ));
-            let json = serde_json::to_string(&resp).unwrap_or_default();
-            writeln!(stdout, "{json}")?;
-            stdout.flush()?;
-            continue;
-        }
-
-        // Reject oversized requests. The reader caps buffering at
-        // MAX_LINE_BYTES, so an unbounded line can never exhaust memory
-        // before this guard fires.
-        if oversized {
-            let resp =
-                AgentResponse::err(format!("Request too large (max {MAX_LINE_BYTES} bytes)"));
-            let json = serde_json::to_string(&resp).unwrap_or_default();
-            writeln!(stdout, "{json}")?;
-            stdout.flush()?;
-            continue;
-        }
-
-        let envelope: RequestEnvelope = match serde_json::from_str(trimmed) {
-            Ok(e) => e,
-            Err(err) => {
-                let resp = AgentResponse::err(format!("Invalid JSON: {err}"));
-                let json = serde_json::to_string(&resp).unwrap_or_default();
-                writeln!(stdout, "{json}")?;
-                stdout.flush()?;
-                continue;
-            }
-        };
-
-        let json = sink.answer(&envelope);
-        writeln!(stdout, "{json}")?;
-
-        // A subscribed agent is told what changed, on the same stream. The
-        // protocol has always accepted `subscribe`; until now nothing ever
-        // sent anything back.
-        for event in sink.drain_events() {
-            writeln!(stdout, "{event}")?;
+        for out in protocol.handle(sink, &line, oversized) {
+            writeln!(stdout, "{out}")?;
         }
         stdout.flush()?;
 

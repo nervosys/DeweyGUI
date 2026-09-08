@@ -6,20 +6,15 @@
 
 use std::io;
 use std::net::TcpListener;
-use std::time::Instant;
 
 use tungstenite::Message;
 use tungstenite::accept;
 
 use super::driver::HeadlessDriver;
-use super::protocol::{AgentResponse, RequestEnvelope};
 use crate::runtime::Model;
 
 /// Maximum allowed size for a single JSON message (1 MB).
 const MAX_MESSAGE_BYTES: usize = 1_048_576;
-
-/// Maximum requests per second before throttling.
-const MAX_REQUESTS_PER_SEC: u32 = 1000;
 
 /// Runs a Dewey application over a WebSocket connection.
 ///
@@ -83,8 +78,12 @@ impl<M: Model + 'static> WsTransport<M> {
         let mut websocket = accept(stream)
             .map_err(|e| io::Error::new(io::ErrorKind::ConnectionAborted, e.to_string()))?;
 
-        let mut window_start = Instant::now();
-        let mut request_count: u32 = 0;
+        // The rate limit, the oversize guard, the parse, the dispatch and
+        // the events all live in `Protocol`, which the stdio transport uses
+        // too. This loop owns the socket and nothing else: two copies of a
+        // rate limiter drift, and this crate has spent a long time on three
+        // copies of a click.
+        let mut protocol = crate::agent::rpc::Protocol::new();
 
         loop {
             let msg = match websocket.read() {
@@ -107,55 +106,16 @@ impl<M: Model + 'static> WsTransport<M> {
                 _ => continue,
             };
 
-            // Rate limiting
-            let elapsed = window_start.elapsed();
-            if elapsed.as_secs() >= 1 {
-                window_start = Instant::now();
-                request_count = 0;
+            let oversized = text.len() > MAX_MESSAGE_BYTES;
+            for out in protocol.handle(&mut self.driver, &text, oversized) {
+                let _ = websocket.write(Message::Text(out));
             }
-            request_count += 1;
-            if request_count > MAX_REQUESTS_PER_SEC {
-                let resp = AgentResponse::err(format!(
-                    "Rate limit exceeded ({MAX_REQUESTS_PER_SEC} req/s)"
-                ));
-                let json = serde_json::to_string(&resp).unwrap_or_default();
-                let _ = websocket.write(Message::Text(json));
-                continue;
-            }
-
-            // Reject oversized messages
-            if text.len() > MAX_MESSAGE_BYTES {
-                let resp = AgentResponse::err(format!(
-                    "Message too large ({} bytes, max {MAX_MESSAGE_BYTES})",
-                    text.len(),
-                ));
-                let json = serde_json::to_string(&resp).unwrap_or_default();
-                let _ = websocket.write(Message::Text(json));
-                continue;
-            }
-
-            let envelope: RequestEnvelope = match serde_json::from_str(&text) {
-                Ok(e) => e,
-                Err(err) => {
-                    let resp = AgentResponse::err(format!("Invalid JSON: {err}"));
-                    let json = serde_json::to_string(&resp).unwrap_or_default();
-                    let _ = websocket.write(Message::Text(json));
-                    continue;
-                }
-            };
-
-            let json = self.driver.process_envelope_json(&envelope);
-            let _ = websocket.write(Message::Text(json));
-
-            for event in self.driver.drain_events_json() {
-                let _ = websocket.write(Message::Text(event));
-            }
+            let _ = websocket.flush();
 
             if !self.driver.is_running() {
                 break;
             }
         }
-
         let _ = websocket.close(None);
         Ok(self.driver.into_model())
     }
