@@ -176,6 +176,15 @@ def run_agent(prompt, workdir, condition, model):
         cwd=workdir,
         capture_output=True,
         text=True,
+        # Explicit, because Windows defaults to cp1252 and a model's output is
+        # not cp1252. The eighth harness defect: one run's transcript carried a
+        # byte that could not be decoded, the reader thread raised inside
+        # `subprocess`, `proc.stdout` came back as None, and the batch died on
+        # the next run with an `AttributeError` — after the API call had been
+        # paid for. `errors="replace"` because a transcript is evidence: a
+        # mangled character is worth keeping, and losing the run is not.
+        encoding="utf-8",
+        errors="replace",
         stdin=subprocess.DEVNULL,
     )
     wall = time.time() - started

@@ -78,6 +78,90 @@ else. If it moves `cost_usd` or `turns` and the interval excludes zero, that
 is a result worth having; if it does not, that is the honest answer and it
 belongs in the ROADMAP next to the rest.
 
+## Results — 8 September 2026
+
+Twelve valid runs, four per arm, `t1-counter`, one model. **$11.98.** The first
+valid runs this harness has produced; the twenty before them were quarantined
+and none of their numbers were ever quoted.
+
+| arm | n | built | score | turns | cost | source reads | **ontology calls** |
+|---|---|---|---|---|---|---|---|
+| `bare` | 4 | 4/4 | 1.000 | 41.2 | $0.97 | 1, 1, 7, 1 | **0, 0, 0, 0** |
+| `mcp` | 4 | 4/4 | 1.000 | 43.8 | $0.99 | 1, 1, 1, 1 | **0, 0, 0, 0** |
+| `warned` | 4 | 4/4 | 1.000 | 42.2 | $1.04 | 1, 1, 1, 5 | **0, 0, 0, 0** |
+
+### The finding
+
+**No run consulted the ontology. Not one, in any arm.**
+
+In the `mcp` arm the server reported `connected` in all four runs, its tools
+were listed, and `initialize` delivered the instructions telling the model the
+application describes itself and that it need not read the source. The model
+then used `Bash`, `PowerShell`, `Read` and `Write`, and **never invoked a single
+`mcp__` tool.** Naming the tools in front of a model does not make it reach for
+them.
+
+Every run scored 1.000. Nothing was lost by not asking.
+
+### What it read instead
+
+Across all twelve runs, by file:
+
+| reads | file |
+|---|---|
+| 12 | `examples/counter.rs` |
+| 9 | `examples/agent_headless.rs` |
+| 7 | `llms.txt` |
+| 3 | `examples/quickstart.rs` |
+| 3 | `Cargo.toml` |
+| 2 | `src/agent/driver.rs` |
+| 1 | `src/runtime/mod.rs` |
+
+This is the part worth sitting with. The model did not grind through the crate
+source — only three reads touched `src/` at all. It read the **examples** and
+**`llms.txt`**: small, curated, static files that this project maintains for
+exactly this purpose. Given a choice it made unprompted, it preferred a good
+example to a live interface.
+
+### What this does not show
+
+`t1-counter` is a **code-writing** task. The agent writes a program from a
+specification; there is no running application to observe, so `get_tree`,
+`get_state`, `screenshot` and `validate` have nothing to point at. The only
+ontology calls that could have helped are `query_ontology` and `get_schema` —
+the catalogue, for writing against — which is what `examples/mcp_server.rs`
+serves and what the model declined in favour of `examples/counter.rs`.
+
+So this measures the writing case and says nothing about the driving case.
+`benches/scaffold/observation_cost.rs` prices driving — a tree against a source
+file, a targeted read against a screenshot — and **no run here exercised that at
+all.** The two benchmarks do not measure the same thing, and the question the
+handoff posed ("does an agent actually use the ontology?") is answered only for
+half of it.
+
+Also not shown: anything about other models, larger applications, or tasks where
+the interface already exists and has to be inspected. n=4 per arm on one task
+with one model. The score column is unanimous, which means the task was too easy
+to separate the arms on quality — a harder task is what would make `score` say
+anything.
+
+### What it is consistent with
+
+HawkTUI's 184 runs found agents read the implementation in 100% of Hawk TUI runs
+against 6% of ratatui runs, and that MCP tools raised consultation 4% → 42% and
+trigger prompts → 83% **while score, cost and turns did not move.** These twelve
+runs agree with the last clause exactly — no arm differs on outcome — and
+disagree with the middle one: tools and prompts moved consultation not at all,
+from zero.
+
+### The honest conclusion
+
+The performance case for the ontology rests on an agent asking, and on this task
+an agent given every encouragement did not ask once. Before quoting any
+token-saving number from `observation_cost`, that assumption has to be earned on
+a task where observing is the only way to answer — which this is not, and which
+`t2-todo` was written for.
+
 ## First runs, 2026-09-03 — all discarded
 
 Twenty paid attempts at `t1-counter`, about $10, **none valid**. Every one is

@@ -103,6 +103,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **The agentic benchmark has run. Twelve valid runs, $11.98, and the answer is
+  no.** Four runs in each of three arms on `t1-counter`. Every run built and
+  scored 1.000. **Not one consulted the ontology.**
+
+  The `mcp` arm is the result that matters: the server reported `connected` in
+  all four runs, its tools were listed, and `initialize` delivered the
+  instructions saying the application describes itself and the source need not
+  be read. The model then used `Bash`, `PowerShell`, `Read` and `Write`, and
+  **never invoked a single `mcp__` tool**. Naming tools in front of a model
+  does not make it reach for them, and nothing was lost by not asking — the
+  scores are identical across arms.
+
+  What it read instead is the more interesting half: `examples/counter.rs` (12
+  reads across the twelve runs), `examples/agent_headless.rs` (9), `llms.txt`
+  (7). Only three reads touched `src/` at all. It did not grind through the
+  crate; it read the curated static files this project already maintains, and
+  preferred a good example to a live interface.
+
+  The scope is narrow and the README says so. `t1-counter` is a **writing**
+  task: there is no running application, so `get_tree`, `get_state`,
+  `screenshot` and `validate` had nothing to point at, and the driving case —
+  everything `observation_cost` prices — was never exercised. One model, one
+  task, n=4 per arm, and a task too easy to separate the arms on quality.
+
+  A ninth harness defect surfaced on the first paid run and cost it: Windows
+  decoded the agent output as cp1252, hit a byte it could not map, the reader
+  thread raised inside `subprocess`, `proc.stdout` came back `None` and the
+  batch died on the next run with an `AttributeError`. `encoding="utf-8"` and
+  `errors="replace"` now, because a transcript is evidence and a mangled
+  character is worth more than a lost run.
 - **`--dewey-validate`**: any application built with this crate can prove its
   first frame is operable and exit, without opening a window. `Program::run`
   checks for it before starting eframe, renders once through `HeadlessDriver`,

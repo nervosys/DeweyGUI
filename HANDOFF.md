@@ -107,7 +107,25 @@ Everything that does not cost money is checked and passing in CI —
 builds what a perfect attempt would have written and scores it **1.000 through
 the same code a real run uses**. The task is passable and the plumbing works.
 
-**No valid model run exists.** Twenty attempts, about $10, all quarantined in
+**Answered, 8 September 2026: no. See `benches/agentic/README.md`.** Twelve
+runs, four per arm, $11.98. Every one scored 1.000 and **not one consulted the
+ontology** — including the four where the MCP server reported `connected`, its
+tools were listed and `initialize` delivered the instructions. Those runs used
+`Bash`, `PowerShell`, `Read` and `Write` and never invoked an `mcp__` tool at
+all.
+
+What they read instead was `examples/counter.rs` (12 reads), `agent_headless.rs`
+(9) and `llms.txt` (7); only three reads touched `src/`. Offered a live
+interface and a good example, the model took the example.
+
+The caveat matters as much as the finding: `t1-counter` is a **writing** task,
+so there was no running application to observe and the driving case —
+everything `observation_cost` prices — was never exercised. `t2-todo` is the
+task that would.
+
+The history below is what it cost to get here.
+
+**Before that, no valid model run existed.** Twenty attempts, about $10, all quarantined in
 `results/*/runs.*.jsonl`. Seven harness defects consumed them; the last and
 worst was that `--permission-mode acceptEdits` gave the agent no read access to
 the framework, so every arm measured an agent that was *denied* rather than one
