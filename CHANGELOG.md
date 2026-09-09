@@ -7,6 +7,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-09-09
+
+One question, asked properly: **what does a widget promise an agent, and is it
+true?**
+
+The ontology is now in the doc comments, because twelve paid runs showed that
+is where a model looks — it read `examples/counter.rs` in every run and queried
+the ontology in none. Each of the 29 widgets carries an Agent view block giving
+its role, its actions with their parameter names, the state it publishes, its
+capabilities, and which actions are safe to repeat. The blocks are generated
+from each widget's own answers and a test fails the build when they drift.
+
+Writing them down showed that some of the promises were false.
+
+`Button::click` was declared non-mutating, which `AgentAction` turns into
+*idempotent* — every button click in Dewey told an agent that retrying it was
+safe. It also made the commonest control in any interface invisible to the
+strict check that finds controls wired to nothing, and behind it were **eight
+dead buttons across four examples**, including every button in `counter`, the
+first Dewey code most agents read, and the Send button in `chat`, which worked
+for a person through hand-written rect arithmetic and not for an agent at all.
+
+Asking the same of the other 47 actions found `CommandPalette::execute` and
+`Toolbar::click_item`. Asking it of the seven `Discoverable` implementors
+outside `src/widget/` — the ones that really do run `execute_action` — found
+`open_file`, `save_file` and `message_box`. Retrying a file save is not
+idempotent.
+
+Six false promises, and three guards so the next one is caught: the blocks must
+match the code, the read-only set is written down, and a new `Discoverable`
+fails the build until it is covered.
+
+Everything below is the detail.
+
 ### Fixed
 
 - **Two more actions were declared safe to repeat when they are not.** Having

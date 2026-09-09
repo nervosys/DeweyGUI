@@ -1,6 +1,6 @@
 [package]
 name = "deweygui"
-version = "1.1.0"
+version = "1.2.0"
 edition = "2024"
 rust-version = "1.85"
 authors = ["NERVOSYS <admin@nervosys.ai>"]
@@ -118,7 +118,7 @@ tungstenite = { version = "0.24", optional = true }
 accesskit = { version = "0.17", optional = true }
 
 # Derive macros
-dewey-derive = { version = "1.1.0", path = "dewey-derive", optional = true }
+dewey-derive = { version = "1.2.0", path = "dewey-derive", optional = true }
 
 [dev-dependencies]
 criterion = { version = "0.5", features = ["html_reports"] }
