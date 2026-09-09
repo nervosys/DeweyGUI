@@ -7,6 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **The ontology, written into the source comments an agent reads.** Every
+  built-in widget now carries an **Agent view** block in its doc comment: the
+  role it publishes, the actions it accepts with their parameter names, the
+  state fields it exposes, and its capabilities.
+
+  This is the direct consequence of the runs. A model meeting this crate reads
+  `examples/counter.rs`, `agent_headless.rs` and `llms.txt`; it does not query
+  the ontology while writing code, and being told to did not change that. So
+  the ontology has to be where the reader already is — which means prose, in
+  the files.
+
+  Written twice, it can disagree with itself, and a comment that lies about an
+  interface is worse than none. So `tests/agent_view.rs` builds all 29 widgets,
+  asks each the same questions the protocol asks, renders the block those
+  answers imply, and fails the build on any difference. Verified by breaking it
+  three ways: a block that overstates the actions, a block deleted, and — the
+  one that matters — an action renamed in code with the comment left behind.
+  Regenerate with `DEWEY_AGENT_VIEW=print cargo test --test agent_view --
+  --nocapture`.
+
+  Two details the generator gets right that a person writing these by hand
+  would not. Capability payloads are reduced to the variant name, because
+  `Toggleable { state: false }` would bake one throwaway instance's value into
+  a doc about the type. And a widget with a companion `…State` says so —
+  `TextInput` publishes only its placeholder, because the text belongs to the
+  application, and a bare field list would have implied otherwise.
+
 ### Fixed
 
 - **`benches/agentic/subject` documented a flag it never parsed.** Its header

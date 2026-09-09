@@ -20,6 +20,18 @@ impl SelectState {
 }
 
 /// A dropdown select / combo box.
+///
+/// # Agent view
+///
+/// What an agent sees of this widget, and what it can call on it.
+/// Generated from the widget's own answers; `tests/agent_view.rs`
+/// fails the build if this block and the code disagree.
+///
+/// - role: `Selection`
+/// - actions: `select`(index), `toggle_open`
+/// - state it publishes: `label`, `open`, `options`
+/// - capabilities: `Focusable`, `Selectable`
+/// - live value: held by the application in `SelectState`, not by the widget
 pub struct Select {
     options: Vec<String>,
     label: String,

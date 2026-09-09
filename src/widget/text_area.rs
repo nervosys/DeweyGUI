@@ -36,6 +36,18 @@ impl Default for TextAreaState {
 }
 
 /// A multi-line text editor.
+///
+/// # Agent view
+///
+/// What an agent sees of this widget, and what it can call on it.
+/// Generated from the widget's own answers; `tests/agent_view.rs`
+/// fails the build if this block and the code disagree.
+///
+/// - role: `Input`
+/// - actions: `insert`(text), `set_text`(text)
+/// - state it publishes: `placeholder`
+/// - capabilities: `Focusable`, `Scrollable`, `TextInput`
+/// - live value: held by the application in `TextAreaState`, not by the widget
 pub struct TextArea {
     placeholder: String,
     style: Style,

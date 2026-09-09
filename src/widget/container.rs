@@ -17,6 +17,17 @@ use crate::widget::Widget;
 ///     .rounded(12.0)
 ///     .border(Color::GRAY, 1.0);
 /// ```
+///
+/// # Agent view
+///
+/// What an agent sees of this widget, and what it can call on it.
+/// Generated from the widget's own answers; `tests/agent_view.rs`
+/// fails the build if this block and the code disagree.
+///
+/// - role: `Container`
+/// - actions: none
+/// - state it publishes: `title`
+/// - capabilities: none
 pub struct Container {
     style: Style,
     title: Option<String>,

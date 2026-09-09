@@ -95,6 +95,17 @@ pub enum PaletteChange<'a> {
     Close,
 }
 
+/// # Agent view
+///
+/// What an agent sees of this widget, and what it can call on it.
+/// Generated from the widget's own answers; `tests/agent_view.rs`
+/// fails the build if this block and the code disagree.
+///
+/// - role: `Navigation`
+/// - actions: `close`, `execute`(command_id), `list`, `open`, `search`(query)
+/// - state it publishes: `commands`
+/// - capabilities: `Focusable`, `Searchable`, `Selectable`
+/// - live value: held by the application in `CommandPaletteState`, not by the widget
 pub struct CommandPalette {
     commands: Vec<PaletteCommand>,
     placeholder: String,

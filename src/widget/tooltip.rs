@@ -14,6 +14,17 @@ use crate::widget::Widget;
 /// was: the tip text was held, published to the ontology, and drawn by
 /// nothing — so an agent could read a tooltip that no person could ever
 /// see.
+///
+/// # Agent view
+///
+/// What an agent sees of this widget, and what it can call on it.
+/// Generated from the widget's own answers; `tests/agent_view.rs`
+/// fails the build if this block and the code disagree.
+///
+/// - role: `Display`
+/// - actions: none
+/// - state it publishes: `label`, `text`
+/// - capabilities: `HasTooltip`
 pub struct Tooltip {
     /// The visible label text.
     label: String,

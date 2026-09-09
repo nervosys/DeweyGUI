@@ -48,6 +48,18 @@ impl ListState {
 }
 
 /// A vertical list of items.
+///
+/// # Agent view
+///
+/// What an agent sees of this widget, and what it can call on it.
+/// Generated from the widget's own answers; `tests/agent_view.rs`
+/// fails the build if this block and the code disagree.
+///
+/// - role: `Selection`
+/// - actions: `select`(index)
+/// - state it publishes: `count`, `items`
+/// - capabilities: `Focusable`, `Scrollable`, `Selectable`
+/// - live value: held by the application in `ListState`, not by the widget
 pub struct List {
     items: Vec<String>,
     style: Style,

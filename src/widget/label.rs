@@ -16,6 +16,17 @@ use crate::widget::Widget;
 ///     .text_size(18.0)
 ///     .bold();
 /// ```
+///
+/// # Agent view
+///
+/// What an agent sees of this widget, and what it can call on it.
+/// Generated from the widget's own answers; `tests/agent_view.rs`
+/// fails the build if this block and the code disagree.
+///
+/// - role: `Display`
+/// - actions: none
+/// - state it publishes: `text`
+/// - capabilities: `Focusable`
 pub struct Label {
     text: String,
     style: Style,

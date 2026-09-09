@@ -58,6 +58,16 @@ pub enum ChartChange<'a> {
     Clear,
 }
 
+/// # Agent view
+///
+/// What an agent sees of this widget, and what it can call on it.
+/// Generated from the widget's own answers; `tests/agent_view.rs`
+/// fails the build if this block and the code disagree.
+///
+/// - role: `DataVisualization`
+/// - actions: `add_series`(label, values), `clear`, `remove_series`(index)
+/// - state it publishes: `kind`, `labels`, `series_count`, `series`, `title`
+/// - capabilities: `Focusable`
 pub struct Chart {
     kind: ChartKind,
     title: String,

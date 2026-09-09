@@ -6,6 +6,17 @@ use crate::runtime::Frame;
 use crate::widget::Widget;
 
 /// A progress bar showing completion percentage.
+///
+/// # Agent view
+///
+/// What an agent sees of this widget, and what it can call on it.
+/// Generated from the widget's own answers; `tests/agent_view.rs`
+/// fails the build if this block and the code disagree.
+///
+/// - role: `Progress`
+/// - actions: none
+/// - state it publishes: `progress`
+/// - capabilities: none
 pub struct ProgressBar {
     progress: f32,
     label: Option<String>,

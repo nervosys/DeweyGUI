@@ -97,6 +97,16 @@ pub enum RichTextChange<'a> {
     Clear,
 }
 
+/// # Agent view
+///
+/// What an agent sees of this widget, and what it can call on it.
+/// Generated from the widget's own answers; `tests/agent_view.rs`
+/// fails the build if this block and the code disagree.
+///
+/// - role: `Display`
+/// - actions: `clear`, `set_markdown`(content)
+/// - state it publishes: `span_count`, `spans`, `text`
+/// - capabilities: `Copyable`, `Focusable`
 pub struct RichText {
     spans: Vec<TextSpan>,
     agent_id: std::borrow::Cow<'static, str>,

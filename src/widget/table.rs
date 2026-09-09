@@ -118,6 +118,17 @@ pub enum TableChange<'a> {
     Page(usize),
 }
 
+/// # Agent view
+///
+/// What an agent sees of this widget, and what it can call on it.
+/// Generated from the widget's own answers; `tests/agent_view.rs`
+/// fails the build if this block and the code disagree.
+///
+/// - role: `DataVisualization`
+/// - actions: `filter`(text), `page`(page), `select_row`(index), `sort`(column, direction)
+/// - state it publishes: `headers`, `row_count`
+/// - capabilities: `Filterable`, `Scrollable`, `Selectable`, `Sortable`
+/// - live value: held by the application in `TableState`, not by the widget
 pub struct Table {
     headers: Vec<String>,
     rows: Vec<Vec<String>>,

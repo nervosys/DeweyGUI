@@ -35,6 +35,17 @@ impl MenuItem {
 }
 
 /// A menu containing items.
+///
+/// # Agent view
+///
+/// What an agent sees of this widget, and what it can call on it.
+/// Generated from the widget's own answers; `tests/agent_view.rs`
+/// fails the build if this block and the code disagree.
+///
+/// - role: `Menu`
+/// - actions: `select_item`(label), `toggle_open`
+/// - state it publishes: `items`, `open`, `title`
+/// - capabilities: `Focusable`, `Selectable`
 pub struct Menu {
     title: String,
     items: Vec<MenuItem>,

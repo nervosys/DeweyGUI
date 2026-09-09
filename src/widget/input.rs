@@ -47,6 +47,18 @@ impl Default for TextInputState {
 ///     .bg(Color::DARK_GRAY)
 ///     .rounded(8.0);
 /// ```
+///
+/// # Agent view
+///
+/// What an agent sees of this widget, and what it can call on it.
+/// Generated from the widget's own answers; `tests/agent_view.rs`
+/// fails the build if this block and the code disagree.
+///
+/// - role: `Input`
+/// - actions: `clear`, `set_text`(text)
+/// - state it publishes: `placeholder`
+/// - capabilities: `Focusable`, `TextInput`
+/// - live value: held by the application in `TextInputState`, not by the widget
 pub struct TextInput {
     placeholder: String,
     style: Style,

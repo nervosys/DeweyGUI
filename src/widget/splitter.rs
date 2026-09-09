@@ -37,6 +37,18 @@ impl Default for SplitterState {
 /// A resizable split pane that divides an area into two regions.
 ///
 /// The agent can read or set the split ratio programmatically.
+///
+/// # Agent view
+///
+/// What an agent sees of this widget, and what it can call on it.
+/// Generated from the widget's own answers; `tests/agent_view.rs`
+/// fails the build if this block and the code disagree.
+///
+/// - role: `Container`
+/// - actions: `set_ratio`(ratio)
+/// - state it publishes: `direction`, `max_ratio`, `min_ratio`
+/// - capabilities: `RangeEditable`, `Resizable`
+/// - live value: held by the application in `SplitterState`, not by the widget
 pub struct Splitter {
     direction: SplitDirection,
     min_ratio: f32,

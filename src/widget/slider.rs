@@ -25,6 +25,18 @@ impl Default for SliderState {
 }
 
 /// A draggable slider.
+///
+/// # Agent view
+///
+/// What an agent sees of this widget, and what it can call on it.
+/// Generated from the widget's own answers; `tests/agent_view.rs`
+/// fails the build if this block and the code disagree.
+///
+/// - role: `Input`
+/// - actions: `set_value`(value)
+/// - state it publishes: `max`, `min`, `step`
+/// - capabilities: `Focusable`, `RangeEditable`
+/// - live value: held by the application in `SliderState`, not by the widget
 pub struct Slider {
     min: f64,
     max: f64,

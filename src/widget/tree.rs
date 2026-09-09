@@ -101,6 +101,17 @@ pub enum TreeChange<'a> {
 }
 
 /// A hierarchical tree view.
+///
+/// # Agent view
+///
+/// What an agent sees of this widget, and what it can call on it.
+/// Generated from the widget's own answers; `tests/agent_view.rs`
+/// fails the build if this block and the code disagree.
+///
+/// - role: `TreeNode`
+/// - actions: `collapse_all`, `collapse`(path), `expand_all`, `expand`(path)
+/// - state it publishes: `children`, `expanded`, `label`
+/// - capabilities: `Expandable`, `Focusable`, `Selectable`
 pub struct Tree {
     root: TreeNode,
     style: Style,

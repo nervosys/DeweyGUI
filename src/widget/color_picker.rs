@@ -86,6 +86,17 @@ impl ColorChange {
     }
 }
 
+/// # Agent view
+///
+/// What an agent sees of this widget, and what it can call on it.
+/// Generated from the widget's own answers; `tests/agent_view.rs`
+/// fails the build if this block and the code disagree.
+///
+/// - role: `Input`
+/// - actions: `get_color`, `set_color`(r, g, b, a, hex), `toggle_open`
+/// - state it publishes: `label`, `show_alpha`
+/// - capabilities: `Clickable`, `Focusable`
+/// - live value: held by the application in `ColorPickerState`, not by the widget
 pub struct ColorPicker {
     label: String,
     show_alpha: bool,

@@ -46,6 +46,18 @@ impl VirtualListState {
 ///
 /// Provides the same ontology interface as a regular list, but performs
 /// windowed rendering for performance with large datasets.
+///
+/// # Agent view
+///
+/// What an agent sees of this widget, and what it can call on it.
+/// Generated from the widget's own answers; `tests/agent_view.rs`
+/// fails the build if this block and the code disagree.
+///
+/// - role: `Scrollable`
+/// - actions: `get_visible_range`, `scroll_to`(index)
+/// - state it publishes: `item_height`, `overscan`
+/// - capabilities: `Focusable`, `Scrollable`
+/// - live value: held by the application in `VirtualListState`, not by the widget
 pub struct VirtualList<F> {
     /// Height of each item in logical pixels.
     item_height: f32,

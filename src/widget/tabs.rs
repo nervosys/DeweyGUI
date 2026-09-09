@@ -24,6 +24,18 @@ impl TabState {
 }
 
 /// A tab bar.
+///
+/// # Agent view
+///
+/// What an agent sees of this widget, and what it can call on it.
+/// Generated from the widget's own answers; `tests/agent_view.rs`
+/// fails the build if this block and the code disagree.
+///
+/// - role: `Tab`
+/// - actions: `select_tab`(index)
+/// - state it publishes: `labels`
+/// - capabilities: `Focusable`, `Selectable`
+/// - live value: held by the application in `TabState`, not by the widget
 pub struct Tabs {
     labels: Vec<String>,
     style: Style,

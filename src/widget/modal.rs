@@ -20,6 +20,17 @@ use crate::widget::Widget;
 ///     .fg(Color::WHITE)
 ///     .rounded(12.0);
 /// ```
+///
+/// # Agent view
+///
+/// What an agent sees of this widget, and what it can call on it.
+/// Generated from the widget's own answers; `tests/agent_view.rs`
+/// fails the build if this block and the code disagree.
+///
+/// - role: `Modal`
+/// - actions: `close`, `open`
+/// - state it publishes: `open`, `title`
+/// - capabilities: `Closable`, `Focusable`
 pub struct Modal {
     title: String,
     open: bool,

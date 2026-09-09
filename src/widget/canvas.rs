@@ -61,6 +61,17 @@ pub enum DrawCommand {
 }
 
 /// A custom drawing canvas with a declarative drawing command list.
+///
+/// # Agent view
+///
+/// What an agent sees of this widget, and what it can call on it.
+/// Generated from the widget's own answers; `tests/agent_view.rs`
+/// fails the build if this block and the code disagree.
+///
+/// - role: `Canvas`
+/// - actions: `clear`
+/// - state it publishes: `command_count`, `has_background`
+/// - capabilities: `Zoomable`
 pub struct Canvas {
     agent_id: std::borrow::Cow<'static, str>,
     commands: Vec<DrawCommand>,
