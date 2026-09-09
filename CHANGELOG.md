@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **`benches/agentic/subject` documented a flag it never parsed.** Its header
+  names `--serve` and `--mcp` as the two ways to talk to it. The code tested
+  for `--truth` and `--mcp` and served on anything left over, so `--serve`
+  worked by falling through and `--nonsense` started the server just the same.
+
+  That is precisely the defect this benchmark exists to look for — something
+  documented, plausible, and not actually wired — sitting in the program the
+  benchmark points at, written the day before by the person looking for it.
+
+  The flags are parsed now: one of `--serve`, `--mcp`, `--truth`, or no
+  argument to serve. Anything else, including two conflicting flags, prints
+  what it expected and exits 2 rather than quietly choosing.
+
 ### Documentation
 
 - **ROADMAP.md now says what the runs found, including where it was wrong.**
