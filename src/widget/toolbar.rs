@@ -145,7 +145,7 @@ impl Discoverable for Toolbar {
                     "ID of the toolbar item to click",
                     ActionParamType::String,
                 )],
-                false,
+                true,
             ),
             AgentAction::simple("list_items", "List all toolbar items", false),
         ]

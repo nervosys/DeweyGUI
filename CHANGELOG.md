@@ -9,6 +9,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Two more actions were declared safe to repeat when they are not.** Having
+  found `Button::click` marked non-mutating, the same question was put to all
+  48 actions on the built-in widgets — by asking the objects, not by reading
+  the source, after two attempts to parse the flag out of the text got it
+  wrong in both directions.
+
+  Seven were non-mutating. Four are genuine queries. `CommandPalette::execute`
+  runs a command by id and `Toolbar::click_item` activates an item; both are
+  now mutating. Both had the two consequences `click` had: an agent was told
+  retrying them was safe, and the strict `unwired_widget` check could not see
+  a palette or toolbar wired to nothing.
+
+  `CommandPalette::search` stays a query: searching twice with one query gives
+  one answer, which is what idempotent means here.
+
+- **The read-only set is now written down.**
+  `only_genuine_queries_are_declared_repeatable` pins the five actions that may
+  call themselves non-mutating and fails on any sixth, so adding one takes an
+  argument rather than a default. It also asserts no action claims to both
+  mutate and be idempotent. Verified by regressing `click` and watching it
+  fail.
+
 - **`Button`'s click was declared non-mutating, and eight dead buttons were
   hiding behind it.** `AgentAction::simple("click", ..., false)` set
   `mutates: false` and, because `simple` derives `idempotent: !mutates`, also

@@ -210,3 +210,55 @@ fn every_widget_documents_what_an_agent_can_do_with_it() {
         stale.join("\n\n")
     );
 }
+
+/// Which actions are safe to repeat, pinned so a wrong answer is deliberate.
+///
+/// `AgentAction::simple(name, desc, mutates)` derives `idempotent: !mutates`,
+/// so a `false` here is a promise to an agent that calling the action twice is
+/// the same as calling it once — the promise a retry after a timeout is built
+/// on. It is also what the strict `unwired_widget` check keys on: that check
+/// only considers mutating actions, so an action wrongly marked read-only
+/// becomes invisible to the check that finds controls wired to nothing.
+///
+/// Three were wrong. `Button::click` was one, and it made the commonest
+/// control in any interface the one the check could not see — eight dead
+/// buttons across four examples came out when it was corrected.
+/// `CommandPalette::execute` runs a command and `Toolbar::click_item`
+/// activates an item, and both were declared safe to repeat.
+///
+/// So the read-only set is written down. Adding to it should take an argument.
+#[test]
+fn only_genuine_queries_are_declared_repeatable() {
+    // Each of these answers a question and changes nothing.
+    const QUERIES: &[(&str, &str)] = &[
+        ("color_picker", "get_color"),
+        ("virtual_list", "get_visible_range"),
+        ("command_palette", "list"),
+        ("command_palette", "search"),
+        ("toolbar", "list_items"),
+    ];
+
+    let mut unexpected = Vec::new();
+    for (file, widget) in every_widget() {
+        for action in widget.actions() {
+            if action.mutates {
+                assert!(
+                    !action.idempotent,
+                    "`{file}::{}` mutates and calls itself idempotent",
+                    action.name
+                );
+                continue;
+            }
+            if !QUERIES.contains(&(file, action.name.as_str())) {
+                unexpected.push(format!("{file}::{}", action.name));
+            }
+        }
+    }
+    assert!(
+        unexpected.is_empty(),
+        "these actions are declared non-mutating, which tells an agent they are          safe to repeat and hides them from the check that finds unwired          controls. If they really are queries, add them to QUERIES with a          reason; otherwise pass `true` for `mutates`:
+  {}",
+        unexpected.join("
+  ")
+    );
+}

@@ -248,7 +248,7 @@ impl Discoverable for CommandPalette {
                     "ID of the command to execute",
                     ActionParamType::String,
                 )],
-                false,
+                true,
             ),
             AgentAction::with_params(
                 "search",
