@@ -39,6 +39,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `i18n::translate`, `window::list`, `profiling::snapshot`, `plugin::list`,
   `tray::poll_event` and the rest all read and change nothing.
 
+- **The audit's scope is now checked instead of remembered.** Both lists in
+  `tests/agent_view.rs` are written by hand, which is precisely how three
+  defects stayed hidden: each round was scoped by an assumption nobody
+  examined — first "the widget files", then "the built-in widgets".
+
+  `the_lists_above_are_every_discoverable_there_is` walks the source for every
+  `impl Discoverable` and fails on one no test builds, so a new widget cannot
+  arrive without an Agent view block and a `mutates` check. It also fails the
+  other way, on a listed type that no longer implements the trait.
+
+  It skips doc comments, because the first time this was done by grep it found
+  a `Badge` and an `Editor` that do not exist — they are worked examples in
+  `src/widget/mod.rs`. The one real gap it turned up was `DatePickerState`.
+
 - **The read-only set is now written down.**
   `only_genuine_queries_are_declared_repeatable` pins the five actions that may
   call themselves non-mutating and fails on any sixth, so adding one takes an

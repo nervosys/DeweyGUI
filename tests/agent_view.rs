@@ -291,3 +291,123 @@ fn only_genuine_queries_are_declared_repeatable() {
   ")
     );
 }
+
+/// The lists above are the whole of `Discoverable`, checked rather than assumed.
+///
+/// Both lists are written by hand, which is how the last three defects stayed
+/// hidden: each audit was scoped by an assumption nobody examined. First "the
+/// widget files", which missed the actions taking parameters. Then "the
+/// built-in widgets", which missed the seven implementors outside
+/// `src/widget/` — the ones that actually run `execute_action`, where three
+/// dialog actions were promising they were safe to repeat.
+///
+/// So the scope is no longer a matter of memory. This walks the source for
+/// every `impl Discoverable`, and a new one fails here until it is added to a
+/// list above and gets both an Agent view block and a `mutates` check.
+#[test]
+fn the_lists_above_are_every_discoverable_there_is() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let mut found: Vec<String> = Vec::new();
+    let mut stack = vec![root.join("src")];
+    while let Some(dir) = stack.pop() {
+        for entry in std::fs::read_dir(&dir).expect("read src") {
+            let path = entry.expect("entry").path();
+            if path.is_dir() {
+                stack.push(path);
+                continue;
+            }
+            if path.extension().is_none_or(|e| e != "rs") {
+                continue;
+            }
+            let text = std::fs::read_to_string(&path).expect("read source");
+            for line in text.lines() {
+                let trimmed = line.trim_start();
+                // Doc comments carry a worked example that implements the
+                // trait for a `Badge` that does not exist. It counted, the
+                // first time I did this by grep.
+                if trimmed.starts_with("///") || trimmed.starts_with("//!") {
+                    continue;
+                }
+                let Some(rest) = trimmed.split("Discoverable for ").nth(1) else {
+                    continue;
+                };
+                if !trimmed.starts_with("impl") {
+                    continue;
+                }
+                let name: String = rest
+                    .chars()
+                    .take_while(|c| c.is_alphanumeric() || *c == '_')
+                    .collect();
+                if !name.is_empty() {
+                    found.push(name);
+                }
+            }
+        }
+    }
+    found.sort();
+    found.dedup();
+
+    // What the two lists above actually build, by type name.
+    const COVERED: &[&str] = &[
+        "Button",
+        "Canvas",
+        "Chart",
+        "Checkbox",
+        "ColorPicker",
+        "CommandPalette",
+        "Container",
+        "DatePicker",
+        "I18n",
+        "Image",
+        "Label",
+        "List",
+        "Menu",
+        "Modal",
+        "NullDialogBackend",
+        "NullTrayBackend",
+        "Panel",
+        "PluginRegistry",
+        "Profiler",
+        "ProgressBar",
+        "Radio",
+        "RichText",
+        "ScrollArea",
+        "Select",
+        "Slider",
+        "Splitter",
+        "Table",
+        "Tabs",
+        "TextArea",
+        "TextInput",
+        "Theme",
+        "Toolbar",
+        "Tooltip",
+        "Tree",
+        "VirtualList",
+        "WindowManager",
+        // Implements the trait so an agent can read a half-open calendar, and
+        // carries the same actions as the `DatePicker` that owns it. Listed
+        // here rather than built above because it is the state, not the widget.
+        "DatePickerState",
+    ];
+
+    let missing: Vec<&String> = found
+        .iter()
+        .filter(|n| !COVERED.contains(&n.as_str()))
+        .collect();
+    assert!(
+        missing.is_empty(),
+        "these types implement `Discoverable` and no test above builds them, so \
+         they have neither an Agent view block nor a `mutates` check:\n  {missing:?}"
+    );
+
+    let stale: Vec<&&str> = COVERED
+        .iter()
+        .filter(|n| !found.iter().any(|f| f == *n))
+        .collect();
+    assert!(
+        stale.is_empty(),
+        "these are listed as covered and no longer implement `Discoverable`: \
+         {stale:?}"
+    );
+}
