@@ -10,6 +10,13 @@
 #   scripts/check.sh --all    also the sibling crate and the benchmark
 #                             workspaces, which live outside this workspace
 #                             and which `cargo check` here never sees
+#
+# `--all` needs a warm target directory. On a cold one it dies part-way through
+# the release build of benches/comparative — which compiles egui, iced and wgpu
+# — with exit 127 and no error, and it looks exactly like a failing check. It is
+# not: running that step on its own afterwards passes, and so does the whole
+# script once those artifacts are cached. If it stops on
+# `cargo run --release --bin allocs`, build that target once and run it again.
 set -euo pipefail
 
 cd "$(dirname "$0")/.."

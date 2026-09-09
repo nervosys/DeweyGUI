@@ -90,7 +90,12 @@ Every one of these was verified by breaking the thing it catches.
 | `scripts/check.sh` | nothing — it is what CI runs, in one command. `--all` adds the sibling crate and both benchmark workspaces. |
 
 `scripts/check.sh` exists because this session pushed a red Test job once and a
-red Format job once. Run it before pushing — and run it with `--all`, which adds
+red Format job once. It passes end to end, and it needs a warm target
+directory: on a cold one it dies part-way through the release build of
+`benches/comparative` — egui, iced and wgpu in one go — with exit 127 and no
+error message, which looks exactly like a failing check and is not one. Build
+that target once and run it again. Most of this session mistook that for lock
+contention. Run it before pushing — and run it with `--all`, which adds
 the sibling crate, both benchmark workspaces, the six examples, the two free
 agentic self-tests and the three features CI had never compiled.
 
