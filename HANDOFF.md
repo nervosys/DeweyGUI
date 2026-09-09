@@ -91,11 +91,13 @@ Every one of these was verified by breaking the thing it catches.
 
 `scripts/check.sh` exists because this session pushed a red Test job once and a
 red Format job once. It passes end to end, and it needs a warm target
-directory: on a cold one it dies part-way through the release build of
-`benches/comparative` — egui, iced and wgpu in one go — with exit 127 and no
-error message, which looks exactly like a failing check and is not one. Build
-that target once and run it again. Most of this session mistook that for lock
-contention. Run it before pushing — and run it with `--all`, which adds
+directory: on a cold one it dies part-way through whichever heavy build it
+reaches first, with exit 127 and no error message, which looks exactly like a
+failing check and is not one. Run it twice. Observed on the release build of
+`benches/comparative` once and on an example the next time, after a version bump
+invalidated the cache — so it is any large cold build, not one target. Most of
+this session mistook it for lock contention, and the first note about it here
+blamed one specific target. Run it before pushing — and run it with `--all`, which adds
 the sibling crate, both benchmark workspaces, the six examples, the two free
 agentic self-tests and the three features CI had never compiled.
 

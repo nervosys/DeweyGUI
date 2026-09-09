@@ -7,6 +7,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-09-08
+
+Forty-eight commits. Two defect patterns and one method, and the question the
+project is built on answered with money rather than argument.
+
+**Something reported success and did nothing.** A click carries a point; every
+host passed `null` as the action's parameters and fourteen widgets applied their
+handler's `unwrap_or` instead — a 0..100 slider went to 0 wherever you clicked.
+A button inside a modal could not be pressed. A `Tree`, a `Menu`, a `Select`, a
+`Tooltip` and a `ColorPicker` could be operated by an agent and by no person, or
+described more than they drew. A wheel turn reached no widget at all.
+`Event::DragDrop` could be delivered by no host. Nine widgets in this
+repository's own examples advertised actions with no handler.
+
+**Something could not be tested, so it was not.** The stdio transport, the MCP
+loop and the examples each owned stdin, stdout or a window. All of them turned
+out to be correct; the risk was never that the code was broken, but that nothing
+would have said so.
+
+**And the method that found most of the rest: distrust a passing check.**
+`both_backends_handle_every_command` asked whether each host *mentioned* each
+variant, and a `log::debug!` mentions it. The documented-response check had a
+floor of one pair. `examples_validate` read source text and never ran an
+example.
+
+The question: **does an agent use the ontology?** Twenty-four paid runs, $19.15.
+Writing an application — twelve runs, zero ontology calls, 1.000 every time,
+reading two examples and `llms.txt`. Driving one it did not write — twelve runs,
+12/12 correct, and the arm with the MCP server the cheapest of three. Typed
+tools earn their keep for agents that operate an interface and appear not to for
+agents writing code. One model, n=4 per arm; read it as a direction.
+
+Everything below is the detail.
+
 ### Performance
 
 - A `UiNode` no longer sends what it has nothing to say about. Every node was
