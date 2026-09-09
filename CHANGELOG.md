@@ -39,6 +39,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `i18n::translate`, `window::list`, `profiling::snapshot`, `plugin::list`,
   `tray::poll_event` and the rest all read and change nothing.
 
+- **The Agent view blocks now say which actions are safe to repeat.** Every
+  block opens with "Every action changes state unless it says otherwise", and
+  the four widgets with a genuine query mark it: `list_items` on `Toolbar`,
+  `list` and `search` on `CommandPalette`, `get_color`, `get_visible_range`.
+
+  It is one word per action and it is the fact this crate got wrong six times.
+  An agent deciding whether to re-send a call after a timeout now reads the
+  answer in the file it was already reading, rather than inferring it from the
+  action's name — which is how `execute` and `click_item` came to look safe.
+
 - **The audit's scope is now checked instead of remembered.** Both lists in
   `tests/agent_view.rs` are written by hand, which is precisely how three
   defects stayed hidden: each round was scoped by an assumption nobody

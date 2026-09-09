@@ -65,6 +65,7 @@ pub enum DrawCommand {
 /// # Agent view
 ///
 /// What an agent sees of this widget, and what it can call on it.
+/// Every action changes state unless it says otherwise.
 /// Generated from the widget's own answers; `tests/agent_view.rs`
 /// fails the build if this block and the code disagree.
 ///

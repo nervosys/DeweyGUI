@@ -89,11 +89,12 @@ impl ColorChange {
 /// # Agent view
 ///
 /// What an agent sees of this widget, and what it can call on it.
+/// Every action changes state unless it says otherwise.
 /// Generated from the widget's own answers; `tests/agent_view.rs`
 /// fails the build if this block and the code disagree.
 ///
 /// - role: `Input`
-/// - actions: `get_color`, `set_color`(r, g, b, a, hex), `toggle_open`
+/// - actions: `get_color` (repeatable), `set_color`(r, g, b, a, hex), `toggle_open`
 /// - state it publishes: `label`, `show_alpha`
 /// - capabilities: `Clickable`, `Focusable`
 /// - live value: held by the application in `ColorPickerState`, not by the widget

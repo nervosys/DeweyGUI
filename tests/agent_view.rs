@@ -34,11 +34,19 @@ fn block_for(w: &dyn Discoverable, companion: Option<&str>) -> String {
         .actions()
         .iter()
         .map(|a| {
-            if a.params.is_empty() {
+            let call = if a.params.is_empty() {
                 format!("`{}`", a.name)
             } else {
                 let params: Vec<&str> = a.params.iter().map(|p| p.name.as_str()).collect();
                 format!("`{}`({})", a.name, params.join(", "))
+            };
+            // Whether a retry is safe is the fact an agent most needs, and the
+            // one this crate got wrong six times, so it is stated rather than
+            // left to be guessed from the action's name.
+            if a.mutates {
+                call
+            } else {
+                format!("{call} (repeatable)")
             }
         })
         .collect();
@@ -85,6 +93,7 @@ fn block_for(w: &dyn Discoverable, companion: Option<&str>) -> String {
         "/// # Agent view\n\
          ///\n\
          /// What an agent sees of this widget, and what it can call on it.\n\
+         /// Every action changes state unless it says otherwise.\n\
          /// Generated from the widget's own answers; `tests/agent_view.rs`\n\
          /// fails the build if this block and the code disagree.\n\
          ///\n\
