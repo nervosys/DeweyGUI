@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Documentation
+
+- **ROADMAP.md now says what the runs found, including where it was wrong.**
+  "Known limits" opened by predicting that an untrained model reads the source
+  instead of asking, and was built on the thesis that the fix is the text a
+  model reads before it decides.
+
+  Half of that held. An agent writing a Dewey application does go around the
+  ontology — zero calls in twelve runs — but not to the source: it reads the
+  examples and `llms.txt`, and only three reads in twelve runs touched `src/`.
+
+  The thesis did not hold. The arm with the instructions delivered behaved
+  exactly like the arm without, and the additionally warned arm like both. What
+  moved behaviour was not persuasion but the absence of an alternative: given a
+  running program and a question only it can answer, the agent asks, and typed
+  tools make asking cheaper than a raw pipe. The levers are kept because they
+  are cheap and because the tooled arm is genuinely cheapest for driving — not
+  because they change a writing agent's mind.
+
+  The last open box in that section — "the run itself costs money and has not
+  happened, so there are no numbers yet" — is closed with the numbers.
+
+
 ## [1.1.0] - 2026-09-08
 
 Forty-eight commits. Two defect patterns and one method, and the question the

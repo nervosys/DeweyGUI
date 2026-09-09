@@ -276,14 +276,26 @@ duration breaks every `match` on `Event`, so it waits for a major version.
 ### The ontology is only worth what the agent asks it
 
 Every performance figure in this project assumes the agent uses the protocol.
-A model that has not been told the application describes itself will read the
-source instead — slower, far larger, and an answer about what the code *could*
-do rather than what is on screen now. The ontology costs the same whether or
-not anyone asks it, so an unprompted model turns a measured win into pure
-overhead.
+The ontology costs the same whether or not anyone asks it, so a model that does
+not ask turns a measured win into pure overhead.
 
-This is a limit of adoption, not of the mechanism, and the levers are the text
-a model reads before it decides:
+**Measured on 8 September 2026, and the prediction that used to stand here was
+half right.** An agent writing a Dewey application does go around the ontology —
+zero calls in twelve runs — but not to the source: it reads the *examples* and
+`llms.txt`, and only three reads in twelve runs touched `src/` at all. It scored
+1.000 every time, so nothing was lost by not asking.
+
+The other half was wrong, and it was the part this section was built on. The
+levers were supposed to be the text a model reads before it decides. Twelve runs
+say that text changes nothing: the arm with the instructions delivered behaved
+exactly like the arm without, and the arm that was additionally warned behaved
+like both. What moved the needle was not persuasion but the absence of an
+alternative — given a running program and a question only it can answer, an
+agent asks, and typed tools make asking cheaper than a raw pipe.
+
+The levers are kept because they are cheap, and because for a driving task the
+tooled arm is genuinely the cheapest of three. They are no longer claimed to
+change a writing agent's mind:
 
 - [x] MCP `initialize` returns `instructions` saying the application describes
       itself, naming `get_tree` as the first call, and pointing at `since`,
@@ -298,8 +310,10 @@ a model reads before it decides:
       change-polling, and on the three questions source cannot answer at any
       price, not on bulk. Run in CI
 - [x] `docs/agent-prompt.md`, for clients that surface no MCP instructions,
-      and `llms.txt`, the machine-readable index a model reads first. Both say
-      what they are not: a cheap and plausible measure, not a demonstrated one
+      and `llms.txt`, the machine-readable index a model reads first. Both now
+      report what the runs found rather than hedging about it, and `llms.txt`
+      carries a compiled example — it had no Rust in it at all until twelve
+      runs showed it was the third-most-read file in the repository
 
 **The sibling project already ran the experiment, and it did not work.**
 HawkTUI's `benchmarks/agentic/` drives a real model over 184 recorded runs.
@@ -311,15 +325,40 @@ is one it was not trained on, and Dewey is in exactly that position.
 Adding MCP tools raised ontology consultation from 4% to 42%, and adding
 trigger prompts to 83% — and **the outcomes did not move**: score 1.000 in all
 three arms, cost $0.78 / $0.79 / $0.78, and one task got monotonically worse
-(19 → 37 → 53 turns). Consultation is not the metric. So the `instructions`
-added to `src/agent/mcp.rs` are cheap and worth keeping, and there is no
-evidence yet that they change what a model does.
+(19 → 37 → 53 turns). Consultation is not the metric.
 
-- [~] `benches/agentic/` drives a real model at a task, scores what it built
-      by what it rendered, and reads the transcript for turns, cost, source
-      reads and ontology calls. Two conditions, `bare` and `mcp`. Everything
-      but the model run is checked by `runner/selftest.py` in CI; the run
-      itself costs money and has not happened, so there are no numbers yet
+Dewey's own runs agree with that last clause exactly and disagree with the
+middle one. No arm differed on outcome here either — every `t1-counter` run
+scored 1.000 whatever it was given. But where MCP tools took HawkTUI's
+consultation from 4% to 42%, here they took it from zero to zero, and the
+trigger-prompt arm moved nothing either. For a *driving* task the same tools
+were the cheapest arm of three. The instructions are cheap and worth keeping;
+what they are worth depends on whether the agent has an alternative.
+
+- [x] `benches/agentic/` has been run. **24 paid runs, $19.15, 8 September
+      2026**, three conditions, and the answer is two halves that point
+      opposite ways.
+
+      **Writing an application** (`t1-counter`, 12 runs): zero ontology calls
+      in every single run — including the four where the MCP server reported
+      `connected`, its tools were listed and `initialize` had delivered the
+      instructions. Every run scored 1.000 anyway, reading
+      `examples/counter.rs`, `examples/agent_headless.rs` and `llms.txt`. Only
+      three reads in twelve runs touched `src/` at all, so the "reads the
+      implementation" prediction below is half right: it does go around the
+      ontology, but to the examples rather than the source.
+
+      **Driving an application it did not write** (`t3-inspect`, 12 runs):
+      12/12 correct, and the `mcp` arm was the cheapest of the three — 19.8
+      turns at $0.37 against 29.0 and $0.58 bare. When the answer exists only
+      in a running program the agent asks, and typed tools make asking cheaper.
+
+      So: ship the MCP server for agents that *drive*; spend the effort on
+      examples and `llms.txt` for agents that *write*. One model, n=4 per arm
+      — a direction, not a measurement. Arm-by-arm results, the twelve harness
+      defects paid for on the way, and the four runs excluded because the
+      harness rather than the agent failed them, are in
+      `benches/agentic/README.md`.
 
 ---
 
