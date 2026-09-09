@@ -84,14 +84,23 @@ impl Model for App {
         )
         .split(cols[0]);
 
+        // Opens the modal, which no pointer could reach before: it was bound
+        // to a key press alone.
         Button::new("Click Me!")
-            .agent_id("demo_btn")
+            .action("demo_btn", Msg::ToggleModal)
             .render(left_rows[0], frame);
 
         // Every widget here is wired. A showcase is what an agent reads to
         // learn what this framework's widgets do, and six of these advertised
         // actions with nothing behind them: calling one was reported as
         // success and changed nothing.
+        //
+        // That sentence was written while `demo_btn` above was still one of
+        // them. `Button`'s click was declared non-mutating, and the strict
+        // check that finds unwired controls only considers mutating actions,
+        // so the commonest control in any interface was the one it could not
+        // see. Seven more dead buttons across three other examples came out
+        // with it when the flag was corrected.
         Checkbox::new("Enable feature", self.checkbox_checked)
             .action("demo_checkbox", Msg::ToggleCheckbox)
             .render(left_rows[1], frame);

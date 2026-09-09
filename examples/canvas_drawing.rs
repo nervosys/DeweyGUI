@@ -107,13 +107,13 @@ impl Model for App {
         .split(rows[0]);
 
         Button::new("Add Square [s]")
-            .agent_id("btn_square")
+            .action("btn_square", Msg::AddSquare)
             .render(btn_cols[0], frame);
         Button::new("Add Circle [c]")
-            .agent_id("btn_circle")
+            .action("btn_circle", Msg::AddCircle)
             .render(btn_cols[1], frame);
         Button::new("Clear [x]")
-            .agent_id("btn_clear")
+            .action("btn_clear", Msg::Clear)
             .render(btn_cols[2], frame);
 
         // Build canvas with all accumulated shapes

@@ -173,7 +173,7 @@ impl Discoverable for Button {
     }
 
     fn actions(&self) -> Vec<AgentAction> {
-        vec![AgentAction::simple("click", "Click the button", false)]
+        vec![AgentAction::simple("click", "Click the button", true)]
     }
 
     fn semantic_role(&self) -> SemanticRole {

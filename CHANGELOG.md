@@ -7,6 +7,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **`Button`'s click was declared non-mutating, and eight dead buttons were
+  hiding behind it.** `AgentAction::simple("click", ..., false)` set
+  `mutates: false` and, because `simple` derives `idempotent: !mutates`, also
+  advertised every button click to agents as **idempotent** — retrying one
+  after a timeout was declared safe. On a Submit button it is not.
+
+  The second consequence was worse. The strict `unwired_widget` check exists
+  to find controls wired to nothing, and it only considers *mutating* actions,
+  so the commonest control in any interface was the one it could not see.
+  Correcting the flag surfaced eight dead buttons across four examples:
+
+  | example | buttons that did nothing when clicked |
+  |---|---|
+  | `counter` | `increment_btn`, `decrement_btn`, `reset_btn` |
+  | `canvas_drawing` | `btn_square`, `btn_circle`, `btn_clear` |
+  | `chat` | `send_btn` |
+  | `showcase` | `demo_btn` |
+
+  `counter` is the one that matters: twelve paid runs read it in every single
+  run, so it is the first Dewey code most agents see, and it was teaching a
+  button that hit-tests and does nothing. It worked by keyboard only.
+
+  `chat` is the most interesting. Its Send button *did* work for a person, via
+  hand-written rect arithmetic in `handle_event` — and not for an agent, which
+  is exactly the split between the two paths this framework exists to remove.
+  It now uses `.action(...)`, and the stored rect and the hit-test that read it
+  are gone.
+
+  `showcase` carried a comment reading "Every widget here is wired", added
+  earlier in this range while `demo_btn` directly above it was not. The comment
+  now says why the check let it through.
+
+- **`examples/counter.rs` says what it demonstrates.** It had a one-line
+  header. Being the most-read file in the repository, it now states the three
+  facts a reader needs: `.action(id, msg)` names a widget and gives it
+  behaviour at once so a person and an agent take one path; a widget with no id
+  can be operated by nobody; and an id alone is not enough, which is the
+  mistake this very file was making.
+
 ### Added
 
 - **The ontology, written into the source comments an agent reads.** Every

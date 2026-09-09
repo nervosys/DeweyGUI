@@ -1,4 +1,27 @@
 //! Counter — interactive Dewey application demonstrating the Elm architecture.
+//!
+//! Twelve paid runs of `benches/agentic/` read this file in every single one,
+//! which makes it the first Dewey code most agents ever see. So it is worth
+//! saying plainly what it demonstrates beyond the architecture:
+//!
+//! - **`.action(id, msg)` gives a widget its name and its behaviour at once.**
+//!   A person clicking the button and an agent calling
+//!   `execute_action("increment_btn", "click")` take the same path, because
+//!   there is only one.
+//! - **A widget with no id can be operated by nobody.** It renders, it looks
+//!   right, and no click and no agent can reach it.
+//! - **An id alone is not enough.** Until recently these three buttons carried
+//!   `.agent_id(...)` and no handler, so they hit-tested and did nothing —
+//!   the counter worked by keyboard only, and the check that should have
+//!   caught it was blind to buttons.
+//!
+//! Prove any interface is operable, with no window and no display:
+//!
+//! ```text
+//! cargo run --example counter -- --dewey-validate
+//! ```
+//!
+//! `llms.txt` is the short index; `docs/agent-protocol.md` is the reference.
 
 use dewey::prelude::*;
 
@@ -52,15 +75,15 @@ impl Model for App {
         .split(chunks[1]);
 
         Button::new("- Decrement")
-            .agent_id("decrement_btn")
+            .action("decrement_btn", Msg::Decrement)
             .render(btn_chunks[0], frame);
 
         Button::new("Reset")
-            .agent_id("reset_btn")
+            .action("reset_btn", Msg::Reset)
             .render(btn_chunks[1], frame);
 
         Button::new("+ Increment")
-            .agent_id("increment_btn")
+            .action("increment_btn", Msg::Increment)
             .render(btn_chunks[2], frame);
     }
 
