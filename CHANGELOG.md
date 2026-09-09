@@ -24,6 +24,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `CommandPalette::search` stays a query: searching twice with one query gives
   one answer, which is what idempotent means here.
 
+- **Three dialog actions promised the same thing, and the audit had missed
+  them because it only looked at widgets.** `Discoverable` is implemented by
+  seven types outside `src/widget/` — and those are the ones the trait's own
+  documentation names as owning durable state, so unlike a widget they really
+  do run `execute_action`. A wrong flag there is a promise an agent acts on
+  directly.
+
+  `open_file`, `save_file` and `message_box` were declared non-mutating and so
+  idempotent. Retrying any of them opens a second dialog; retrying `save_file`
+  after a timeout is how a file gets written twice. All three are mutating now.
+
+  The other eleven implementors were right: `theme::get_token`,
+  `i18n::translate`, `window::list`, `profiling::snapshot`, `plugin::list`,
+  `tray::poll_event` and the rest all read and change nothing.
+
 - **The read-only set is now written down.**
   `only_genuine_queries_are_declared_repeatable` pins the five actions that may
   call themselves non-mutating and fails on any sixth, so adding one takes an

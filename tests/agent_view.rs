@@ -211,6 +211,24 @@ fn every_widget_documents_what_an_agent_can_do_with_it() {
     );
 }
 
+/// The `Discoverable` implementors that are not widgets.
+///
+/// These are the ones the trait's own documentation calls out as owning durable
+/// state — a `Theme`, an `I18n`, a `WindowManager` — so unlike a widget they
+/// really do run `execute_action`, and a wrong `mutates` on one of them is a
+/// promise an agent can act on directly. The widget audit missed them entirely.
+fn every_other_discoverable() -> Vec<(&'static str, Box<dyn Discoverable>)> {
+    vec![
+        ("theme", Box::new(dewey::theme::Theme::new("x"))),
+        ("i18n", Box::new(dewey::i18n::I18n::new("en"))),
+        ("window", Box::new(dewey::window::WindowManager::new())),
+        ("profiling", Box::new(dewey::profiling::Profiler::new(1))),
+        ("plugin", Box::new(dewey::plugin::PluginRegistry::new())),
+        ("dialog", Box::new(dewey::dialog::NullDialogBackend)),
+        ("tray", Box::new(dewey::tray::NullTrayBackend)),
+    ]
+}
+
 /// Which actions are safe to repeat, pinned so a wrong answer is deliberate.
 ///
 /// `AgentAction::simple(name, desc, mutates)` derives `idempotent: !mutates`,
@@ -236,10 +254,21 @@ fn only_genuine_queries_are_declared_repeatable() {
         ("command_palette", "list"),
         ("command_palette", "search"),
         ("toolbar", "list_items"),
+        // The implementors that own durable state and really do run
+        // `execute_action`. All seven read and change nothing, which is the
+        // answer the widget audit never asked for.
+        ("theme", "get_token"),
+        ("theme", "list_tokens"),
+        ("i18n", "translate"),
+        ("i18n", "list_locales"),
+        ("window", "list"),
+        ("profiling", "snapshot"),
+        ("plugin", "list"),
+        ("tray", "poll_event"),
     ];
 
     let mut unexpected = Vec::new();
-    for (file, widget) in every_widget() {
+    for (file, widget) in every_widget().into_iter().chain(every_other_discoverable()) {
         for action in widget.actions() {
             if action.mutates {
                 assert!(
