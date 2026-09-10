@@ -2602,6 +2602,70 @@ fn an_action_the_widget_does_not_advertise_is_refused() {
     assert!(d.model().on);
 }
 
+/// The same defect one layer down: the right action, the wrong parameter.
+///
+/// `Toolbar` declares `click_item` with `item_id` required, and the session
+/// checks it — but the driver dispatched anyway and then overwrote the refusal
+/// with `success: true`, because a handler was bound. `on_item` read `item_id`,
+/// found nothing, and handed the model an empty string. The reply said
+/// `"status": "dispatched"` and the toolbar did not move.
+///
+/// Reported by the Tabinator build, whose sidebar is driven through exactly
+/// this path.
+#[test]
+fn an_action_missing_a_required_parameter_is_refused() {
+    use dewey::agent::driver::HeadlessDriver;
+    use dewey::agent::protocol::AgentRequest;
+    use dewey::widget::{Toolbar, ToolbarItem, Widget};
+
+    struct App {
+        mode: String,
+    }
+
+    impl Model for App {
+        type Msg = ();
+        fn update(&mut self, _m: ()) -> Command<()> {
+            Command::None
+        }
+        fn view(&self, frame: &mut Frame<'_>) {
+            Toolbar::new(vec![
+                ToolbarItem::new("stack", "Stack"),
+                ToolbarItem::new("tidy", "Tidy"),
+            ])
+            .on_item("bar", |a: &mut App, id: &str| a.mode = id.to_string())
+            .render(frame.area, frame);
+        }
+    }
+
+    let mut d = HeadlessDriver::new(
+        App {
+            mode: "stack".into(),
+        },
+        400.0,
+        60.0,
+    );
+    d.init();
+
+    let refused = d.process_request(&AgentRequest::ExecuteAction {
+        agent_id: "bar".into(),
+        action: "click_item".into(),
+        // The name an agent guesses when it has not read the schema.
+        params: serde_json::json!({ "id": "tidy" }),
+    });
+    assert!(!refused.success, "`item_id` is required and was not given");
+    let why = refused.error.expect("a refusal must say why");
+    assert!(why.contains("item_id"), "the refusal must name it: {why}");
+    assert_eq!(d.model().mode, "stack", "and nothing may have changed");
+
+    let accepted = d.process_request(&AgentRequest::ExecuteAction {
+        agent_id: "bar".into(),
+        action: "click_item".into(),
+        params: serde_json::json!({ "item_id": "tidy" }),
+    });
+    assert!(accepted.success, "the declared parameter works");
+    assert_eq!(d.model().mode, "tidy");
+}
+
 /// The full TodoMVC agent task, run as a test rather than only as a benchmark.
 ///
 /// This exact sequence lived only in `benches/scaffold`, a separate workspace

@@ -1,14 +1,18 @@
 //! System tray integration for Dewey.
 //!
 //! **This module is types only.** It defines [`TrayBackend`] and the values it
-//! trades in; it ships no platform implementation, and the runtime does not
-//! construct or poll one. An application that wants a tray icon implements
-//! [`TrayBackend`] itself — over `tray-icon` or similar — and drives
-//! [`TrayBackend::poll_event`] from its own `Model::update`.
+//! trades in, and the platform half lives elsewhere.
 //!
-//! There is no `system-tray` feature to enable. A previous version of this
-//! comment said the implementation was behind one, which sent people looking
-//! for a feature that does not exist.
+//! With the `system-tray` feature, [`PlatformTray`] is a working backend for
+//! Windows, macOS and Linux over the `tray-icon` crate. Without it, or on a
+//! target it does not cover, an application implements [`TrayBackend`] itself.
+//!
+//! Either way **the runtime does not construct or poll a tray.** The
+//! application owns the backend and drives [`TrayBackend::poll_event`] from its
+//! own `Model::update`; there is no hook that does it for you. That is worth
+//! saying twice, because an earlier version of this comment pointed at a
+//! `system-tray` feature that did not exist, and a downstream team built a
+//! sidebar around a trait nothing in the runtime touched.
 //!
 //! To act on a tray click, return [`Command::SetWindowVisible`] or
 //! [`Command::FocusWindow`] from `update`.
@@ -17,6 +21,9 @@
 //! [`Command::FocusWindow`]: crate::runtime::Command::FocusWindow
 
 use crate::ontology::*;
+
+#[cfg(feature = "system-tray")]
+pub use crate::tray_platform::PlatformTray;
 
 /// A menu item in the system tray context menu.
 #[derive(Debug, Clone)]

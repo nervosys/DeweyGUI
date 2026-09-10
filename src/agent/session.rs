@@ -20,6 +20,13 @@ pub struct AgentSession {
     prev_states: HashMap<String, crate::ontology::Properties>,
 }
 
+/// The prefix of a refusal caused by the arguments rather than by the widget.
+///
+/// The driver has to tell the two apart: a widget missing from the tree still
+/// dispatches, because a closed `Modal` renders nothing and still answers
+/// `open`, while a call with a required argument missing must not run at all.
+pub(crate) const INVALID_PARAMS: &str = "Invalid params";
+
 impl AgentSession {
     pub fn new() -> Self {
         Self::default()
@@ -176,7 +183,7 @@ impl AgentSession {
                     {
                         return (
                             AgentResponse::err(format!(
-                                "Invalid params for {}.{}: {e}",
+                                "{INVALID_PARAMS} for {}.{}: {e}",
                                 node.widget_type, action
                             )),
                             false,
