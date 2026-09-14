@@ -94,7 +94,7 @@ Every one of these was verified by breaking the thing it catches.
 red Format job once. It passes end to end, and it needs a warm target
 directory: on a cold one it dies part-way through whichever heavy build it
 reaches first, with exit 127 and no error message, which looks exactly like a
-failing check and is not one. Run it twice. Observed on the release build of
+failing check and is not one. Run it again — and not always just once more: merging `system-tray` took three passes, because its dependency tree had to be built first. Each pass gets further. Observed on the release build of
 `benches/comparative` once and on an example the next time, after a version bump
 invalidated the cache — so it is any large cold build, not one target. Most of
 this session mistook it for lock contention, and the first note about it here

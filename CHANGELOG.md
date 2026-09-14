@@ -7,6 +7,54 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `PlatformTray`, behind the new `system-tray` feature: a real tray icon on
+  Windows, macOS and Linux over `tray-icon` 0.24, implementing the
+  `TrayBackend` trait that until now had no implementation but the null one.
+  Menus, submenus, separators and check items are translated from Dewey's
+  vocabulary, and the platform's own menu ids are mapped back to the ids the
+  application chose, so `MenuItemClicked` carries `"quit"` rather than a
+  number. On Linux the icon is a `StatusNotifierItem` published through
+  libappindicator, which needs a GTK main loop: it gets a thread of its own
+  running `gtk::main`, and that thread owns the only menu, because `muda`
+  numbers items from a process-wide counter and a second menu built on the UI
+  thread would share no id with the one on screen. `set_menu` and `set_tooltip`
+  leave the request for it to pick up. A desktop with no tray leaves `show`
+  returning an error and the application running without an icon; a session
+  with no display is declined before the thread is spawned, since `gtk::init`
+  there blocks for tens of seconds rather than reporting failure.
+
+  The runtime still does not construct or poll a tray, which is the other half
+  of what was reported: an application owns a `PlatformTray` and drives
+  `poll_event` from its own `Model::update`.
+
+  Contributed by the Tabinator build, which had been carrying this code
+  privately since there was no backend to use.
+
+  Merged from the `system-tray` branch on 14 September, after 1.2.0 was cut.
+  Its CHANGELOG entry was written under `[Unreleased]` before 1.1.0 existed,
+  so merging placed it inside the 1.1.0 section — a release tagged six days
+  before this code reached master. Moved here, where it belongs.
+
+### Fixed
+
+- **The `system-tray` feature was compiled by no CI job.** A whole platform
+  backend arrived declared, documented and unbuilt, which is the hole
+  `ws-transport`, `derive` and `agpu-backend` were added to CI to close. It is
+  on the cross-platform job now — Windows and macOS need no system packages,
+  while Linux would need `libgtk-3-dev` first.
+
+  On its first run it earned the place: `every_menu_id_maps_back_to_the_one_
+  the_application_chose` builds a real platform menu, and `muda` panics inside
+  itself on a headless macOS runner rather than returning an error. It is
+  `#[ignore]`d with the reason and the command to run it on a machine with a
+  desktop session.
+
+- An intra-doc link in `src/tray.rs` pointed at `PlatformTray`, which exists
+  only behind the feature, so the default doc build CI runs could not resolve
+  it. That was the Documentation job the PR had been failing.
+
 ## [1.2.0] - 2026-09-09
 
 One question, asked properly: **what does a widget promise an agent, and is it
@@ -339,29 +387,6 @@ Everything below is the detail.
   3210 → 598 bytes (−81%). Hit-testing and painting are unaffected.
 
 ### Added
-
-- `PlatformTray`, behind the new `system-tray` feature: a real tray icon on
-  Windows, macOS and Linux over `tray-icon` 0.24, implementing the
-  `TrayBackend` trait that until now had no implementation but the null one.
-  Menus, submenus, separators and check items are translated from Dewey's
-  vocabulary, and the platform's own menu ids are mapped back to the ids the
-  application chose, so `MenuItemClicked` carries `"quit"` rather than a
-  number. On Linux the icon is a `StatusNotifierItem` published through
-  libappindicator, which needs a GTK main loop: it gets a thread of its own
-  running `gtk::main`, and that thread owns the only menu, because `muda`
-  numbers items from a process-wide counter and a second menu built on the UI
-  thread would share no id with the one on screen. `set_menu` and `set_tooltip`
-  leave the request for it to pick up. A desktop with no tray leaves `show`
-  returning an error and the application running without an icon; a session
-  with no display is declined before the thread is spawned, since `gtk::init`
-  there blocks for tens of seconds rather than reporting failure.
-
-  The runtime still does not construct or poll a tray, which is the other half
-  of what was reported: an application owns a `PlatformTray` and drives
-  `poll_event` from its own `Model::update`.
-
-  Contributed by the Tabinator build, which had been carrying this code
-  privately since there was no backend to use.
 
 - **`t3-inspect`: the task that asks the half the other two cannot.** Written,
   self-checked and not yet run.

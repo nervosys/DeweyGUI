@@ -20,7 +20,9 @@
 # on one cold run, an example on the next, after a version bump invalidated
 # everything. A first note here blamed the comparative build specifically; the
 # pattern is any cold build big enough, not one target. Two runs is the whole
-# workaround.
+# workaround, though it is not always two: merging the `system-tray` branch
+# in took three, because the new dependency tree had to be built before the
+# run that finally finished. Run it until it passes; each pass gets further.
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
