@@ -546,7 +546,16 @@ mod tests {
 
     /// A menu round trips: every id an application named comes back out of the
     /// mapping, including the ones inside a submenu.
+    ///
+    /// Ignored by default because it builds a real platform menu, and `muda`
+    /// needs a window server to do that: on a headless macOS runner it
+    /// panics inside the crate rather than returning an error. Run it with
+    /// `cargo test --features system-tray -- --ignored` on a machine with a
+    /// desktop session. The mapping logic that does not need a menu is
+    /// covered by `an_unknown_platform_id_survives_the_lookup`, which runs
+    /// everywhere.
     #[test]
+    #[ignore = "builds a real platform menu; needs a window server"]
     fn every_menu_id_maps_back_to_the_one_the_application_chose() {
         let items = vec![
             TrayMenuItem::new("show", "Show"),
