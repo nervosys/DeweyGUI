@@ -147,19 +147,32 @@ fn main() -> std::io::Result<()> {
         .and_then(|s| s.parse().ok())
         .unwrap_or(1);
     let board = Board::from_seed(seed);
-    let args: Vec<String> = std::env::args().collect();
+    let args: Vec<String> = std::env::args().skip(1).collect();
 
-    if args.iter().any(|a| a == "--truth") {
-        println!("{}", board.answer());
-        return Ok(());
+    // Every flag named in the header, and nothing else. This used to test the
+    // two it cared about and serve on anything left over, so `--serve` was
+    // documented and never parsed — `--nonsense` started the server just the
+    // same. That is the defect this whole benchmark exists to look for, in the
+    // program the benchmark points at, so it is worth not shipping.
+    let mode = match args.as_slice() {
+        [] => "--serve",
+        [one] if one == "--serve" || one == "--mcp" || one == "--truth" => one.as_str(),
+        _ => {
+            eprintln!("subject: expected --serve, --mcp or --truth; got {args:?}");
+            std::process::exit(2);
+        }
+    };
+
+    match mode {
+        "--truth" => {
+            println!("{}", board.answer());
+            Ok(())
+        }
+        "--mcp" => dewey::agent::mcp::McpServer::new(board, 320.0, 400.0).run(),
+        _ => {
+            let mut driver = dewey::agent::driver::HeadlessDriver::new(board, 320.0, 400.0);
+            driver.init();
+            dewey::agent::rpc::serve_stdio(&mut driver)
+        }
     }
-
-    if args.iter().any(|a| a == "--mcp") {
-        return dewey::agent::mcp::McpServer::new(board, 320.0, 400.0).run();
-    }
-
-    // Default: the JSON Lines protocol, which is what `--serve` names.
-    let mut driver = dewey::agent::driver::HeadlessDriver::new(board, 320.0, 400.0);
-    driver.init();
-    dewey::agent::rpc::serve_stdio(&mut driver)
 }

@@ -7,6 +7,243 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-09-09
+
+One question, asked properly: **what does a widget promise an agent, and is it
+true?**
+
+The ontology is now in the doc comments, because twelve paid runs showed that
+is where a model looks — it read `examples/counter.rs` in every run and queried
+the ontology in none. Each of the 29 widgets carries an Agent view block giving
+its role, its actions with their parameter names, the state it publishes, its
+capabilities, and which actions are safe to repeat. The blocks are generated
+from each widget's own answers and a test fails the build when they drift.
+
+Writing them down showed that some of the promises were false.
+
+`Button::click` was declared non-mutating, which `AgentAction` turns into
+*idempotent* — every button click in Dewey told an agent that retrying it was
+safe. It also made the commonest control in any interface invisible to the
+strict check that finds controls wired to nothing, and behind it were **eight
+dead buttons across four examples**, including every button in `counter`, the
+first Dewey code most agents read, and the Send button in `chat`, which worked
+for a person through hand-written rect arithmetic and not for an agent at all.
+
+Asking the same of the other 47 actions found `CommandPalette::execute` and
+`Toolbar::click_item`. Asking it of the seven `Discoverable` implementors
+outside `src/widget/` — the ones that really do run `execute_action` — found
+`open_file`, `save_file` and `message_box`. Retrying a file save is not
+idempotent.
+
+Six false promises, and three guards so the next one is caught: the blocks must
+match the code, the read-only set is written down, and a new `Discoverable`
+fails the build until it is covered.
+
+Everything below is the detail.
+
+### Fixed
+
+- **Two more actions were declared safe to repeat when they are not.** Having
+  found `Button::click` marked non-mutating, the same question was put to all
+  48 actions on the built-in widgets — by asking the objects, not by reading
+  the source, after two attempts to parse the flag out of the text got it
+  wrong in both directions.
+
+  Seven were non-mutating. Four are genuine queries. `CommandPalette::execute`
+  runs a command by id and `Toolbar::click_item` activates an item; both are
+  now mutating. Both had the two consequences `click` had: an agent was told
+  retrying them was safe, and the strict `unwired_widget` check could not see
+  a palette or toolbar wired to nothing.
+
+  `CommandPalette::search` stays a query: searching twice with one query gives
+  one answer, which is what idempotent means here.
+
+- **Three dialog actions promised the same thing, and the audit had missed
+  them because it only looked at widgets.** `Discoverable` is implemented by
+  seven types outside `src/widget/` — and those are the ones the trait's own
+  documentation names as owning durable state, so unlike a widget they really
+  do run `execute_action`. A wrong flag there is a promise an agent acts on
+  directly.
+
+  `open_file`, `save_file` and `message_box` were declared non-mutating and so
+  idempotent. Retrying any of them opens a second dialog; retrying `save_file`
+  after a timeout is how a file gets written twice. All three are mutating now.
+
+  The other eleven implementors were right: `theme::get_token`,
+  `i18n::translate`, `window::list`, `profiling::snapshot`, `plugin::list`,
+  `tray::poll_event` and the rest all read and change nothing.
+
+- **The Agent view blocks now say which actions are safe to repeat.** Every
+  block opens with "Every action changes state unless it says otherwise", and
+  the four widgets with a genuine query mark it: `list_items` on `Toolbar`,
+  `list` and `search` on `CommandPalette`, `get_color`, `get_visible_range`.
+
+  It is one word per action and it is the fact this crate got wrong six times.
+  An agent deciding whether to re-send a call after a timeout now reads the
+  answer in the file it was already reading, rather than inferring it from the
+  action's name — which is how `execute` and `click_item` came to look safe.
+
+- **The audit's scope is now checked instead of remembered.** Both lists in
+  `tests/agent_view.rs` are written by hand, which is precisely how three
+  defects stayed hidden: each round was scoped by an assumption nobody
+  examined — first "the widget files", then "the built-in widgets".
+
+  `the_lists_above_are_every_discoverable_there_is` walks the source for every
+  `impl Discoverable` and fails on one no test builds, so a new widget cannot
+  arrive without an Agent view block and a `mutates` check. It also fails the
+  other way, on a listed type that no longer implements the trait.
+
+  It skips doc comments, because the first time this was done by grep it found
+  a `Badge` and an `Editor` that do not exist — they are worked examples in
+  `src/widget/mod.rs`. The one real gap it turned up was `DatePickerState`.
+
+- **The read-only set is now written down.**
+  `only_genuine_queries_are_declared_repeatable` pins the five actions that may
+  call themselves non-mutating and fails on any sixth, so adding one takes an
+  argument rather than a default. It also asserts no action claims to both
+  mutate and be idempotent. Verified by regressing `click` and watching it
+  fail.
+
+- **`Button`'s click was declared non-mutating, and eight dead buttons were
+  hiding behind it.** `AgentAction::simple("click", ..., false)` set
+  `mutates: false` and, because `simple` derives `idempotent: !mutates`, also
+  advertised every button click to agents as **idempotent** — retrying one
+  after a timeout was declared safe. On a Submit button it is not.
+
+  The second consequence was worse. The strict `unwired_widget` check exists
+  to find controls wired to nothing, and it only considers *mutating* actions,
+  so the commonest control in any interface was the one it could not see.
+  Correcting the flag surfaced eight dead buttons across four examples:
+
+  | example | buttons that did nothing when clicked |
+  |---|---|
+  | `counter` | `increment_btn`, `decrement_btn`, `reset_btn` |
+  | `canvas_drawing` | `btn_square`, `btn_circle`, `btn_clear` |
+  | `chat` | `send_btn` |
+  | `showcase` | `demo_btn` |
+
+  `counter` is the one that matters: twelve paid runs read it in every single
+  run, so it is the first Dewey code most agents see, and it was teaching a
+  button that hit-tests and does nothing. It worked by keyboard only.
+
+  `chat` is the most interesting. Its Send button *did* work for a person, via
+  hand-written rect arithmetic in `handle_event` — and not for an agent, which
+  is exactly the split between the two paths this framework exists to remove.
+  It now uses `.action(...)`, and the stored rect and the hit-test that read it
+  are gone.
+
+  `showcase` carried a comment reading "Every widget here is wired", added
+  earlier in this range while `demo_btn` directly above it was not. The comment
+  now says why the check let it through.
+
+- **`examples/counter.rs` says what it demonstrates.** It had a one-line
+  header. Being the most-read file in the repository, it now states the three
+  facts a reader needs: `.action(id, msg)` names a widget and gives it
+  behaviour at once so a person and an agent take one path; a widget with no id
+  can be operated by nobody; and an id alone is not enough, which is the
+  mistake this very file was making.
+
+### Added
+
+- **The ontology, written into the source comments an agent reads.** Every
+  built-in widget now carries an **Agent view** block in its doc comment: the
+  role it publishes, the actions it accepts with their parameter names, the
+  state fields it exposes, and its capabilities.
+
+  This is the direct consequence of the runs. A model meeting this crate reads
+  `examples/counter.rs`, `agent_headless.rs` and `llms.txt`; it does not query
+  the ontology while writing code, and being told to did not change that. So
+  the ontology has to be where the reader already is — which means prose, in
+  the files.
+
+  Written twice, it can disagree with itself, and a comment that lies about an
+  interface is worse than none. So `tests/agent_view.rs` builds all 29 widgets,
+  asks each the same questions the protocol asks, renders the block those
+  answers imply, and fails the build on any difference. Verified by breaking it
+  three ways: a block that overstates the actions, a block deleted, and — the
+  one that matters — an action renamed in code with the comment left behind.
+  Regenerate with `DEWEY_AGENT_VIEW=print cargo test --test agent_view --
+  --nocapture`.
+
+  Two details the generator gets right that a person writing these by hand
+  would not. Capability payloads are reduced to the variant name, because
+  `Toggleable { state: false }` would bake one throwaway instance's value into
+  a doc about the type. And a widget with a companion `…State` says so —
+  `TextInput` publishes only its placeholder, because the text belongs to the
+  application, and a bare field list would have implied otherwise.
+
+### Fixed
+
+- **`benches/agentic/subject` documented a flag it never parsed.** Its header
+  names `--serve` and `--mcp` as the two ways to talk to it. The code tested
+  for `--truth` and `--mcp` and served on anything left over, so `--serve`
+  worked by falling through and `--nonsense` started the server just the same.
+
+  That is precisely the defect this benchmark exists to look for — something
+  documented, plausible, and not actually wired — sitting in the program the
+  benchmark points at, written the day before by the person looking for it.
+
+  The flags are parsed now: one of `--serve`, `--mcp`, `--truth`, or no
+  argument to serve. Anything else, including two conflicting flags, prints
+  what it expected and exits 2 rather than quietly choosing.
+
+### Documentation
+
+- **ROADMAP.md now says what the runs found, including where it was wrong.**
+  "Known limits" opened by predicting that an untrained model reads the source
+  instead of asking, and was built on the thesis that the fix is the text a
+  model reads before it decides.
+
+  Half of that held. An agent writing a Dewey application does go around the
+  ontology — zero calls in twelve runs — but not to the source: it reads the
+  examples and `llms.txt`, and only three reads in twelve runs touched `src/`.
+
+  The thesis did not hold. The arm with the instructions delivered behaved
+  exactly like the arm without, and the additionally warned arm like both. What
+  moved behaviour was not persuasion but the absence of an alternative: given a
+  running program and a question only it can answer, the agent asks, and typed
+  tools make asking cheaper than a raw pipe. The levers are kept because they
+  are cheap and because the tooled arm is genuinely cheapest for driving — not
+  because they change a writing agent's mind.
+
+  The last open box in that section — "the run itself costs money and has not
+  happened, so there are no numbers yet" — is closed with the numbers.
+
+
+## [1.1.0] - 2026-09-08
+
+Forty-eight commits. Two defect patterns and one method, and the question the
+project is built on answered with money rather than argument.
+
+**Something reported success and did nothing.** A click carries a point; every
+host passed `null` as the action's parameters and fourteen widgets applied their
+handler's `unwrap_or` instead — a 0..100 slider went to 0 wherever you clicked.
+A button inside a modal could not be pressed. A `Tree`, a `Menu`, a `Select`, a
+`Tooltip` and a `ColorPicker` could be operated by an agent and by no person, or
+described more than they drew. A wheel turn reached no widget at all.
+`Event::DragDrop` could be delivered by no host. Nine widgets in this
+repository's own examples advertised actions with no handler.
+
+**Something could not be tested, so it was not.** The stdio transport, the MCP
+loop and the examples each owned stdin, stdout or a window. All of them turned
+out to be correct; the risk was never that the code was broken, but that nothing
+would have said so.
+
+**And the method that found most of the rest: distrust a passing check.**
+`both_backends_handle_every_command` asked whether each host *mentioned* each
+variant, and a `log::debug!` mentions it. The documented-response check had a
+floor of one pair. `examples_validate` read source text and never ran an
+example.
+
+The question: **does an agent use the ontology?** Twenty-four paid runs, $19.15.
+Writing an application — twelve runs, zero ontology calls, 1.000 every time,
+reading two examples and `llms.txt`. Driving one it did not write — twelve runs,
+12/12 correct, and the arm with the MCP server the cheapest of three. Typed
+tools earn their keep for agents that operate an interface and appear not to for
+agents writing code. One model, n=4 per arm; read it as a direction.
+
+Everything below is the detail.
+
 ### Performance
 
 - A `UiNode` no longer sends what it has nothing to say about. Every node was

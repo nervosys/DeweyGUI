@@ -10,6 +10,17 @@
 #   scripts/check.sh --all    also the sibling crate and the benchmark
 #                             workspaces, which live outside this workspace
 #                             and which `cargo check` here never sees
+#
+# `--all` needs a warm target directory. On a cold one it dies part-way through
+# whichever heavy build it reaches first, with exit 127 and no error message,
+# and it looks exactly like a failing check. It is not: run it again and it gets
+# further, and once the artifacts are cached it passes end to end.
+#
+# Observed twice, in different places — the release build of benches/comparative
+# on one cold run, an example on the next, after a version bump invalidated
+# everything. A first note here blamed the comparative build specifically; the
+# pattern is any cold build big enough, not one target. Two runs is the whole
+# workaround.
 set -euo pipefail
 
 cd "$(dirname "$0")/.."

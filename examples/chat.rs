@@ -37,8 +37,7 @@ struct App {
     scroll_state: RefCell<ScrollState>,
     is_generating: bool,
     partial_response: String,
-    /// Stored bounds from the previous frame for hit-testing.
-    send_btn_rect: RefCell<Rect>,
+    /// Stored bounds from the previous frame, for focusing the input by click.
     input_rect: RefCell<Rect>,
 }
 
@@ -55,7 +54,6 @@ impl App {
             scroll_state: RefCell::new(ScrollState::new()),
             is_generating: false,
             partial_response: String::new(),
-            send_btn_rect: RefCell::new(Rect::ZERO),
             input_rect: RefCell::new(Rect::ZERO),
         }
     }
@@ -305,9 +303,8 @@ impl Model for App {
         )
         .split(rows[2]);
 
-        // Store rects for hit-testing in handle_event
+        // Stored for the click-to-focus path below.
         *self.input_rect.borrow_mut() = input_row[0];
-        *self.send_btn_rect.borrow_mut() = input_row[1];
 
         TextInput::new()
             .placeholder(if self.is_generating {
@@ -328,7 +325,7 @@ impl Model for App {
             "Send ↵"
         };
         Button::new(send_label)
-            .agent_id("send_btn")
+            .action("send_btn", Msg::SendMessage)
             .enabled(!self.is_generating)
             .render(input_row[1], frame);
     }
@@ -447,10 +444,6 @@ impl Model for App {
 
             // Mouse click — send button or focus input
             Event::Mouse(ref mouse) if mouse.is_click() => {
-                let btn_rect = *self.send_btn_rect.borrow();
-                if btn_rect.contains(mouse.position) && !self.is_generating {
-                    return Some(Msg::SendMessage);
-                }
                 let input_rect = *self.input_rect.borrow();
                 if input_rect.contains(mouse.position) {
                     self.input_state.borrow_mut().focused = true;

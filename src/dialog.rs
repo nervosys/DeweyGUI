@@ -235,7 +235,7 @@ impl Discoverable for NullDialogBackend {
                         serde_json::json!(false),
                     ),
                 ],
-                false,
+                true,
             ),
             AgentAction::with_params(
                 "save_file",
@@ -254,7 +254,7 @@ impl Discoverable for NullDialogBackend {
                         serde_json::json!(""),
                     ),
                 ],
-                false,
+                true,
             ),
             AgentAction::with_params(
                 "message_box",
@@ -269,7 +269,7 @@ impl Discoverable for NullDialogBackend {
                         serde_json::json!(false),
                     ),
                 ],
-                false,
+                true,
             ),
         ]
     }

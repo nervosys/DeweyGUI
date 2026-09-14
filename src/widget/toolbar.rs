@@ -49,6 +49,18 @@ impl ToolbarItem {
 }
 
 /// A horizontal toolbar of action buttons.
+///
+/// # Agent view
+///
+/// What an agent sees of this widget, and what it can call on it.
+/// Every action changes state unless it says otherwise.
+/// Generated from the widget's own answers; `tests/agent_view.rs`
+/// fails the build if this block and the code disagree.
+///
+/// - role: `Navigation`
+/// - actions: `click_item`(item_id), `list_items` (repeatable)
+/// - state it publishes: `items`
+/// - capabilities: `Clickable`, `Focusable`
 pub struct Toolbar {
     items: Vec<ToolbarItem>,
     style: Style,
@@ -134,7 +146,7 @@ impl Discoverable for Toolbar {
                     "ID of the toolbar item to click",
                     ActionParamType::String,
                 )],
-                false,
+                true,
             ),
             AgentAction::simple("list_items", "List all toolbar items", false),
         ]
