@@ -51,6 +51,12 @@ if [ "${1:-}" = "--all" ]; then
     run cargo test --features derive
     run cargo test --features ws-transport
 
+    # Needs GTK on Linux; on Windows and macOS it builds with no system
+    # packages. It arrived as a whole feature with no job compiling it.
+    if [ "$(uname -s)" != "Linux" ]; then
+        run cargo test --features system-tray
+    fi
+
     run cargo test --manifest-path agpu/Cargo.toml
     for bench in comparative scaffold; do
         run cargo check --all-targets --manifest-path "benches/$bench/Cargo.toml"

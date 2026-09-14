@@ -3,7 +3,7 @@
 //! **This module is types only.** It defines [`TrayBackend`] and the values it
 //! trades in, and the platform half lives elsewhere.
 //!
-//! With the `system-tray` feature, [`PlatformTray`] is a working backend for
+//! With the `system-tray` feature, `PlatformTray` is a working backend for
 //! Windows, macOS and Linux over the `tray-icon` crate. Without it, or on a
 //! target it does not cover, an application implements [`TrayBackend`] itself.
 //!
