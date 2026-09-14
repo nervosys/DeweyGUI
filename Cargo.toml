@@ -36,6 +36,11 @@ ws-transport = ["dep:tungstenite"]
 # egui-winit's own accesskit feature in step; enabling only egui's breaks it.
 accesskit = ["dep:accesskit", "eframe?/accesskit"]
 derive = ["dep:dewey-derive"]
+# A real tray icon on Windows, macOS and Linux, over the `tray-icon` crate.
+# Off by default: it pulls a platform dependency, and on Linux it needs
+# libappindicator and a GTK main loop at runtime. Without it `tray.rs` stays
+# what it has always been, a set of types and a null backend.
+system-tray = ["dep:tray-icon", "dep:gtk"]
 
 [[example]]
 name = "hello"
@@ -120,6 +125,9 @@ accesskit = { version = "0.17", optional = true }
 # Derive macros
 dewey-derive = { version = "1.2.0", path = "dewey-derive", optional = true }
 
+# System tray
+tray-icon = { version = "0.24", optional = true }
+
 [dev-dependencies]
 criterion = { version = "0.5", features = ["html_reports"] }
 proptest = "1"
@@ -140,3 +148,7 @@ eframe = { version = "0.31", optional = true, default-features = false, features
     "wayland",
 ] }
 winit = { version = "0.30", optional = true, features = ["x11", "wayland"] }
+
+# `tray-icon` publishes a StatusNotifierItem through libappindicator, which
+# needs a GTK main loop of its own. Windows and macOS need nothing extra.
+gtk = { version = "0.18", optional = true }

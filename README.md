@@ -43,9 +43,11 @@
 - **Window control** — `Command::SetWindowVisible`, `FocusWindow`, `MinimiseWindow`,
   `SetWindowPosition`, `SetWindowSize`, `SetAlwaysOnTop`, `SetFullscreen`,
   `SetWindowTitle`, honoured by both backends
-- **System Tray** — *types only.* `TrayBackend` is a trait to implement, with
-  `TrayConfig`, `TrayMenuItem`, `TrayEvent` and `TrayIconImage`. No platform
-  backend ships, and the runtime neither creates nor polls one
+- **System Tray** — `TrayBackend` is a trait, with `TrayConfig`,
+  `TrayMenuItem`, `TrayEvent` and `TrayIconImage`. The `system-tray` feature
+  adds `PlatformTray`, a working backend for Windows, macOS and Linux over the
+  `tray-icon` crate. The runtime still neither creates nor polls one: the
+  application owns the backend and calls `poll_event` from its own `update`
 - **Native File Dialogs** — *types only.* `DialogBackend` is a trait to
   implement; no platform backend ships
 - **Multi-Window** — `WindowManager` tracks windows in memory. It does not
@@ -246,7 +248,7 @@ protocol does not have fails the build.
 | **Plugin System**       | ✅ Plugin trait + registry    | ❌                 | ❌                 | ❌                      | ❌                | ✅ QPlugin                     | ✅ Packages               | ✅ npm            | ✅ npm                | ❌                        |
 | **i18n / Localization** | ✅ Built-in (I18n)            | ❌                 | ❌                 | ✅                      | ✅ gettext        | ✅ Qt Linguist                 | ✅ intl                   | ✅ i18next        | ✅ i18next            | ❌                        |
 | **Multi-Window**        | ⚠️ Bookkeeping only           | ✅ Viewports       | ❌                 | ✅                      | ✅                | ✅                             | ✅                        | ✅                | ✅                    | ✅                        |
-| **System Tray**         | ⚠️ Trait, no backend          | ❌                 | ❌                 | ❌                      | ✅                | ✅                             | ❌ (plugin)               | ✅                | ✅                    | ❌                        |
+| **System Tray**         | ✅ `system-tray` feature      | ❌                 | ❌                 | ❌                      | ✅                | ✅                             | ❌ (plugin)               | ✅                | ✅                    | ❌                        |
 | **Native Dialogs**      | ⚠️ Trait, no backend          | ❌ (rfd crate)     | ❌                 | ❌                      | ✅                | ✅                             | ❌ (plugin)               | ✅                | ✅                    | ✅                        |
 | **Drag & Drop**         | ✅ Typed payloads             | ✅ Basic           | ❌                 | ❌                      | ✅                | ✅                             | ✅                        | ✅                | ✅                    | ✅                        |
 | **GPU Render Batching** | ✅ Automatic quad merging     | ✅                 | ✅                 | ✅                      | ✅                | ✅                             | ✅                        | ✅                | N/A                  | ✅                        |

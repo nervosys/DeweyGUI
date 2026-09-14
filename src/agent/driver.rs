@@ -341,6 +341,24 @@ impl<M: Model + 'static> HeadlessDriver<M> {
             params,
         } = request
         {
+            // An argument the widget declared and the caller did not supply is
+            // a refusal, and dispatching anyway did two bad things at once: it
+            // ran the handler with the argument missing — `Toolbar::on_item`
+            // reads `item_id`, finds nothing and hands the model an empty
+            // string — and then overwrote the reason with `success: true`. An
+            // agent that called `click_item` with the wrong parameter name was
+            // told the call was dispatched, and the toolbar did not move.
+            //
+            // Only that refusal stops here. "Widget not found" must still
+            // dispatch: a closed `Modal` renders nothing and still answers
+            // `open`, which is the case the rest of this block exists for.
+            if response
+                .error
+                .as_deref()
+                .is_some_and(|e| e.starts_with(crate::agent::session::INVALID_PARAMS))
+            {
+                return response;
+            }
             // A widget that carries its own message needs no handler in the
             // application at all; fall back to `execute_action` for the rest.
             let handled = self.dispatch(agent_id, action, params);

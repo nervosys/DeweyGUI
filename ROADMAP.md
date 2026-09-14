@@ -228,8 +228,10 @@ duration breaks every `match` on `Event`, so it waits for a major version.
 - [~] Multi-window (`WindowManager`, `WindowConfig`, focus tracking) — in-memory
       bookkeeping; does not create or raise real windows
 - [~] System tray (`TrayBackend` trait, `TrayConfig`, `TrayIconImage`,
-      `TrayEvent`, `NullTrayBackend`) — types only, no platform backend, not
-      wired into the runtime
+      `TrayEvent`, `NullTrayBackend`, and `PlatformTray` behind the
+      `system-tray` feature) — a real icon on Windows, macOS and Linux; still
+      not wired into the runtime, so the application owns the backend and polls
+      it from `update`
 - [~] Native file dialogs (`DialogBackend` trait, `OpenFileDialog`,
       `SaveFileDialog`, `MessageBox`) — types only, no platform backend
 
